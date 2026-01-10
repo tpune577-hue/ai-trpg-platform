@@ -82,6 +82,12 @@ export function useGameSocket(
         onTyping?: (data: { userId: string; userName: string; isTyping: boolean }) => void
     }>({})
 
+    // Use refs for stable callback access in useEffect
+    const optionsRef = useRef(options)
+    useEffect(() => {
+        optionsRef.current = options
+    }, [options])
+
     // Initialize socket connection
     useEffect(() => {
         if (!autoConnect) return
@@ -122,19 +128,19 @@ export function useGameSocket(
 
         socketInstance.on('connection:reconnected', () => {
             console.log('[useGameSocket] Reconnected to server')
-            onReconnect?.()
+            optionsRef.current.onReconnect?.()
         })
 
         socketInstance.on('error', (error) => {
             console.error('[useGameSocket] Socket error:', error)
             setConnectionError(error.message)
-            onError?.(error)
+            optionsRef.current.onError?.(error)
         })
 
         socketInstance.on('connect_error', (error) => {
             console.error('[useGameSocket] Connection error:', error)
             setConnectionError(error.message)
-            onError?.({ ...error, code: 'CONNECTION_ERROR' })
+            optionsRef.current.onError?.({ ...error, code: 'CONNECTION_ERROR' })
         })
 
         // Room events
@@ -207,7 +213,7 @@ export function useGameSocket(
             }
             socketInstance.disconnect()
         }
-    }, [autoConnect, sessionToken, onError, onReconnect])
+    }, [autoConnect, sessionToken]) // Removed generic onError/onReconnect dependencies
 
     // Auto-join room when roomId changes
     useEffect(() => {
@@ -237,6 +243,11 @@ export function useGameSocket(
             return new Promise((resolve) => {
                 if (!socket || !isConnected) {
                     resolve({ success: false, error: 'Not connected to server' })
+                    return
+                }
+
+                if (!userProfile) {
+                    resolve({ success: false, error: 'User profile required' })
                     return
                 }
 

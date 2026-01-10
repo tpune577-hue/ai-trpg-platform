@@ -286,6 +286,34 @@ app.prepare().then(() => {
         // Handle join_room event
         socket.on('join_room', async ({ roomId, userProfile }, callback) => {
             try {
+                // DEV ONLY: Bypass for demo room
+                // DEV ONLY: Bypass for demo room
+                if (process.env.NODE_ENV !== 'production' && roomId === 'demo') {
+                    console.log('[Socket.io] DEV: Joining demo room')
+                    socket.join('demo')
+
+                    // Respond success
+                    if (callback) callback({ success: true })
+
+                    // Emit room joined event with mock details
+                    socket.emit('room:joined', {
+                        roomInfo: {
+                            roomId: 'demo',
+                            campaignTitle: 'Demo Campaign',
+                            gmId: 'ai-gm',
+                            connectedPlayers: [userProfile],
+                        },
+                        userProfile,
+                    })
+
+                    // Notify others (if any)
+                    socket.to('demo').emit('room:player_joined', {
+                        userProfile,
+                    })
+
+                    return
+                }
+
                 // Verify campaign exists and user has access
                 const campaign = await prisma.campaign.findUnique({
                     where: { id: roomId },

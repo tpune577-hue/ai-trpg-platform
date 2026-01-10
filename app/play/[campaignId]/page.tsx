@@ -49,6 +49,7 @@ export default function PlayerControllerPage() {
         onGameStateUpdate,
         onPlayerAction,
     } = useGameSocket(campaignId, {
+        sessionToken: 'demo-token', // Bypassing auth for demo
         userProfile: MOCK_USER,
         autoConnect: true,
         onError: (error) => {

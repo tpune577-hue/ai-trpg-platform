@@ -111,7 +111,7 @@ async function processActionWithAI(
         // Apply HP updates
         if (aiResponse.hp_updates && aiResponse.hp_updates.length > 0) {
             for (const update of aiResponse.hp_updates) {
-                const character = campaign.characters.find((c) => c.id === update.target_id)
+                const character = campaign.characters.find((c: any) => c.id === update.target_id)
                 if (character) {
                     const currentHp = (character.stats as any)?.hp || 50
                     const newHp = Math.max(0, currentHp + update.amount)
@@ -221,6 +221,16 @@ app.prepare().then(() => {
                 return next(new Error('Authentication required: No session token provided'))
             }
 
+            // DEV ONLY: Bypass for demo
+            if (process.env.NODE_ENV !== 'production' && sessionToken === 'demo-token') {
+                console.log('[Socket.io Auth] DEV: Bypassing auth for demo user')
+                socket.data.userId = 'player-1'
+                socket.data.userName = 'Aragorn'
+                socket.data.userRole = 'PLAYER' as any
+                socket.data.userEmail = 'demo@example.com'
+                return next()
+            }
+
             // Verify session token in database
             const session = await prisma.session.findUnique({
                 where: {
@@ -290,13 +300,41 @@ app.prepare().then(() => {
                 })
 
                 if (!campaign) {
+                    // DEV ONLY: Bypass for demo room
+                    if (process.env.NODE_ENV !== 'production' && roomId === 'demo') {
+                        console.log('[Socket.io] DEV: Bypassing room check for demo')
+
+                        // Join the socket room
+                        await socket.join(roomId)
+                        socket.data.currentRoomId = roomId
+                        socket.data.characterId = 'char-1'
+
+                        // Track active users in room
+                        if (!activeRooms.has(roomId)) {
+                            activeRooms.set(roomId, new Set())
+                        }
+                        activeRooms.get(roomId)!.add(userProfile.id)
+
+                        const roomInfo: RoomInfo = {
+                            roomId,
+                            campaignTitle: 'Demo Campaign',
+                            connectedPlayers: [],
+                            gmId: 'gm-1',
+                        }
+
+                        // Notify the user they joined
+                        socket.emit('room:joined', { roomInfo, userProfile })
+                        callback?.({ success: true })
+                        return
+                    }
+
                     callback?.({ success: false, error: 'Campaign not found' })
                     return
                 }
 
                 // Check if user is GM or a player in this campaign
                 const isGM = campaign.gmId === userProfile.id
-                const isPlayer = campaign.players.some((p) => p.playerId === userProfile.id)
+                const isPlayer = campaign.players.some((p: any) => p.playerId === userProfile.id)
 
                 if (!isGM && !isPlayer) {
                     callback?.({ success: false, error: 'Access denied to this campaign' })

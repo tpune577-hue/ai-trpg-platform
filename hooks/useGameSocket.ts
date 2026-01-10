@@ -131,6 +131,12 @@ export function useGameSocket(
             onError?.(error)
         })
 
+        socketInstance.on('connect_error', (error) => {
+            console.error('[useGameSocket] Connection error:', error)
+            setConnectionError(error.message)
+            onError?.({ ...error, code: 'CONNECTION_ERROR' })
+        })
+
         // Room events
         socketInstance.on('room:joined', ({ roomInfo: info, userProfile: profile }) => {
             console.log('[useGameSocket] Joined room:', info.campaignTitle)

@@ -17,20 +17,20 @@ const GameMasterResponseSchema = z.object({
             reason: z.string().describe('Brief reason for HP change'),
         })
     ).describe('Array of HP updates for affected characters'),
-    new_scene_prompt: z.string().optional().describe('Optional prompt for generating a new scene background image'),
+    new_scene_prompt: z.string().nullable().optional().describe('Optional prompt for generating a new scene background image'),
     dice_results: z.object({
         roll: z.number().describe('The dice roll result'),
         modifier: z.number().describe('Any modifiers applied'),
         total: z.number().describe('Final total (roll + modifier)'),
         success: z.boolean().describe('Whether the action succeeded'),
-    }).optional().describe('Dice roll results if applicable'),
+    }).nullable().optional().describe('Dice roll results if applicable'),
     status_effects: z.array(
         z.object({
             target_id: z.string(),
             effect: z.string().describe('Status effect name (e.g., "poisoned", "blessed")'),
             duration: z.number().describe('Duration in turns'),
         })
-    ).optional().describe('Status effects to apply'),
+    ).nullable().optional().describe('Status effects to apply'),
 })
 
 export type GameMasterResponse = z.infer<typeof GameMasterResponseSchema>
@@ -173,7 +173,7 @@ Respond with JSON only.`
             response_format: zodResponseFormat(GameMasterResponseSchema, 'game_master_response'),
             temperature: 0.8, // Higher temperature for more creative narration
             max_tokens: 1000,
-        })
+        }) as any // Fix legacy type definition
 
         const response = completion.choices[0].message.parsed
 
@@ -194,15 +194,20 @@ Respond with JSON only.`
     } catch (error) {
         console.error('AI Game Master error:', error)
 
+        // Use the same dice logic even for fallback
+        const fallbackDice = rollDice(playerAction.actionType, actorStats, playerAction.skillName)
+
         // Fallback response if AI fails
         return {
-            narration: `${playerAction.actorName} attempts ${playerAction.description}. The outcome is uncertain...`,
+            narration: `${playerAction.actorName} attempts ${playerAction.description}. The outcome is uncertain... (AI Offline)`,
             hp_updates: [],
+            new_scene_prompt: null,
+            status_effects: [],
             dice_results: {
-                roll: Math.floor(Math.random() * 20) + 1,
-                modifier: 0,
-                total: Math.floor(Math.random() * 20) + 1,
-                success: false,
+                roll: fallbackDice.roll,
+                modifier: fallbackDice.modifier,
+                total: fallbackDice.total,
+                success: Math.random() > 0.5, // Random success if target AC unknown
             },
         }
     }
@@ -346,7 +351,7 @@ export async function generateSceneImage(prompt: string): Promise<string | null>
             n: 1,
         })
 
-        return response.data[0]?.url || null
+        return response.data?.[0]?.url || null
     } catch (error) {
         console.error('Image generation error:', error)
         return null

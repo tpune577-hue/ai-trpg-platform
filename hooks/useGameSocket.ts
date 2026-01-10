@@ -17,7 +17,8 @@ import { MessageType } from '@prisma/client'
 type TypedSocket = Socket<ServerToClientEvents, ClientToServerEvents>
 
 export interface UseGameSocketOptions {
-    userProfile: UserProfile
+    sessionToken: string
+    userProfile?: UserProfile // Optional for backward compatibility
     autoConnect?: boolean
     onError?: (error: SocketError) => void
     onReconnect?: () => void
@@ -62,7 +63,7 @@ export function useGameSocket(
     roomId: string | null,
     options: UseGameSocketOptions
 ): UseGameSocketReturn {
-    const { userProfile, autoConnect = true, onError, onReconnect } = options
+    const { sessionToken, userProfile, autoConnect = true, onError, onReconnect } = options
 
     const [socket, setSocket] = useState<TypedSocket | null>(null)
     const [isConnected, setIsConnected] = useState(false)
@@ -84,12 +85,15 @@ export function useGameSocket(
     // Initialize socket connection
     useEffect(() => {
         if (!autoConnect) return
+        if (!sessionToken) {
+            console.error('[useGameSocket] No session token provided')
+            setConnectionError('Authentication required: No session token')
+            return
+        }
 
         const socketInstance: TypedSocket = io({
             auth: {
-                userId: userProfile.id,
-                userName: userProfile.name,
-                userRole: userProfile.role,
+                sessionToken: sessionToken,
             },
             reconnection: true,
             reconnectionAttempts: 5,
@@ -197,11 +201,15 @@ export function useGameSocket(
             }
             socketInstance.disconnect()
         }
-    }, [autoConnect, userProfile, onError, onReconnect])
+    }, [autoConnect, sessionToken, onError, onReconnect])
 
     // Auto-join room when roomId changes
     useEffect(() => {
         if (!socket || !isConnected || !roomId) return
+        if (!userProfile) {
+            console.warn('[useGameSocket] No userProfile provided for room join')
+            return
+        }
 
         // Leave previous room if any
         if (currentRoomIdRef.current && currentRoomIdRef.current !== roomId) {

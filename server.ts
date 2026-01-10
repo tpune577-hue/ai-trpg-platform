@@ -59,7 +59,7 @@ async function processActionWithAI(
         // Build game state for AI
         const gameState = {
             currentScene: (campaign.currentState as any)?.currentScene || 'Unknown Location',
-            characters: campaign.characters.map((char) => ({
+            characters: campaign.characters.map((char: any) => ({
                 id: char.id,
                 name: char.name,
                 hp: (char.stats as any)?.hp || 50,
@@ -72,8 +72,19 @@ async function processActionWithAI(
             recentEvents: (campaign.currentState as any)?.recentEvents || [],
         }
 
-        // Call AI Game Master
-        const aiResponse: GameMasterResponse = await processGameTurn(gameState, actionData)
+        // Extract actor's stats for dice roll modifiers
+        const actorCharacter = campaign.characters.find((char: any) => char.id === actionData.actorId)
+        const actorStats = actorCharacter ? {
+            strength: (actorCharacter.stats as any)?.strength || 10,
+            dexterity: (actorCharacter.stats as any)?.dexterity || 10,
+            constitution: (actorCharacter.stats as any)?.constitution || 10,
+            intelligence: (actorCharacter.stats as any)?.intelligence || 10,
+            wisdom: (actorCharacter.stats as any)?.wisdom || 10,
+            charisma: (actorCharacter.stats as any)?.charisma || 10,
+        } : undefined
+
+        // Call AI Game Master with character stats
+        const aiResponse: GameMasterResponse = await processGameTurn(gameState, actionData, actorStats)
 
         console.log('[AI GM] AI response received:', aiResponse.narration.substring(0, 100) + '...')
 
@@ -200,27 +211,55 @@ app.prepare().then(() => {
         pingInterval: 25000,
     })
 
-    // Middleware for authentication (optional but recommended)
+    // Middleware for session-based authentication
     io.use(async (socket, next) => {
         try {
-            // You can add authentication logic here
-            // For example, verify JWT token from socket.handshake.auth.token
-            const userId = socket.handshake.auth.userId
-            const userName = socket.handshake.auth.userName
-            const userRole = socket.handshake.auth.userRole
+            // Extract session token from handshake auth
+            const sessionToken = socket.handshake.auth.sessionToken
 
-            if (!userId || !userName) {
-                return next(new Error('Authentication required'))
+            if (!sessionToken) {
+                return next(new Error('Authentication required: No session token provided'))
             }
 
-            // Store user data in socket
-            socket.data.userId = userId
-            socket.data.userName = userName
-            socket.data.userRole = userRole
+            // Verify session token in database
+            const session = await prisma.session.findUnique({
+                where: {
+                    sessionToken: sessionToken,
+                },
+                include: {
+                    user: {
+                        select: {
+                            id: true,
+                            name: true,
+                            role: true,
+                            email: true,
+                        },
+                    },
+                },
+            })
+
+            // Check if session exists and is valid
+            if (!session) {
+                return next(new Error('Authentication failed: Invalid session token'))
+            }
+
+            // Check if session has expired
+            if (session.expires < new Date()) {
+                return next(new Error('Authentication failed: Session expired'))
+            }
+
+            // Attach verified user data to socket
+            socket.data.userId = session.user.id
+            socket.data.userName = session.user.name || 'Unknown User'
+            socket.data.userRole = session.user.role
+            socket.data.userEmail = session.user.email
+
+            console.log(`[Socket.io Auth] User authenticated: ${session.user.name} (${session.user.id})`)
 
             next()
         } catch (error) {
-            next(new Error('Authentication failed'))
+            console.error('[Socket.io Auth] Authentication error:', error)
+            next(new Error('Authentication failed: Server error'))
         }
     })
 

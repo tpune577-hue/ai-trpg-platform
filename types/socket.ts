@@ -125,6 +125,7 @@ export interface SocketData {
     userId: string
     userName: string
     userRole: UserRole
+    userEmail: string
     currentRoomId?: string
     characterId?: string
 }

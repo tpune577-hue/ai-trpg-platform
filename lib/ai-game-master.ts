@@ -109,12 +109,10 @@ interface PlayerAction {
  */
 export async function processGameTurn(
     currentState: GameState,
-    playerAction: PlayerAction
+    playerAction: PlayerAction,
+    actorStats?: CharacterStats
 ): Promise<GameMasterResponse> {
     try {
-        // Simulate dice roll based on action type
-        const diceRoll = rollDice(playerAction.actionType)
-
         // Find actor and target
         const actor = currentState.characters.find((c) => c.id === playerAction.actorId)
         const target = playerAction.targetId
@@ -122,6 +120,9 @@ export async function processGameTurn(
                 (c) => c.id === playerAction.targetId
             )
             : null
+
+        // Simulate dice roll with character stats
+        const diceRoll = rollDice(playerAction.actionType, actorStats, playerAction.skillName)
 
         // Construct user prompt with context
         const userPrompt = `
@@ -208,31 +209,127 @@ Respond with JSON only.`
 }
 
 /**
- * Simulate dice roll based on action type
+ * D&D 5e Character Stats Interface
  */
-function rollDice(actionType: string): { roll: number; modifier: number; total: number } {
+interface CharacterStats {
+    strength?: number
+    dexterity?: number
+    constitution?: number
+    intelligence?: number
+    wisdom?: number
+    charisma?: number
+}
+
+/**
+ * Calculate D&D 5e ability modifier from stat value
+ * Formula: floor((statValue - 10) / 2)
+ */
+function calculateModifier(statValue: number): number {
+    return Math.floor((statValue - 10) / 2)
+}
+
+/**
+ * Simulate dice roll with stat-based modifiers
+ * @param actionType Type of action being performed
+ * @param actorStats Character's ability scores
+ * @param skillName Optional skill name for specific checks
+ * @returns Dice roll result with appropriate modifier
+ */
+function rollDice(
+    actionType: string,
+    actorStats?: CharacterStats,
+    skillName?: string
+): { roll: number; modifier: number; total: number; statUsed?: string } {
     const roll = Math.floor(Math.random() * 20) + 1
 
-    // Determine modifier based on action type
+    // Default stats if not provided
+    const stats: CharacterStats = actorStats || {
+        strength: 10,
+        dexterity: 10,
+        constitution: 10,
+        intelligence: 10,
+        wisdom: 10,
+        charisma: 10,
+    }
+
     let modifier = 0
+    let statUsed = 'none'
+
+    // Determine which stat to use based on action type
     switch (actionType) {
         case 'attack':
-            modifier = 5 // Strength/Dex modifier
+            // Use higher of STR or DEX for attack rolls
+            const strMod = calculateModifier(stats.strength || 10)
+            const dexMod = calculateModifier(stats.dexterity || 10)
+            modifier = Math.max(strMod, dexMod)
+            statUsed = strMod >= dexMod ? 'STR' : 'DEX'
             break
+
         case 'skill':
-            modifier = 3 // Spellcasting modifier
+            // Determine stat based on skill name
+            if (skillName) {
+                const skillLower = skillName.toLowerCase()
+
+                // Intelligence-based skills (Arcana, Investigation, etc.)
+                if (skillLower.includes('fire') || skillLower.includes('ice') ||
+                    skillLower.includes('lightning') || skillLower.includes('arcane') ||
+                    skillLower.includes('magic')) {
+                    modifier = calculateModifier(stats.intelligence || 10)
+                    statUsed = 'INT'
+                }
+                // Wisdom-based skills (Heal, Perception, etc.)
+                else if (skillLower.includes('heal') || skillLower.includes('cure') ||
+                    skillLower.includes('bless') || skillLower.includes('divine')) {
+                    modifier = calculateModifier(stats.wisdom || 10)
+                    statUsed = 'WIS'
+                }
+                // Charisma-based skills (Persuasion, Deception, etc.)
+                else if (skillLower.includes('charm') || skillLower.includes('persuade')) {
+                    modifier = calculateModifier(stats.charisma || 10)
+                    statUsed = 'CHA'
+                }
+                // Default to Intelligence for generic spells
+                else {
+                    modifier = calculateModifier(stats.intelligence || 10)
+                    statUsed = 'INT'
+                }
+            } else {
+                // Default to Intelligence if no skill specified
+                modifier = calculateModifier(stats.intelligence || 10)
+                statUsed = 'INT'
+            }
             break
+
+        case 'move':
+            // Dexterity for movement/acrobatics
+            modifier = calculateModifier(stats.dexterity || 10)
+            statUsed = 'DEX'
+            break
+
+        case 'talk':
+            // Charisma for social interactions
+            modifier = calculateModifier(stats.charisma || 10)
+            statUsed = 'CHA'
+            break
+
         case 'item':
-            modifier = 0 // No modifier for items
+            // No modifier for using items
+            modifier = 0
+            statUsed = 'none'
             break
+
         default:
-            modifier = 2 // Generic modifier
+            // Generic check uses Wisdom
+            modifier = calculateModifier(stats.wisdom || 10)
+            statUsed = 'WIS'
+            break
     }
 
     return {
         roll,
         modifier,
         total: roll + modifier,
+        statUsed,
     }
 }
 

@@ -6,14 +6,11 @@ import { DEMO_GAME_STATE, DEMO_CHARACTER, GM_RESPONSE_TEMPLATES } from '@/lib/de
 export const useGameSocket = (campaignId: string | null) => {
     const [isConnected, setIsConnected] = useState(false)
 
-    // Callbacks refs
     const eventCallbacksRef = useRef<{
         onPlayerAction?: (action: any) => void
         onGameStateUpdate?: (state: any) => void
-        onCharacterData?: (data: any) => void
         onChatMessage?: (message: any) => void
         onPlayerJoined?: (profile: any) => void
-        onPlayerLeft?: (data: any) => void
         onDiceResult?: (result: any) => void
         onRollRequested?: (request: any) => void
     }>({})
@@ -23,18 +20,15 @@ export const useGameSocket = (campaignId: string | null) => {
         setIsConnected(true)
         const syncChannel = new BroadcastChannel('game_demo_channel')
 
-        // ฟังวิทยุจากแท็บอื่น (Cross-tab communication)
         syncChannel.onmessage = (event) => {
             const { type, payload } = event.data
 
-            // 1. ถ้า GM สั่งให้ทอยเต๋า (Player จะได้ยินอันนี้)
-            if (type === 'GM_REQUEST_ROLL') {
-                if (eventCallbacksRef.current.onRollRequested) {
-                    eventCallbacksRef.current.onRollRequested(payload)
-                }
+            if (type === 'PLAYER_ACTION') {
+                if (eventCallbacksRef.current.onPlayerAction) eventCallbacksRef.current.onPlayerAction(payload)
             }
-
-            // 2. ถ้ามีการอัปเดตเกม (GM จะได้ยินอันนี้)
+            if (type === 'GM_REQUEST_ROLL') {
+                if (eventCallbacksRef.current.onRollRequested) eventCallbacksRef.current.onRollRequested(payload)
+            }
             if (type === 'SYNC_UPDATE') {
                 if (eventCallbacksRef.current.onGameStateUpdate) eventCallbacksRef.current.onGameStateUpdate(payload.newState)
                 if (eventCallbacksRef.current.onChatMessage && payload.chatMessage) eventCallbacksRef.current.onChatMessage(payload.chatMessage)
@@ -42,12 +36,11 @@ export const useGameSocket = (campaignId: string | null) => {
             }
         }
 
-        // เริ่มต้นระบบ (Initial Load)
+        // Initial Load & Mock Data
         const timer = setTimeout(() => {
-            // Load Scene
             if (eventCallbacksRef.current.onGameStateUpdate) eventCallbacksRef.current.onGameStateUpdate(DEMO_GAME_STATE)
 
-            // Load Initial Chat
+            // Welcome Message
             if (eventCallbacksRef.current.onChatMessage) {
                 eventCallbacksRef.current.onChatMessage({
                     id: 'welcome',
@@ -58,20 +51,36 @@ export const useGameSocket = (campaignId: string | null) => {
                 })
             }
 
-            // Load Character for Player
-            const mockEvent = new CustomEvent('player:character_data', { detail: DEMO_CHARACTER })
-            window.dispatchEvent(mockEvent)
+            // ✅ MOCK PLAYERS: สร้างตัวละครจำลอง 2 ตัว (Aragorn & Legolas) ให้ GM เห็นทันที
+            const mockPlayers = [
+                {
+                    id: 'mock-p1',
+                    name: 'Aragorn',
+                    role: 'WARRIOR',
+                    avatarUrl: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Aragorn',
+                    hp: 120, maxHp: 120, mp: 20, maxMp: 20,
+                    stats: { STR: 16, DEX: 12, CON: 15, INT: 8, WIS: 10, CHA: 10 }
+                },
+                {
+                    id: 'mock-p2',
+                    name: 'Legolas',
+                    role: 'ROGUE',
+                    avatarUrl: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Legolas',
+                    hp: 80, maxHp: 80, mp: 40, maxMp: 40,
+                    stats: { STR: 10, DEX: 18, CON: 12, INT: 12, WIS: 14, CHA: 10 }
+                }
+            ]
 
-            // Fake Player Join (for GM view)
-            if (eventCallbacksRef.current.onPlayerJoined) {
-                eventCallbacksRef.current.onPlayerJoined({
-                    id: 'demo-player-1',
-                    name: 'Aragorn (Demo)',
-                    role: 'PLAYER',
-                    characterName: 'Aragorn',
-                    avatarUrl: 'https://api.dicebear.com/7.x/avataaars/svg?seed=player'
+            // ส่ง Mock Players เข้าไปในระบบ (ผ่าน onPlayerAction เหมือนตอนคน Join จริง)
+            if (eventCallbacksRef.current.onPlayerAction) {
+                mockPlayers.forEach(p => {
+                    eventCallbacksRef.current.onPlayerAction!({
+                        actionType: 'JOIN_GAME',
+                        characterData: p
+                    })
                 })
             }
+
         }, 500)
 
         return () => {
@@ -81,102 +90,64 @@ export const useGameSocket = (campaignId: string | null) => {
         }
     }, [campaignId])
 
-    // --- Actions ---
-
-    // 1. Player/GM ส่ง Action (รวมถึง Custom Narration)
+    // --- Actions --- (ส่วนนี้เหมือนเดิม)
     const sendPlayerAction = useCallback((actionData: any) => {
-        // จำลอง Network Delay
+        const syncChannel = new BroadcastChannel('game_demo_channel')
+        syncChannel.postMessage({ type: 'PLAYER_ACTION', payload: actionData })
+
         setTimeout(() => {
             let narration = GM_RESPONSE_TEMPLATES.default
             let diceResult = null
 
-            // Logic เลือกคำตอบ
-            if (actionData.actionType === 'dice_roll') {
-                // กรณีเป็นการทอยเต๋าตอบกลับจาก Player
-                const isSuccess = actionData.total >= (actionData.dc || 10) // เช็คกับค่า DC (ถ้าไม่มีให้เป็น 10)
+            if (actionData.actionType === 'JOIN_GAME') {
+                narration = `${actionData.actorName} has joined the adventure.`
+            }
+            else if (actionData.actionType === 'dice_roll') {
+                const isSuccess = actionData.total >= (actionData.dc || 10)
                 const resultText = isSuccess ? "(Success!)" : "(Failed...)"
-
                 narration = `${actionData.actorName} rolled ${actionData.checkType}: ${actionData.total} ${resultText}`
                 diceResult = { total: actionData.total, detail: `1d20 (${actionData.roll}) + ${actionData.mod}` }
             }
-            else if (actionData.actionType === 'custom') {
-                // กรณี GM พิมพ์เอง หรือ Player พิมพ์เอง
-                narration = actionData.description
-            }
-            else if (actionData.actionType === 'attack') {
-                narration = GM_RESPONSE_TEMPLATES.attack
-                diceResult = { total: 15, detail: "1d20 (12) + STR (3)" }
-            }
+            else if (actionData.actionType === 'custom') narration = actionData.description
+            else if (actionData.actionType === 'attack') { narration = GM_RESPONSE_TEMPLATES.attack; diceResult = { total: 15, detail: "1d20 (12) + STR (3)" } }
             else if (actionData.actionType === 'magic') narration = GM_RESPONSE_TEMPLATES.magic
             else if (actionData.actionType === 'heal') narration = GM_RESPONSE_TEMPLATES.heal
             else if (actionData.actionType === 'move') narration = GM_RESPONSE_TEMPLATES.move
             else if (actionData.actionType === 'talk') narration = GM_RESPONSE_TEMPLATES.talk
             else if (actionData.actionType === 'inspect') narration = GM_RESPONSE_TEMPLATES.explore
 
-            // สร้าง State ใหม่
             const newState = { ...DEMO_GAME_STATE, currentScene: narration, recentEvents: [narration, ...DEMO_GAME_STATE.recentEvents] }
 
-            // สร้าง Chat Message
             const newChatMessage = {
-                // ✅ แก้ไขตรงนี้: สร้าง ID แบบสุ่มเพื่อให้ไม่ซ้ำกันแม้กดรัวๆ
                 id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-
                 content: narration,
                 type: actionData.actionType === 'custom' && actionData.actorName === 'Game Master' ? 'NARRATION' : 'ACTION',
                 senderName: actionData.actorName || 'GM',
                 createdAt: new Date().toISOString()
             }
 
-            // Update หน้าตัวเอง (Local Update)
             if (eventCallbacksRef.current.onGameStateUpdate) eventCallbacksRef.current.onGameStateUpdate(newState)
             if (eventCallbacksRef.current.onChatMessage) eventCallbacksRef.current.onChatMessage(newChatMessage)
             if (diceResult && eventCallbacksRef.current.onDiceResult) eventCallbacksRef.current.onDiceResult(diceResult)
 
-            // ส่งสัญญาณบอกเพื่อน (Broadcast Update)
-            const syncChannel = new BroadcastChannel('game_demo_channel')
             syncChannel.postMessage({ type: 'SYNC_UPDATE', payload: { newState, chatMessage: newChatMessage, diceResult } })
             syncChannel.close()
         }, 500)
         return Promise.resolve({ success: true })
     }, [])
 
-    // 2. GM สั่งให้ทอยเต๋า (Request Roll with DC)
     const requestRoll = useCallback((checkType: string, dc: number = 10) => {
-        console.log(`GM Requesting Roll: ${checkType} (DC: ${dc})`)
         const syncChannel = new BroadcastChannel('game_demo_channel')
-        syncChannel.postMessage({
-            type: 'GM_REQUEST_ROLL',
-            payload: {
-                checkType,
-                dc, // ส่งค่า DC ไปด้วย
-                timestamp: Date.now()
-            }
-        })
+        syncChannel.postMessage({ type: 'GM_REQUEST_ROLL', payload: { checkType, dc, timestamp: Date.now() } })
         syncChannel.close()
     }, [])
 
-    // Listeners setters
-    const onGameStateUpdate = useCallback((cb: any) => { eventCallbacksRef.current.onGameStateUpdate = cb; cb(DEMO_GAME_STATE) }, [])
+    const onGameStateUpdate = useCallback((cb: any) => { eventCallbacksRef.current.onGameStateUpdate = cb }, [])
     const onPlayerAction = useCallback((cb: any) => { eventCallbacksRef.current.onPlayerAction = cb }, [])
     const onChatMessage = useCallback((cb: any) => { eventCallbacksRef.current.onChatMessage = cb }, [])
     const onPlayerJoined = useCallback((cb: any) => { eventCallbacksRef.current.onPlayerJoined = cb }, [])
-    const onPlayerLeft = useCallback((cb: any) => { eventCallbacksRef.current.onPlayerLeft = cb }, [])
     const onDiceResult = useCallback((cb: any) => { eventCallbacksRef.current.onDiceResult = cb }, [])
     const onRollRequested = useCallback((cb: any) => { eventCallbacksRef.current.onRollRequested = cb }, [])
 
-    return {
-        socket: null,
-        isConnected,
-        isInRoom: true,
-        connectionError: null,
-        sendPlayerAction,
-        requestRoll,
-        onGameStateUpdate,
-        onPlayerAction,
-        onChatMessage,
-        onPlayerJoined,
-        onPlayerLeft,
-        onDiceResult,
-        onRollRequested
-    }
+    return { isConnected, sendPlayerAction, requestRoll, onGameStateUpdate, onPlayerAction, onChatMessage, onPlayerJoined, onDiceResult, onRollRequested }
 }

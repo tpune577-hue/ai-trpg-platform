@@ -164,7 +164,7 @@ ${target ? `**Target AC**: ${target.ac}` : ''}
 Respond with JSON only.`
 
         // Call OpenAI with structured output
-        const completion = await openai.beta.chat.completions.parse({
+        const completion = await (openai.beta as any).chat.completions.parse({
             model: 'gpt-4o-2024-08-06', // Model that supports structured outputs
             messages: [
                 { role: 'system', content: SYSTEM_PROMPT },

@@ -1,4 +1,25 @@
-import { User, Campaign, Character, ChatMessage, MarketplaceItem, UserRole, MessageType, ItemType } from '@prisma/client'
+import { User, Campaign, Character, ChatMessage, MarketplaceItem } from '@prisma/client'
+
+// Manually define Enums as String Unions for SQLite compatibility
+export type UserRole = 'GM' | 'PLAYER' | 'CREATOR'
+export const UserRole = {
+    GM: 'GM',
+    PLAYER: 'PLAYER',
+    CREATOR: 'CREATOR'
+} as const
+
+export type MessageType = 'TALK' | 'NARRATION' | 'ACTION'
+export const MessageType = {
+    TALK: 'TALK',
+    NARRATION: 'NARRATION',
+    ACTION: 'ACTION'
+} as const
+
+export type ItemType = 'ART' | 'THEME'
+export const ItemType = {
+    ART: 'ART',
+    THEME: 'THEME'
+} as const
 
 // Extended types with relations
 export type UserWithRelations = User & {
@@ -135,6 +156,3 @@ export interface CreateMarketplaceItemInput {
     price: number
     data: MarketplaceItemData
 }
-
-// Re-export Prisma enums for convenience
-export { UserRole, MessageType, ItemType }

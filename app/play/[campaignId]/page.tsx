@@ -1,253 +1,206 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams } from 'next/navigation'
 import { useGameSocket } from '@/hooks/useGameSocket'
-import CharacterCard from '@/components/player/CharacterCard'
-import ActionTabs from '@/components/player/ActionTabs'
-import FeedbackPanel, { FeedbackStatus } from '@/components/player/FeedbackPanel'
-import type { UserProfile, GameStateUpdate } from '@/types/socket'
 
-// Mock user data - replace with actual authentication
-const MOCK_USER: UserProfile = {
-    id: 'player-1',
-    name: 'Aragorn',
-    role: 'PLAYER' as any,
-    characterId: 'char-1',
-    characterName: 'Aragorn the Ranger',
-}
+// Components
+import { SceneDisplay } from '@/components/board/SceneDisplay'
+import { GameLog } from '@/components/board/GameLog'
 
 export default function PlayerControllerPage() {
     const params = useParams()
     const campaignId = params.campaignId as string
 
-    // Character state
-    const [character, setCharacter] = useState({
-        name: 'Aragorn the Ranger',
-        className: 'Ranger',
-        level: 5,
-        hp: 45,
-        maxHp: 60,
-        status: 'wounded' as 'healthy' | 'wounded' | 'critical' | 'unconscious',
-    })
+    // State
+    const [character, setCharacter] = useState<any>(null)
+    const [customAction, setCustomAction] = useState('')
+    const [logs, setLogs] = useState<any[]>([])
+    const [gameState, setGameState] = useState<any>(null)
+    const [rollRequest, setRollRequest] = useState<any>(null)
 
-    // Feedback state
-    const [feedbackStatus, setFeedbackStatus] = useState<FeedbackStatus>('idle')
-    const [feedbackMessage, setFeedbackMessage] = useState<string>()
-
-    // Current scene narration
-    const [currentNarration, setCurrentNarration] = useState<string>(
-        'You stand at the entrance of a dark cave...'
-    )
-
-    // Socket.io integration
     const {
         isConnected,
-        isInRoom,
-        connectionError,
         sendPlayerAction,
         onGameStateUpdate,
-        onPlayerAction,
-    } = useGameSocket(campaignId, {
-        sessionToken: 'demo-token', // Bypassing auth for demo
-        userProfile: MOCK_USER,
-        autoConnect: true,
-        onError: (error) => {
-            console.error('Socket error:', error)
-            setFeedbackStatus('error')
-            setFeedbackMessage(error.message)
-        },
-        onReconnect: () => {
-            console.log('Reconnected!')
-            setFeedbackStatus('success')
-            setFeedbackMessage('Reconnected to game')
-        },
-    })
+        onRollRequested,
+        onChatMessage
+    } = useGameSocket(campaignId)
 
-    // Listen for game state updates
     useEffect(() => {
-        onGameStateUpdate((state: GameStateUpdate) => {
-            console.log('Game state updated:', state)
+        const handleCharData = (e: any) => { setCharacter(e.detail) }
+        window.addEventListener('player:character_data', handleCharData)
 
-            if (state.currentScene) {
-                setCurrentNarration(state.currentScene)
-            }
+        onRollRequested((request) => setRollRequest(request))
+        onGameStateUpdate((state) => setGameState(state))
+        onChatMessage((message) => setLogs((prev) => [...prev, message]))
 
-            // Update character HP if included in state
-            if (state.metadata?.characterUpdates) {
-                const update = state.metadata.characterUpdates[MOCK_USER.characterId!]
-                if (update) {
-                    setCharacter((prev) => ({
-                        ...prev,
-                        hp: update.hp ?? prev.hp,
-                        status: update.status ?? prev.status,
-                    }))
-                }
-            }
+        return () => window.removeEventListener('player:character_data', handleCharData)
+    }, [onRollRequested, onGameStateUpdate, onChatMessage])
+
+    // ฟังก์ชันสำหรับปุ่ม Action ปกติ (Attack, Move, etc.)
+    const handleAction = async (actionType: string) => {
+        await sendPlayerAction({
+            actionType,
+            actorId: character?.id,
+            actorName: character?.name,
+            description: `performed ${actionType}`
         })
-
-        // Listen for other player actions (optional)
-        onPlayerAction((action) => {
-            console.log('Player action:', action)
-            // Could show notifications for other players' actions
-        })
-    }, [onGameStateUpdate, onPlayerAction])
-
-    // Handle action button clicks
-    const handleAction = async (action: {
-        type: 'attack' | 'skill' | 'item'
-        id: string
-        name: string
-        target?: string
-    }) => {
-        console.log('Action triggered:', action)
-
-        // Show waiting feedback
-        setFeedbackStatus('waiting')
-        setFeedbackMessage(`Using ${action.name}...`)
-
-        try {
-            // Send action via Socket.io
-            const result = await sendPlayerAction({
-                actionType: action.type === 'attack' ? 'attack' : action.type === 'skill' ? 'skill' : 'item',
-                actorId: MOCK_USER.characterId || MOCK_USER.id,
-                actorName: character.name,
-                targetId: action.target,
-                targetName: 'Enemy',
-                skillName: action.type === 'skill' ? action.name : undefined,
-                itemName: action.type === 'item' ? action.name : undefined,
-                description: `${character.name} uses ${action.name}!`,
-                damage: action.type === 'attack' ? Math.floor(Math.random() * 20) + 1 : undefined,
-            })
-
-            if (result.success) {
-                setFeedbackStatus('success')
-                setFeedbackMessage(`${action.name} successful!`)
-            } else {
-                setFeedbackStatus('error')
-                setFeedbackMessage(result.error || 'Action failed')
-            }
-        } catch (error) {
-            console.error('Action error:', error)
-            setFeedbackStatus('error')
-            setFeedbackMessage('Failed to send action')
-        }
     }
 
-    // Loading state
-    if (!isConnected) {
-        return (
-            <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center p-4">
-                <div className="text-center">
-                    <div className="w-16 h-16 border-4 border-amber-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-                    <p className="text-amber-400 text-lg font-semibold">Connecting to campaign...</p>
-                </div>
-            </div>
-        )
+    // ฟังก์ชันตอบกลับการทอยเต๋า
+    const handleRollResponse = async () => {
+        if (!rollRequest) return
+        const roll = Math.floor(Math.random() * 20) + 1
+        const mod = 3
+
+        await sendPlayerAction({
+            actionType: 'dice_roll',
+            checkType: rollRequest.checkType,
+            dc: rollRequest.dc,
+            roll: roll,
+            mod: mod,
+            total: roll + mod,
+            actorName: character?.name
+        })
+        setRollRequest(null)
     }
 
-    // Error state
-    if (connectionError) {
-        return (
-            <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center p-4">
-                <div className="text-center max-w-md">
-                    <svg
-                        className="w-16 h-16 text-red-500 mx-auto mb-4"
-                        fill="currentColor"
-                        viewBox="0 0 20 20"
-                    >
-                        <path
-                            fillRule="evenodd"
-                            d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
-                            clipRule="evenodd"
-                        />
-                    </svg>
-                    <h2 className="text-red-400 text-xl font-bold mb-2">Connection Error</h2>
-                    <p className="text-gray-400 mb-4">{connectionError}</p>
-                    <button
-                        onClick={() => window.location.reload()}
-                        className="px-6 py-3 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-semibold transition-colors touch-manipulation"
-                    >
-                        Retry
-                    </button>
-                </div>
-            </div>
-        )
+    // ฟังก์ชันส่ง Custom Action (แยกออกมาเพื่อให้เรียกใช้ง่าย)
+    const sendCustomAction = async () => {
+        if (!customAction.trim()) return
+
+        await sendPlayerAction({
+            actionType: 'custom', // ✅ ต้องส่ง type เป็น 'custom' เสมอ
+            actorId: character?.id,
+            actorName: character?.name,
+            description: customAction // ✅ เอาข้อความที่พิมพ์ใส่ตรงนี้
+        })
+        setCustomAction('') // ล้างช่องพิมพ์
     }
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
-            {/* Header */}
-            <div className="sticky top-0 z-40 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 border-b border-amber-500/30 backdrop-blur-lg">
-                <div className="max-w-2xl mx-auto px-4 py-3">
-                    <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                            <button
-                                onClick={() => window.history.back()}
-                                className="p-2 hover:bg-slate-700/50 rounded-lg transition-colors touch-manipulation"
-                            >
-                                <svg className="w-6 h-6 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
-                                    <path
-                                        fillRule="evenodd"
-                                        d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z"
-                                        clipRule="evenodd"
-                                    />
-                                </svg>
-                            </button>
-                            <div>
-                                <h1 className="text-lg font-bold text-amber-400">Player Controller</h1>
-                                <p className="text-xs text-gray-400">
-                                    {isInRoom ? 'Connected' : 'Connecting...'}
-                                </p>
-                            </div>
-                        </div>
+        <div className="h-screen bg-slate-950 text-white flex flex-col overflow-hidden font-sans">
 
-                        <div className="flex items-center gap-2">
-                            <div
-                                className={`w-2 h-2 rounded-full ${isInRoom ? 'bg-emerald-500 animate-pulse' : 'bg-gray-500'
-                                    }`}
-                            />
+            {/* 🟢 ส่วนที่ 1: Header + Scene */}
+            <div className="h-[35%] flex flex-col relative shrink-0">
+                <div className="absolute top-0 w-full p-3 bg-gradient-to-b from-black/80 to-transparent z-20 flex justify-between items-center backdrop-blur-[2px]">
+                    <div className="flex items-center gap-2">
+                        <div className="w-10 h-10 rounded-full bg-indigo-600 flex items-center justify-center border-2 border-indigo-400 shadow-lg">
+                            {character?.name?.[0] || '?'}
                         </div>
+                        <div>
+                            <div className="font-bold text-sm shadow-black drop-shadow-md">{character?.name || 'Loading...'}</div>
+                            <div className="text-[10px] text-indigo-300 bg-black/50 px-1.5 rounded inline-block">LV.1</div>
+                        </div>
+                    </div>
+                    <div className="text-right">
+                        <div className="text-green-400 font-bold text-lg drop-shadow-md">{character?.hp || 20} <span className="text-xs text-gray-400">/20 HP</span></div>
+                    </div>
+                </div>
+
+                <div className="flex-1 relative border-b-2 border-amber-500/50">
+                    <SceneDisplay
+                        sceneDescription={gameState?.currentScene || "Waiting for GM..."}
+                        imageUrl="/images/placeholder-dungeon.jpg"
+                    />
+                </div>
+            </div>
+
+            {/* 🟡 ส่วนที่ 2: Action Buttons */}
+            <div className="flex-1 overflow-y-auto bg-slate-900 p-4 custom-scrollbar">
+
+                <h2 className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mb-3 text-center">— Select Action —</h2>
+
+                <div className="grid grid-cols-3 gap-3 mb-4">
+                    <ActionButton icon="⚔️" label="Attack" color="red" onClick={() => handleAction('attack')} />
+                    <ActionButton icon="✨" label="Magic" color="blue" onClick={() => handleAction('magic')} />
+                    <ActionButton icon="🦶" label="Move" color="yellow" onClick={() => handleAction('move')} />
+                    <ActionButton icon="🧪" label="Heal" color="green" onClick={() => handleAction('heal')} />
+                    <ActionButton icon="💬" label="Talk" color="purple" onClick={() => handleAction('talk')} />
+                    <ActionButton icon="🔍" label="Inspect" color="gray" onClick={() => handleAction('inspect')} />
+                </div>
+
+                {/* Custom Action Input (แก้ไขแล้ว) */}
+                <div className="bg-slate-800/50 p-3 rounded-xl border border-slate-700">
+                    <div className="flex gap-2">
+                        <input
+                            type="text"
+                            value={customAction}
+                            onChange={(e) => setCustomAction(e.target.value)}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') sendCustomAction()
+                            }}
+                            placeholder="Type custom action..."
+                            className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-indigo-500 outline-none"
+                        />
+                        <button
+                            onClick={sendCustomAction}
+                            className="bg-indigo-600 px-4 rounded-lg font-bold text-sm hover:bg-indigo-500 transition-colors"
+                        >
+                            GO
+                        </button>
                     </div>
                 </div>
             </div>
 
-            {/* Main Content */}
-            <div className="max-w-2xl mx-auto px-4 py-6 pb-24 space-y-6">
-                {/* Current Narration */}
-                <div className="bg-gradient-to-br from-purple-900/30 to-purple-800/20 border-2 border-purple-500/30 rounded-2xl p-6">
-                    <div className="flex items-start gap-3">
-                        <svg className="w-6 h-6 text-purple-400 flex-shrink-0 mt-1" fill="currentColor" viewBox="0 0 20 20">
-                            <path d="M9 4.804A7.968 7.968 0 005.5 4c-1.255 0-2.443.29-3.5.804v10A7.969 7.969 0 015.5 14c1.669 0 3.218.51 4.5 1.385A7.962 7.962 0 0114.5 14c1.255 0 2.443.29 3.5.804v-10A7.968 7.968 0 0014.5 4c-1.255 0-2.443.29-3.5.804V12a1 1 0 11-2 0V4.804z" />
-                        </svg>
-                        <div className="flex-1">
-                            <p className="text-sm text-purple-200 italic leading-relaxed">
-                                {currentNarration}
-                            </p>
-                        </div>
-                    </div>
+            {/* 🔴 ส่วนที่ 3: Game Log */}
+            <div className="h-[30%] bg-slate-950 border-t border-slate-800 flex flex-col shrink-0">
+                <div className="px-3 py-1 bg-slate-900 border-b border-slate-800 text-[10px] font-bold text-slate-500 uppercase flex justify-between">
+                    <span>📜 Adventure Log</span>
+                    <span className="text-green-500">{logs.length} events</span>
                 </div>
-
-                {/* Character Card */}
-                <CharacterCard
-                    name={character.name}
-                    className={character.className}
-                    level={character.level}
-                    hp={character.hp}
-                    maxHp={character.maxHp}
-                    status={character.status}
-                />
-
-                {/* Action Tabs */}
-                <ActionTabs onAction={handleAction} disabled={!isInRoom} />
+                <div className="flex-1 p-3 overflow-hidden">
+                    <GameLog logs={logs} />
+                </div>
             </div>
 
-            {/* Feedback Panel */}
-            <FeedbackPanel
-                status={feedbackStatus}
-                message={feedbackMessage}
-                onHide={() => setFeedbackStatus('idle')}
-            />
+            {/* 🔥 Dice Popup Modal */}
+            {rollRequest && (
+                <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-6 animate-in fade-in zoom-in duration-200 backdrop-blur-sm">
+                    <div className="bg-slate-900 p-6 rounded-2xl border-2 border-amber-500 shadow-[0_0_50px_rgba(245,158,11,0.3)] w-full max-w-xs text-center">
+                        <div className="text-5xl mb-4 animate-bounce">🎲</div>
+                        <h2 className="text-xl font-bold text-white mb-1">GM Orders Roll!</h2>
+
+                        {/* ชื่อ Skill ที่ให้ทอย */}
+                        <div className="text-amber-500 text-2xl font-black mb-6 uppercase tracking-wider">{rollRequest.checkType}</div>
+
+                        {/* คำโปรยเพิ่มความกดดัน */}
+                        <p className="text-slate-400 text-xs mb-6 italic">
+                            "Destiny is in your hands..."
+                        </p>
+
+                        <button
+                            onClick={handleRollResponse}
+                            className="w-full py-3 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-black font-bold text-lg rounded-xl shadow-lg transform active:scale-95 transition-all"
+                        >
+                            ROLL D20
+                        </button>
+                    </div>
+                </div>
+            )}
         </div>
+    )
+}
+
+// Helper Component: Action Button
+const ActionButton = ({ icon, label, color, onClick }: any) => {
+    const colorStyles: any = {
+        red: "bg-red-500/10 border-red-500/30 hover:bg-red-500/20 text-red-400",
+        blue: "bg-blue-500/10 border-blue-500/30 hover:bg-blue-500/20 text-blue-400",
+        yellow: "bg-amber-500/10 border-amber-500/30 hover:bg-amber-500/20 text-amber-400",
+        green: "bg-emerald-500/10 border-emerald-500/30 hover:bg-emerald-500/20 text-emerald-400",
+        purple: "bg-fuchsia-500/10 border-fuchsia-500/30 hover:bg-fuchsia-500/20 text-fuchsia-400",
+        gray: "bg-slate-500/10 border-slate-500/30 hover:bg-slate-500/20 text-slate-400",
+    }
+
+    return (
+        <button
+            onClick={onClick}
+            className={`${colorStyles[color]} border p-3 rounded-xl flex flex-col items-center gap-1 transition-all active:scale-95`}
+        >
+            <span className="text-2xl filter drop-shadow-lg">{icon}</span>
+            <span className="font-bold text-[10px] uppercase tracking-wide">{label}</span>
+        </button>
     )
 }

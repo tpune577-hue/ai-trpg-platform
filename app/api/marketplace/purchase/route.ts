@@ -32,18 +32,21 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'User not found' }, { status: 404 })
         }
 
+        // Parse existing assets or start empty
+        const currentAssets = user.purchasedAssets ? JSON.parse(user.purchasedAssets as unknown as string) : []
+
         // Check if already purchased
-        if (user.purchasedAssets.includes(itemId)) {
+        if (currentAssets.includes(itemId)) {
             return NextResponse.json({ error: 'Already purchased' }, { status: 400 })
         }
 
         // Add to purchased assets
+        const newAssets = [...currentAssets, itemId]
+
         await prisma.user.update({
             where: { id: MOCK_USER_ID },
             data: {
-                purchasedAssets: {
-                    push: itemId,
-                },
+                purchasedAssets: JSON.stringify(newAssets),
             },
         })
 

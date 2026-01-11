@@ -44,10 +44,10 @@ async function main() {
             price: 10.99, // Passing number
             creatorId: creator.id,
             isPublished: true,
-            data: {
+            data: JSON.stringify({
                 imageUrl: 'https://example.com/test.jpg',
                 tags: ['debug', 'test'],
-            },
+            }),
         }
 
         const item = await prisma.marketplaceItem.create({

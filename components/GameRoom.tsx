@@ -33,6 +33,7 @@ export default function GameRoom({ campaignId, currentUser }: GameRoomProps) {
         onTyping,
         measureLatency,
     } = useGameSocket(campaignId, {
+        sessionToken: 'DEMO_PLAYER_TOKEN',
         userProfile: currentUser,
         autoConnect: true,
         onError: (error) => {
@@ -242,10 +243,10 @@ export default function GameRoom({ campaignId, currentUser }: GameRoomProps) {
                             <div
                                 key={idx}
                                 className={`p-3 rounded ${msg.type === 'system'
-                                        ? 'bg-gray-700 text-gray-300 italic'
-                                        : msg.type === 'action'
-                                            ? 'bg-blue-900 text-blue-100'
-                                            : 'bg-gray-800'
+                                    ? 'bg-gray-700 text-gray-300 italic'
+                                    : msg.type === 'action'
+                                        ? 'bg-blue-900 text-blue-100'
+                                        : 'bg-gray-800'
                                     }`}
                             >
                                 {msg.senderName && (

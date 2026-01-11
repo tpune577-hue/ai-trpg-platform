@@ -1,0 +1,1 @@
+﻿app/campaign/[id]/board/page.tsx(132,36): error TS18048: 'action.damage' is possibly 'undefined'.

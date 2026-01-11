@@ -1,432 +1,182 @@
 'use client'
 
-import { useEffect, useRef, useState, useCallback } from 'react'
-import { io, Socket } from 'socket.io-client'
-import type {
-    ServerToClientEvents,
-    ClientToServerEvents,
-    UserProfile,
-    PlayerActionData,
-    GameStateUpdate,
-    SocketChatMessage,
-    RoomInfo,
-    SocketError,
-} from '@/types/socket'
-import { MessageType } from '@prisma/client'
+import { useEffect, useState, useRef, useCallback } from 'react'
+import { DEMO_GAME_STATE, DEMO_CHARACTER, GM_RESPONSE_TEMPLATES } from '@/lib/demo-data'
 
-type TypedSocket = Socket<ServerToClientEvents, ClientToServerEvents>
-
-export interface UseGameSocketOptions {
-    sessionToken: string
-    userProfile?: UserProfile // Optional for backward compatibility
-    autoConnect?: boolean
-    onError?: (error: SocketError) => void
-    onReconnect?: () => void
-}
-
-export interface UseGameSocketReturn {
-    // Connection state
-    socket: TypedSocket | null
-    isConnected: boolean
-    isInRoom: boolean
-    roomInfo: RoomInfo | null
-    connectionError: string | null
-    latency: number
-
-    // Room actions
-    joinRoom: (roomId: string) => Promise<{ success: boolean; error?: string }>
-    leaveRoom: () => void
-
-    // Game actions
-    sendPlayerAction: (actionData: PlayerActionData) => Promise<{ success: boolean; error?: string }>
-    sendGMUpdate: (gameState: GameStateUpdate) => Promise<{ success: boolean; error?: string }>
-
-    // Chat actions
-    sendChatMessage: (content: string, type?: MessageType) => Promise<{ success: boolean; messageId?: string; error?: string }>
-    sendTypingIndicator: (isTyping: boolean) => void
-
-    // Event listeners
-    onPlayerAction: (callback: (action: PlayerActionData) => void) => void
-    onGameStateUpdate: (callback: (state: GameStateUpdate) => void) => void
-    onChatMessage: (callback: (message: SocketChatMessage) => void) => void
-    onPlayerJoined: (callback: (profile: UserProfile) => void) => void
-    onPlayerLeft: (callback: (data: { userId: string; userName: string }) => void) => void
-    onTyping: (callback: (data: { userId: string; userName: string; isTyping: boolean }) => void) => void
-
-    // Utility
-    measureLatency: () => Promise<number>
-    reconnect: () => void
-    disconnect: () => void
-}
-
-export function useGameSocket(
-    roomId: string | null,
-    options: UseGameSocketOptions
-): UseGameSocketReturn {
-    const { sessionToken, userProfile, autoConnect = true, onError, onReconnect } = options
-
-    const [socket, setSocket] = useState<TypedSocket | null>(null)
+export const useGameSocket = (campaignId: string | null) => {
     const [isConnected, setIsConnected] = useState(false)
-    const [isInRoom, setIsInRoom] = useState(false)
-    const [roomInfo, setRoomInfo] = useState<RoomInfo | null>(null)
-    const [connectionError, setConnectionError] = useState<string | null>(null)
-    const [latency, setLatency] = useState(0)
 
-    const currentRoomIdRef = useRef<string | null>(null)
+    // Callbacks refs
     const eventCallbacksRef = useRef<{
-        onPlayerAction?: (action: PlayerActionData) => void
-        onGameStateUpdate?: (state: GameStateUpdate) => void
-        onChatMessage?: (message: SocketChatMessage) => void
-        onPlayerJoined?: (profile: UserProfile) => void
-        onPlayerLeft?: (data: { userId: string; userName: string }) => void
-        onTyping?: (data: { userId: string; userName: string; isTyping: boolean }) => void
+        onPlayerAction?: (action: any) => void
+        onGameStateUpdate?: (state: any) => void
+        onCharacterData?: (data: any) => void
+        onChatMessage?: (message: any) => void
+        onPlayerJoined?: (profile: any) => void
+        onPlayerLeft?: (data: any) => void
+        onDiceResult?: (result: any) => void
+        onRollRequested?: (request: any) => void
     }>({})
 
-    // Use refs for stable callback access in useEffect
-    const optionsRef = useRef(options)
     useEffect(() => {
-        optionsRef.current = options
-    }, [options])
+        console.log('🔌 (SIMULATION) Connected')
+        setIsConnected(true)
+        const syncChannel = new BroadcastChannel('game_demo_channel')
 
-    // Initialize socket connection
-    useEffect(() => {
-        if (!autoConnect) return
-        if (!sessionToken) {
-            console.error('[useGameSocket] No session token provided')
-            setConnectionError('Authentication required: No session token')
-            return
+        // ฟังวิทยุจากแท็บอื่น (Cross-tab communication)
+        syncChannel.onmessage = (event) => {
+            const { type, payload } = event.data
+
+            // 1. ถ้า GM สั่งให้ทอยเต๋า (Player จะได้ยินอันนี้)
+            if (type === 'GM_REQUEST_ROLL') {
+                if (eventCallbacksRef.current.onRollRequested) {
+                    eventCallbacksRef.current.onRollRequested(payload)
+                }
+            }
+
+            // 2. ถ้ามีการอัปเดตเกม (GM จะได้ยินอันนี้)
+            if (type === 'SYNC_UPDATE') {
+                if (eventCallbacksRef.current.onGameStateUpdate) eventCallbacksRef.current.onGameStateUpdate(payload.newState)
+                if (eventCallbacksRef.current.onChatMessage && payload.chatMessage) eventCallbacksRef.current.onChatMessage(payload.chatMessage)
+                if (eventCallbacksRef.current.onDiceResult && payload.diceResult) eventCallbacksRef.current.onDiceResult(payload.diceResult)
+            }
         }
 
-        const socketInstance: TypedSocket = io({
-            auth: {
-                sessionToken: sessionToken,
-            },
-            reconnection: true,
-            reconnectionAttempts: 5,
-            reconnectionDelay: 1000,
-            reconnectionDelayMax: 5000,
-            timeout: 20000,
-        })
+        // เริ่มต้นระบบ (Initial Load)
+        const timer = setTimeout(() => {
+            // Load Scene
+            if (eventCallbacksRef.current.onGameStateUpdate) eventCallbacksRef.current.onGameStateUpdate(DEMO_GAME_STATE)
 
-        // Connection events
-        socketInstance.on('connect', () => {
-            console.log('[useGameSocket] Connected to server')
-            setIsConnected(true)
-            setConnectionError(null)
-        })
+            // Load Initial Chat
+            if (eventCallbacksRef.current.onChatMessage) {
+                eventCallbacksRef.current.onChatMessage({
+                    id: 'welcome',
+                    content: DEMO_GAME_STATE.currentScene,
+                    type: 'NARRATION',
+                    senderName: 'GM',
+                    createdAt: new Date().toISOString()
+                })
+            }
 
-        socketInstance.on('disconnect', () => {
-            console.log('[useGameSocket] Disconnected from server')
-            setIsConnected(false)
-            setIsInRoom(false)
-            setRoomInfo(null)
-        })
+            // Load Character for Player
+            const mockEvent = new CustomEvent('player:character_data', { detail: DEMO_CHARACTER })
+            window.dispatchEvent(mockEvent)
 
-        socketInstance.on('connection:established', () => {
-            console.log('[useGameSocket] Connection established')
-        })
+            // Fake Player Join (for GM view)
+            if (eventCallbacksRef.current.onPlayerJoined) {
+                eventCallbacksRef.current.onPlayerJoined({
+                    id: 'demo-player-1',
+                    name: 'Aragorn (Demo)',
+                    role: 'PLAYER',
+                    characterName: 'Aragorn',
+                    avatarUrl: 'https://api.dicebear.com/7.x/avataaars/svg?seed=player'
+                })
+            }
+        }, 500)
 
-        socketInstance.on('connection:reconnected', () => {
-            console.log('[useGameSocket] Reconnected to server')
-            optionsRef.current.onReconnect?.()
-        })
-
-        socketInstance.on('error', (error) => {
-            console.error('[useGameSocket] Socket error:', error)
-            setConnectionError(error.message)
-            optionsRef.current.onError?.(error)
-        })
-
-        socketInstance.on('connect_error', (error) => {
-            console.error('[useGameSocket] Connection error:', error)
-            setConnectionError(error.message)
-            optionsRef.current.onError?.({ ...error, code: 'CONNECTION_ERROR' })
-        })
-
-        // Room events
-        socketInstance.on('room:joined', ({ roomInfo: info, userProfile: profile }) => {
-            console.log('[useGameSocket] Joined room:', info.campaignTitle)
-            setIsInRoom(true)
-            setRoomInfo(info)
-            currentRoomIdRef.current = info.roomId
-        })
-
-        socketInstance.on('room:left', () => {
-            console.log('[useGameSocket] Left room')
-            setIsInRoom(false)
-            setRoomInfo(null)
-            currentRoomIdRef.current = null
-        })
-
-        socketInstance.on('room:player_joined', ({ userProfile: profile }) => {
-            console.log('[useGameSocket] Player joined:', profile.name)
-            eventCallbacksRef.current.onPlayerJoined?.(profile)
-
-            // Update room info
-            setRoomInfo((prev) => {
-                if (!prev) return prev
-                return {
-                    ...prev,
-                    connectedPlayers: [...prev.connectedPlayers, profile],
-                }
-            })
-        })
-
-        socketInstance.on('room:player_left', (data) => {
-            console.log('[useGameSocket] Player left:', data.userName)
-            eventCallbacksRef.current.onPlayerLeft?.(data)
-
-            // Update room info
-            setRoomInfo((prev) => {
-                if (!prev) return prev
-                return {
-                    ...prev,
-                    connectedPlayers: prev.connectedPlayers.filter((p) => p.id !== data.userId),
-                }
-            })
-        })
-
-        // Game events
-        socketInstance.on('game:action', (action) => {
-            eventCallbacksRef.current.onPlayerAction?.(action)
-        })
-
-        socketInstance.on('game:state_update', (state) => {
-            eventCallbacksRef.current.onGameStateUpdate?.(state)
-        })
-
-        // Chat events
-        socketInstance.on('chat:message', (message) => {
-            eventCallbacksRef.current.onChatMessage?.(message)
-        })
-
-        socketInstance.on('chat:typing', (data) => {
-            eventCallbacksRef.current.onTyping?.(data)
-        })
-
-        setSocket(socketInstance)
-
-        // Cleanup
         return () => {
-            if (currentRoomIdRef.current) {
-                socketInstance.emit('leave_room', { roomId: currentRoomIdRef.current })
+            clearTimeout(timer)
+            syncChannel.close()
+            setIsConnected(false)
+        }
+    }, [campaignId])
+
+    // --- Actions ---
+
+    // 1. Player/GM ส่ง Action (รวมถึง Custom Narration)
+    const sendPlayerAction = useCallback((actionData: any) => {
+        // จำลอง Network Delay
+        setTimeout(() => {
+            let narration = GM_RESPONSE_TEMPLATES.default
+            let diceResult = null
+
+            // Logic เลือกคำตอบ
+            if (actionData.actionType === 'dice_roll') {
+                // กรณีเป็นการทอยเต๋าตอบกลับจาก Player
+                const isSuccess = actionData.total >= (actionData.dc || 10) // เช็คกับค่า DC (ถ้าไม่มีให้เป็น 10)
+                const resultText = isSuccess ? "(Success!)" : "(Failed...)"
+
+                narration = `${actionData.actorName} rolled ${actionData.checkType}: ${actionData.total} ${resultText}`
+                diceResult = { total: actionData.total, detail: `1d20 (${actionData.roll}) + ${actionData.mod}` }
             }
-            socketInstance.disconnect()
-        }
-    }, [autoConnect, sessionToken]) // Removed generic onError/onReconnect dependencies
+            else if (actionData.actionType === 'custom') {
+                // กรณี GM พิมพ์เอง หรือ Player พิมพ์เอง
+                narration = actionData.description
+            }
+            else if (actionData.actionType === 'attack') {
+                narration = GM_RESPONSE_TEMPLATES.attack
+                diceResult = { total: 15, detail: "1d20 (12) + STR (3)" }
+            }
+            else if (actionData.actionType === 'magic') narration = GM_RESPONSE_TEMPLATES.magic
+            else if (actionData.actionType === 'heal') narration = GM_RESPONSE_TEMPLATES.heal
+            else if (actionData.actionType === 'move') narration = GM_RESPONSE_TEMPLATES.move
+            else if (actionData.actionType === 'talk') narration = GM_RESPONSE_TEMPLATES.talk
+            else if (actionData.actionType === 'inspect') narration = GM_RESPONSE_TEMPLATES.explore
 
-    // Auto-join room when roomId changes
-    useEffect(() => {
-        if (!socket || !isConnected || !roomId) return
-        if (!userProfile) {
-            console.warn('[useGameSocket] No userProfile provided for room join')
-            return
-        }
+            // สร้าง State ใหม่
+            const newState = { ...DEMO_GAME_STATE, currentScene: narration, recentEvents: [narration, ...DEMO_GAME_STATE.recentEvents] }
 
-        // Leave previous room if any
-        if (currentRoomIdRef.current && currentRoomIdRef.current !== roomId) {
-            socket.emit('leave_room', { roomId: currentRoomIdRef.current })
-        }
+            // สร้าง Chat Message
+            const newChatMessage = {
+                // ✅ แก้ไขตรงนี้: สร้าง ID แบบสุ่มเพื่อให้ไม่ซ้ำกันแม้กดรัวๆ
+                id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
 
-        // Join new room
-        socket.emit('join_room', { roomId, userProfile }, (response) => {
-            if (!response.success) {
-                console.error('[useGameSocket] Failed to join room:', response.error)
-                setConnectionError(response.error || 'Failed to join room')
+                content: narration,
+                type: actionData.actionType === 'custom' && actionData.actorName === 'Game Master' ? 'NARRATION' : 'ACTION',
+                senderName: actionData.actorName || 'GM',
+                createdAt: new Date().toISOString()
+            }
+
+            // Update หน้าตัวเอง (Local Update)
+            if (eventCallbacksRef.current.onGameStateUpdate) eventCallbacksRef.current.onGameStateUpdate(newState)
+            if (eventCallbacksRef.current.onChatMessage) eventCallbacksRef.current.onChatMessage(newChatMessage)
+            if (diceResult && eventCallbacksRef.current.onDiceResult) eventCallbacksRef.current.onDiceResult(diceResult)
+
+            // ส่งสัญญาณบอกเพื่อน (Broadcast Update)
+            const syncChannel = new BroadcastChannel('game_demo_channel')
+            syncChannel.postMessage({ type: 'SYNC_UPDATE', payload: { newState, chatMessage: newChatMessage, diceResult } })
+            syncChannel.close()
+        }, 500)
+        return Promise.resolve({ success: true })
+    }, [])
+
+    // 2. GM สั่งให้ทอยเต๋า (Request Roll with DC)
+    const requestRoll = useCallback((checkType: string, dc: number = 10) => {
+        console.log(`GM Requesting Roll: ${checkType} (DC: ${dc})`)
+        const syncChannel = new BroadcastChannel('game_demo_channel')
+        syncChannel.postMessage({
+            type: 'GM_REQUEST_ROLL',
+            payload: {
+                checkType,
+                dc, // ส่งค่า DC ไปด้วย
+                timestamp: Date.now()
             }
         })
-    }, [socket, isConnected, roomId, userProfile])
-
-    // Join room manually
-    const joinRoom = useCallback(
-        (targetRoomId: string): Promise<{ success: boolean; error?: string }> => {
-            return new Promise((resolve) => {
-                if (!socket || !isConnected) {
-                    resolve({ success: false, error: 'Not connected to server' })
-                    return
-                }
-
-                if (!userProfile) {
-                    resolve({ success: false, error: 'User profile required' })
-                    return
-                }
-
-                socket.emit('join_room', { roomId: targetRoomId, userProfile }, (response) => {
-                    resolve(response)
-                })
-            })
-        },
-        [socket, isConnected, userProfile]
-    )
-
-    // Leave room
-    const leaveRoom = useCallback(() => {
-        if (!socket || !currentRoomIdRef.current) return
-
-        socket.emit('leave_room', { roomId: currentRoomIdRef.current })
-        setIsInRoom(false)
-        setRoomInfo(null)
-        currentRoomIdRef.current = null
-    }, [socket])
-
-    // Send player action
-    const sendPlayerAction = useCallback(
-        (actionData: PlayerActionData): Promise<{ success: boolean; error?: string }> => {
-            return new Promise((resolve) => {
-                if (!socket || !currentRoomIdRef.current) {
-                    resolve({ success: false, error: 'Not in a room' })
-                    return
-                }
-
-                socket.emit(
-                    'player_action',
-                    { roomId: currentRoomIdRef.current, actionData },
-                    (response) => {
-                        resolve(response)
-                    }
-                )
-            })
-        },
-        [socket]
-    )
-
-    // Send GM update
-    const sendGMUpdate = useCallback(
-        (gameState: GameStateUpdate): Promise<{ success: boolean; error?: string }> => {
-            return new Promise((resolve) => {
-                if (!socket || !currentRoomIdRef.current) {
-                    resolve({ success: false, error: 'Not in a room' })
-                    return
-                }
-
-                socket.emit('gm_update', { roomId: currentRoomIdRef.current, gameState }, (response) => {
-                    resolve(response)
-                })
-            })
-        },
-        [socket]
-    )
-
-    // Send chat message
-    const sendChatMessage = useCallback(
-        (
-            content: string,
-            type: MessageType = MessageType.TALK
-        ): Promise<{ success: boolean; messageId?: string; error?: string }> => {
-            return new Promise((resolve) => {
-                if (!socket || !currentRoomIdRef.current) {
-                    resolve({ success: false, error: 'Not in a room' })
-                    return
-                }
-
-                socket.emit(
-                    'chat:send',
-                    { roomId: currentRoomIdRef.current, content, type },
-                    (response) => {
-                        resolve(response)
-                    }
-                )
-            })
-        },
-        [socket]
-    )
-
-    // Send typing indicator
-    const sendTypingIndicator = useCallback(
-        (isTyping: boolean) => {
-            if (!socket || !currentRoomIdRef.current) return
-
-            socket.emit('chat:typing', { roomId: currentRoomIdRef.current, isTyping })
-        },
-        [socket]
-    )
-
-    // Event listener setters
-    const onPlayerAction = useCallback((callback: (action: PlayerActionData) => void) => {
-        eventCallbacksRef.current.onPlayerAction = callback
+        syncChannel.close()
     }, [])
 
-    const onGameStateUpdate = useCallback((callback: (state: GameStateUpdate) => void) => {
-        eventCallbacksRef.current.onGameStateUpdate = callback
-    }, [])
-
-    const onChatMessage = useCallback((callback: (message: SocketChatMessage) => void) => {
-        eventCallbacksRef.current.onChatMessage = callback
-    }, [])
-
-    const onPlayerJoined = useCallback((callback: (profile: UserProfile) => void) => {
-        eventCallbacksRef.current.onPlayerJoined = callback
-    }, [])
-
-    const onPlayerLeft = useCallback(
-        (callback: (data: { userId: string; userName: string }) => void) => {
-            eventCallbacksRef.current.onPlayerLeft = callback
-        },
-        []
-    )
-
-    const onTyping = useCallback(
-        (callback: (data: { userId: string; userName: string; isTyping: boolean }) => void) => {
-            eventCallbacksRef.current.onTyping = callback
-        },
-        []
-    )
-
-    // Measure latency
-    const measureLatency = useCallback((): Promise<number> => {
-        return new Promise((resolve) => {
-            if (!socket) {
-                resolve(-1)
-                return
-            }
-
-            const startTime = Date.now()
-            socket.emit('ping', (serverTime) => {
-                const roundTripTime = Date.now() - startTime
-                setLatency(roundTripTime)
-                resolve(roundTripTime)
-            })
-        })
-    }, [socket])
-
-    // Reconnect
-    const reconnect = useCallback(() => {
-        if (socket) {
-            socket.connect()
-        }
-    }, [socket])
-
-    // Disconnect
-    const disconnect = useCallback(() => {
-        if (socket) {
-            if (currentRoomIdRef.current) {
-                socket.emit('leave_room', { roomId: currentRoomIdRef.current })
-            }
-            socket.disconnect()
-        }
-    }, [socket])
+    // Listeners setters
+    const onGameStateUpdate = useCallback((cb: any) => { eventCallbacksRef.current.onGameStateUpdate = cb; cb(DEMO_GAME_STATE) }, [])
+    const onPlayerAction = useCallback((cb: any) => { eventCallbacksRef.current.onPlayerAction = cb }, [])
+    const onChatMessage = useCallback((cb: any) => { eventCallbacksRef.current.onChatMessage = cb }, [])
+    const onPlayerJoined = useCallback((cb: any) => { eventCallbacksRef.current.onPlayerJoined = cb }, [])
+    const onPlayerLeft = useCallback((cb: any) => { eventCallbacksRef.current.onPlayerLeft = cb }, [])
+    const onDiceResult = useCallback((cb: any) => { eventCallbacksRef.current.onDiceResult = cb }, [])
+    const onRollRequested = useCallback((cb: any) => { eventCallbacksRef.current.onRollRequested = cb }, [])
 
     return {
-        socket,
+        socket: null,
         isConnected,
-        isInRoom,
-        roomInfo,
-        connectionError,
-        latency,
-        joinRoom,
-        leaveRoom,
+        isInRoom: true,
+        connectionError: null,
         sendPlayerAction,
-        sendGMUpdate,
-        sendChatMessage,
-        sendTypingIndicator,
-        onPlayerAction,
+        requestRoll,
         onGameStateUpdate,
+        onPlayerAction,
         onChatMessage,
         onPlayerJoined,
         onPlayerLeft,
-        onTyping,
-        measureLatency,
-        reconnect,
-        disconnect,
+        onDiceResult,
+        onRollRequested
     }
 }

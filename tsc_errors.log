@@ -1,0 +1,21 @@
+﻿app/api/marketplace/create/route.ts(50,17): error TS2322: Type '{ imageUrl: any; tags: any; }' is not assignable to type 'string'.
+app/api/marketplace/purchase/route.ts(45,21): error TS2353: Object literal may only specify known properties, and 'push' does not exist in type 'StringFieldUpdateOperationsInput'.
+app/campaign/[id]/board/page.tsx(132,36): error TS18048: 'action.damage' is possibly 'undefined'.
+app/campaign/[id]/board/page.tsx(149,56): error TS18048: 'action.damage' is possibly 'undefined'.
+app/campaign/[id]/board/page.tsx(151,44): error TS18048: 'action.damage' is possibly 'undefined'.
+app/campaign/[id]/board/page.tsx(153,50): error TS18048: 'action.damage' is possibly 'undefined'.
+app/campaign/[id]/board/page.tsx(155,54): error TS18048: 'action.damage' is possibly 'undefined'.
+components/board/GameLog.tsx(5,10): error TS2305: Module '"@prisma/client"' has no exported member 'MessageType'.
+components/board/PartyStatus.tsx(4,10): error TS2305: Module '"@prisma/client"' has no exported member 'UserRole'.
+components/GameRoom.tsx(35,35): error TS2345: Argument of type '{ userProfile: UserProfile; autoConnect: true; onError: (error: any) => void; onReconnect: () => void; }' is not assignable to parameter of type '{ sessionToken: string; userProfile?: UserProfile | undefined; autoConnect?: boolean | undefined; onError?: ((err: any) => void) | undefined; onReconnect?: (() => void) | undefined; }'.
+  Property 'sessionToken' is missing in type '{ userProfile: UserProfile; autoConnect: true; onError: (error: any) => void; onReconnect: () => void; }' but required in type '{ sessionToken: string; userProfile?: UserProfile | undefined; autoConnect?: boolean | undefined; onError?: ((err: any) => void) | undefined; onReconnect?: (() => void) | undefined; }'.
+lib/ai-game-master.ts(167,46): error TS2339: Property 'chat' does not exist on type 'Beta'.
+prisma/prisma.config.ts(1,10): error TS2305: Module '"@prisma/client"' has no exported member 'defineConfig'.
+scripts/debug-marketplace.ts(54,13): error TS2322: Type '{ title: string; description: string; type: "ART"; price: number; creatorId: string; isPublished: boolean; data: { imageUrl: string; tags: string[]; }; }' is not assignable to type '(Without<MarketplaceItemCreateInput, MarketplaceItemUncheckedCreateInput> & MarketplaceItemUncheckedCreateInput) | (Without<...> & MarketplaceItemCreateInput)'.
+  Type '{ title: string; description: string; type: "ART"; price: number; creatorId: string; isPublished: boolean; data: { imageUrl: string; tags: string[]; }; }' is not assignable to type 'Without<MarketplaceItemCreateInput, MarketplaceItemUncheckedCreateInput> & MarketplaceItemUncheckedCreateInput'.
+    Type '{ title: string; description: string; type: "ART"; price: number; creatorId: string; isPublished: boolean; data: { imageUrl: string; tags: string[]; }; }' is not assignable to type 'MarketplaceItemUncheckedCreateInput'.
+      Types of property 'data' are incompatible.
+        Type '{ imageUrl: string; tags: string[]; }' is not assignable to type 'string'.
+types/index.ts(1,67): error TS2305: Module '"@prisma/client"' has no exported member 'UserRole'.
+types/index.ts(1,77): error TS2305: Module '"@prisma/client"' has no exported member 'MessageType'.
+types/index.ts(1,90): error TS2305: Module '"@prisma/client"' has no exported member 'ItemType'.

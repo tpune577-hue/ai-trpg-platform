@@ -1,0 +1,9 @@
+🌱 Starting database seed...
+DATABASE_URL is missing from environment (checked via process.env)
+Checking UserRole...
+UserRole is defined
+❌ SEEDING FAILED:
+{
+  "name": "PrismaClientInitializationError",
+  "clientVersion": "5.22.0"
+}

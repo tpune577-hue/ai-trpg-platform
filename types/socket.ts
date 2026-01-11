@@ -1,10 +1,8 @@
-import { UserRole, MessageType } from '@prisma/client'
-
 // User profile for socket connections
 export interface UserProfile {
     id: string
     name: string
-    role: UserRole
+    role: 'GM' | 'PLAYER' | 'CREATOR'
     characterId?: string
     characterName?: string
 }
@@ -51,7 +49,7 @@ export interface GameStateUpdate {
 export interface SocketChatMessage {
     id: string
     content: string
-    type: MessageType
+    type: 'NARRATION' | 'TALK' | 'ACTION'
     senderId: string
     senderName: string
     timestamp: Date
@@ -84,6 +82,8 @@ export interface ServerToClientEvents {
     'game:action': (data: PlayerActionData) => void
     'game:state_update': (data: GameStateUpdate) => void
     'game:turn_change': (data: { currentTurn: string; turnOrder: string[] }) => void
+    'game:dice_result': (data: any) => void
+    'player:character_data': (data: any) => void
 
     // Chat events
     'chat:message': (message: SocketChatMessage) => void
@@ -100,15 +100,15 @@ export interface ServerToClientEvents {
 // Client to Server Events
 export interface ClientToServerEvents {
     // Room management
-    'join_room': (data: { roomId: string; userProfile: UserProfile }, callback?: (response: { success: boolean; error?: string }) => void) => void
+    'join_room': (data: { campaignId: string }, callback?: (response: { success: boolean; error?: string }) => void) => void
     'leave_room': (data: { roomId: string }) => void
 
     // Game actions
-    'player_action': (data: { roomId: string; actionData: PlayerActionData }, callback?: (response: { success: boolean; error?: string }) => void) => void
+    'player_action': (data: { campaignId: string; action: PlayerActionData }, callback?: (response: { success: boolean; error?: string }) => void) => void
     'gm_update': (data: { roomId: string; gameState: GameStateUpdate }, callback?: (response: { success: boolean; error?: string }) => void) => void
 
     // Chat
-    'chat:send': (data: { roomId: string; content: string; type: MessageType }, callback?: (response: { success: boolean; messageId?: string; error?: string }) => void) => void
+    'chat:send': (data: { roomId: string; content: string; type: 'NARRATION' | 'TALK' | 'ACTION' }, callback?: (response: { success: boolean; messageId?: string; error?: string }) => void) => void
     'chat:typing': (data: { roomId: string; isTyping: boolean }) => void
 
     // Ping for connection health
@@ -124,8 +124,10 @@ export interface InterServerEvents {
 export interface SocketData {
     userId: string
     userName: string
-    userRole: UserRole
+    userRole: string
     userEmail: string
     currentRoomId?: string
     characterId?: string
+    user?: any
+    campaignId?: string
 }

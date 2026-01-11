@@ -1,348 +1,183 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useParams } from 'next/navigation'
+import { useParams, useSearchParams } from 'next/navigation'
 import { useGameSocket } from '@/hooks/useGameSocket'
-import SceneDisplay from '@/components/board/SceneDisplay'
-import PartyStatus from '@/components/board/PartyStatus'
-import GameLog from '@/components/board/GameLog'
-import type { PlayerActionData, GameStateUpdate, SocketChatMessage, UserProfile } from '@/types/socket'
-
-// Mock data - replace with actual data from your API/database
-const MOCK_USER: UserProfile = {
-    id: 'gm-1',
-    name: 'Game Master',
-    role: 'GM' as any,
-}
-
-interface PlayerStatus {
-    profile: UserProfile
-    hp: number
-    maxHp: number
-    isActive: boolean
-    status?: 'healthy' | 'wounded' | 'critical' | 'unconscious'
-    level?: number
-    class?: string
-}
-
-interface GameLogEntry {
-    id: string
-    type: 'chat' | 'dice' | 'action' | 'system'
-    content: string
-    playerName?: string
-    timestamp: Date
-    data?: any
-}
+import { SceneDisplay } from '@/components/board/SceneDisplay'
+import { PartyStatus } from '@/components/board/PartyStatus'
+import { GameLog } from '@/components/board/GameLog'
 
 export default function CampaignBoardPage() {
     const params = useParams()
     const campaignId = params.id as string
 
-    // State
-    const [players, setPlayers] = useState<PlayerStatus[]>([])
-    const [gameLog, setGameLog] = useState<GameLogEntry[]>([])
-    const [currentScene, setCurrentScene] = useState({
-        name: 'The Misty Forest',
-        backgroundImage: 'https://images.unsplash.com/photo-1511497584788-876760111969?w=1920&q=80',
-        narration: 'As you venture deeper into the ancient forest, a thick mist begins to envelop your party. The trees loom overhead like silent sentinels, their gnarled branches reaching toward the darkening sky. In the distance, you hear the faint sound of running water and... something else. Something watching.',
-    })
+    const [gameState, setGameState] = useState<any>(null)
+    const [logs, setLogs] = useState<any[]>([])
+    const [players, setPlayers] = useState<any[]>([])
+    const [diceResult, setDiceResult] = useState<any>(null)
 
-    // Socket.io integration
+    // State สำหรับ GM Control
+    const [gmInput, setGmInput] = useState('')
+    const [targetDC, setTargetDC] = useState(15) // ค่า DC เริ่มต้น
+
     const {
-        isConnected,
-        isInRoom,
-        roomInfo,
-        connectionError,
-        latency,
-        sendGMUpdate,
-        onPlayerAction,
         onGameStateUpdate,
         onChatMessage,
         onPlayerJoined,
-        onPlayerLeft,
-    } = useGameSocket(campaignId, {
-        userProfile: MOCK_USER,
-        autoConnect: true,
-        onError: (error) => {
-            console.error('Socket error:', error)
-            addSystemLog(`Connection error: ${error.message}`)
-        },
-        onReconnect: () => {
-            console.log('Reconnected!')
-            addSystemLog('Reconnected to server')
-        },
-    })
+        onDiceResult,
+        requestRoll,
+        sendPlayerAction // ใช้ส่งข้อความจาก GM
+    } = useGameSocket(campaignId)
 
-    // Helper function to add system logs
-    const addSystemLog = (message: string) => {
-        setGameLog((prev) => [
-            ...prev,
-            {
-                id: `system-${Date.now()}`,
-                type: 'system',
-                content: message,
-                timestamp: new Date(),
-            },
-        ])
-    }
-
-    // Set up Socket.io event listeners
     useEffect(() => {
-        // Listen for player actions
-        onPlayerAction((action: PlayerActionData) => {
-            console.log('Player action received:', action)
-
-            // Add to game log
-            setGameLog((prev) => [
-                ...prev,
-                {
-                    id: `action-${Date.now()}`,
-                    type: 'action',
-                    content: action.description,
-                    playerName: action.actorName,
-                    timestamp: new Date(),
-                    data: {
-                        id: `msg-${Date.now()}`,
-                        content: action.description,
-                        type: 'ACTION',
-                        senderId: action.actorId,
-                        senderName: action.actorName,
-                        timestamp: new Date(),
-                    } as SocketChatMessage,
-                },
-            ])
-
-            // Simulate dice roll for attacks
-            if (action.actionType === 'attack' && action.damage) {
-                setGameLog((prev) => [
-                    ...prev,
-                    {
-                        id: `dice-${Date.now()}`,
-                        type: 'dice',
-                        content: `${action.actorName} rolled for attack`,
-                        playerName: action.actorName,
-                        timestamp: new Date(),
-                        data: {
-                            id: `roll-${Date.now()}`,
-                            playerName: action.actorName,
-                            roll: action.damage,
-                            sides: 20,
-                            modifier: 5,
-                            total: action.damage + 5,
-                            purpose: 'Attack Roll',
-                            timestamp: new Date(),
-                            isCritical: action.damage === 20,
-                            isFumble: action.damage === 1,
-                        },
-                    },
-                ])
-            }
-
-            // Update player HP if target exists
-            if (action.targetId && action.damage) {
-                setPlayers((prev) =>
-                    prev.map((p) =>
-                        p.profile.id === action.targetId
-                            ? {
-                                ...p,
-                                hp: Math.max(0, p.hp - action.damage),
-                                status:
-                                    p.hp - action.damage <= 0
-                                        ? 'unconscious'
-                                        : p.hp - action.damage < p.maxHp * 0.2
-                                            ? 'critical'
-                                            : p.hp - action.damage < p.maxHp * 0.5
-                                                ? 'wounded'
-                                                : 'healthy',
-                            }
-                            : p
-                    )
-                )
-            }
+        onGameStateUpdate((state) => setGameState(state))
+        onChatMessage((message) => setLogs((prev) => [...prev, message]))
+        onPlayerJoined((profile) => setPlayers((prev) => {
+            if (prev.find(p => p.id === profile.id)) return prev
+            return [...prev, profile]
+        }))
+        onDiceResult((result) => {
+            setDiceResult(result)
+            setTimeout(() => setDiceResult(null), 4000)
         })
+    }, [onGameStateUpdate, onChatMessage, onPlayerJoined, onDiceResult])
 
-        // Listen for game state updates
-        onGameStateUpdate((state: GameStateUpdate) => {
-            console.log('Game state updated:', state)
-
-            if (state.currentScene) {
-                setCurrentScene((prev) => ({
-                    ...prev,
-                    name: state.currentScene || prev.name,
-                }))
-            }
-
-            addSystemLog('Game state updated by GM')
+    // ฟังก์ชันส่งข้อความบรรยายจาก GM
+    const handleGmNarrate = () => {
+        if (!gmInput.trim()) return
+        // ใช้ช่องทางเดียวกับ Player Action แต่ส่งเป็น Custom Narrative
+        sendPlayerAction({
+            actionType: 'custom',
+            description: gmInput, // ส่งข้อความที่พิมพ์
+            actorName: 'Game Master'
         })
-
-        // Listen for chat messages
-        onChatMessage((message: SocketChatMessage) => {
-            console.log('Chat message received:', message)
-
-            setGameLog((prev) => [
-                ...prev,
-                {
-                    id: message.id,
-                    type: 'chat',
-                    content: message.content,
-                    playerName: message.senderName,
-                    timestamp: message.timestamp,
-                    data: message,
-                },
-            ])
-        })
-
-        // Listen for players joining
-        onPlayerJoined((profile: UserProfile) => {
-            console.log('Player joined:', profile)
-
-            // Add new player to party status
-            setPlayers((prev) => [
-                ...prev,
-                {
-                    profile,
-                    hp: 100,
-                    maxHp: 100,
-                    isActive: true,
-                    status: 'healthy',
-                    level: Math.floor(Math.random() * 10) + 1,
-                    class: ['Warrior', 'Mage', 'Rogue', 'Cleric'][Math.floor(Math.random() * 4)],
-                },
-            ])
-
-            addSystemLog(`${profile.name} joined the campaign`)
-        })
-
-        // Listen for players leaving
-        onPlayerLeft((data) => {
-            console.log('Player left:', data)
-
-            setPlayers((prev) =>
-                prev.map((p) =>
-                    p.profile.id === data.userId ? { ...p, isActive: false } : p
-                )
-            )
-
-            addSystemLog(`${data.userName} left the campaign`)
-        })
-    }, [onPlayerAction, onGameStateUpdate, onChatMessage, onPlayerJoined, onPlayerLeft])
-
-    // Initialize with mock players (replace with actual data)
-    useEffect(() => {
-        if (roomInfo?.connectedPlayers) {
-            const mockPlayers: PlayerStatus[] = roomInfo.connectedPlayers.map((player, index) => ({
-                profile: player,
-                hp: 80 - index * 10,
-                maxHp: 100,
-                isActive: true,
-                status: index === 0 ? 'healthy' : index === 1 ? 'wounded' : 'critical',
-                level: 5 + index,
-                class: ['Warrior', 'Mage', 'Rogue', 'Cleric'][index % 4],
-            }))
-            setPlayers(mockPlayers)
-        }
-    }, [roomInfo])
-
-    // Update scene narration (example GM action)
-    const updateNarration = (newNarration: string) => {
-        setCurrentScene((prev) => ({ ...prev, narration: newNarration }))
-
-        // Send to all players via Socket.io
-        sendGMUpdate({
-            currentScene: currentScene.name,
-            metadata: { narration: newNarration },
-        })
-    }
-
-    if (!isConnected) {
-        return (
-            <div className="h-screen w-screen bg-slate-900 flex items-center justify-center">
-                <div className="text-center">
-                    <div className="w-16 h-16 border-4 border-amber-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-                    <p className="text-amber-400 text-lg font-semibold">Connecting to server...</p>
-                </div>
-            </div>
-        )
-    }
-
-    if (connectionError) {
-        return (
-            <div className="h-screen w-screen bg-slate-900 flex items-center justify-center">
-                <div className="text-center max-w-md">
-                    <svg className="w-16 h-16 text-red-500 mx-auto mb-4" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                    </svg>
-                    <h2 className="text-red-400 text-xl font-bold mb-2">Connection Error</h2>
-                    <p className="text-gray-400 mb-4">{connectionError}</p>
-                    <button
-                        onClick={() => window.location.reload()}
-                        className="px-6 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-semibold transition-colors"
-                    >
-                        Retry
-                    </button>
-                </div>
-            </div>
-        )
+        setGmInput('')
     }
 
     return (
-        <div className="h-screen w-screen bg-slate-950 overflow-hidden flex flex-col">
-            {/* Top Status Bar */}
-            <div className="h-12 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 border-b border-amber-500/30 flex items-center justify-between px-6">
-                <div className="flex items-center gap-4">
-                    <h1 className="text-lg font-bold text-amber-400 tracking-wide">
-                        {roomInfo?.campaignTitle || 'Campaign Board'}
-                    </h1>
-                    <div className="h-4 w-px bg-amber-500/30" />
-                    <div className="flex items-center gap-2">
-                        <div className={`w-2 h-2 rounded-full ${isInRoom ? 'bg-emerald-500 animate-pulse' : 'bg-gray-500'}`} />
-                        <span className="text-sm text-gray-400">
-                            {isInRoom ? 'Connected' : 'Connecting...'}
-                        </span>
-                    </div>
-                </div>
+        <div className="flex h-screen bg-[#0f172a] text-slate-200 overflow-hidden font-sans">
 
-                <div className="flex items-center gap-6 text-sm text-gray-400">
+            {/* 🟢 TOP BAR: Header เหมือนในรูป */}
+            <div className="absolute top-0 w-full h-14 bg-slate-900/90 border-b border-slate-700 flex justify-between items-center px-6 z-50 backdrop-blur-md shadow-lg">
+                <div className="flex items-center gap-4">
+                    <h1 className="text-amber-500 font-bold tracking-widest text-lg uppercase glow-text">
+                        The Shadow's Veil Campaign
+                    </h1>
+                    <span className="flex items-center gap-2 text-xs text-green-400 bg-green-900/30 px-2 py-1 rounded-full border border-green-500/30">
+                        <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                        CONNECTED
+                    </span>
+                </div>
+                <div className="flex gap-6 text-xs font-mono text-slate-400">
                     <div className="flex items-center gap-2">
-                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
-                        </svg>
-                        <span>{players.filter(p => p.isActive).length} Players</span>
+                        <span className="text-slate-500">PLAYERS:</span>
+                        <span className="text-white">{players.length}/4</span>
                     </div>
-                    {latency > 0 && (
-                        <div className="flex items-center gap-2">
-                            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                                <path fillRule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clipRule="evenodd" />
-                            </svg>
-                            <span>{latency}ms</span>
-                        </div>
-                    )}
+                    <div className="flex items-center gap-2">
+                        <span className="text-slate-500">LATENCY:</span>
+                        <span className="text-green-400">35ms</span>
+                    </div>
                 </div>
             </div>
 
-            {/* Main Content */}
-            <div className="flex-1 flex overflow-hidden">
-                {/* Left: Scene Display + Game Log */}
-                <div className="flex-1 flex flex-col overflow-hidden">
-                    {/* Scene Display - 60% height */}
-                    <div className="h-[60%]">
+            {/* 🟡 MAIN CONTENT GRID */}
+            <div className="flex flex-1 pt-14 pb-24"> {/* pb-24 เว้นที่ให้ Control Panel ด้านล่าง */}
+
+                {/* LEFT: Scene & Log */}
+                <div className="flex-1 flex flex-col border-r border-slate-800">
+                    {/* Scene Area (60%) */}
+                    <div className="h-[60%] relative bg-black">
                         <SceneDisplay
-                            backgroundImage={currentScene.backgroundImage}
-                            narrationText={currentScene.narration}
-                            sceneName={currentScene.name}
+                            sceneDescription={gameState?.currentScene}
+                            imageUrl="/images/placeholder-dungeon.jpg" // หารูปสวยๆ มาใส่ได้ครับ
+                        />
+
+                        {/* Dice Overlay (เด้งกลางจอ) */}
+                        {diceResult && (
+                            <div className="absolute inset-0 flex items-center justify-center z-50 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+                                <div className="bg-slate-900 p-8 rounded-2xl border-2 border-amber-500 shadow-[0_0_50px_rgba(245,158,11,0.3)] text-center transform scale-110">
+                                    <div className="text-amber-500 text-sm font-bold uppercase tracking-wider mb-2">Result</div>
+                                    <div className="text-7xl font-bold text-white mb-2 drop-shadow-lg">{diceResult.total}</div>
+                                    <div className="text-slate-400 font-mono text-sm">{diceResult.detail}</div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Game Log (40%) */}
+                    <div className="flex-1 bg-slate-950 border-t border-slate-800 relative">
+                        <div className="absolute top-0 left-0 px-4 py-1 bg-slate-900 border-b border-r border-slate-800 text-xs font-bold text-amber-500 uppercase rounded-br-lg">
+                            Game Log
+                        </div>
+                        <div className="h-full pt-8 p-4">
+                            <GameLog logs={logs} />
+                        </div>
+                    </div>
+                </div>
+
+                {/* RIGHT: Party Status (Sidebar) */}
+                <div className="w-80 bg-slate-900 border-l border-slate-800 flex flex-col">
+                    <div className="p-4 border-b border-slate-800">
+                        <h2 className="text-amber-500 font-bold text-sm tracking-wider uppercase text-center">Party Status</h2>
+                    </div>
+                    <div className="p-4 space-y-4 overflow-y-auto custom-scrollbar">
+                        {players.map(p => (
+                            <PartyStatus key={p.id} characters={[p]} />
+                        ))}
+                        {players.length === 0 && (
+                            <div className="text-center text-slate-600 text-sm italic mt-10">Waiting for players...</div>
+                        )}
+                    </div>
+                </div>
+            </div>
+
+            {/* 🔴 BOTTOM CONTROL PANEL (พื้นที่ GM สั่งการ) */}
+            <div className="absolute bottom-0 w-full h-24 bg-slate-900 border-t border-amber-500/30 flex items-center px-6 gap-6 shadow-[0_-10px_40px_rgba(0,0,0,0.5)] z-40">
+
+                {/* 1. GM Input Area (พิมพ์เล่าเรื่อง) */}
+                <div className="flex-1 flex gap-2">
+                    <input
+                        type="text"
+                        value={gmInput}
+                        onChange={(e) => setGmInput(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && handleGmNarrate()}
+                        placeholder="Type narration or description..."
+                        className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 placeholder-slate-500"
+                    />
+                    <button
+                        onClick={handleGmNarrate}
+                        className="bg-slate-700 hover:bg-slate-600 text-slate-200 px-4 py-2 rounded-lg font-bold border border-slate-600 transition-colors"
+                    >
+                        Send
+                    </button>
+                </div>
+
+                {/* 2. Dice Request Panel (สั่งทอยเต๋า) */}
+                <div className="flex items-center gap-4 border-l border-slate-700 pl-6">
+                    <div className="flex flex-col">
+                        <label className="text-[10px] text-slate-500 font-bold uppercase mb-1">Difficulty (DC)</label>
+                        <input
+                            type="number"
+                            value={targetDC}
+                            onChange={(e) => setTargetDC(Number(e.target.value))}
+                            className="w-16 bg-slate-800 border border-slate-700 rounded px-2 py-1 text-center text-amber-500 font-bold focus:outline-none focus:border-amber-500"
                         />
                     </div>
 
-                    {/* Game Log - 40% height */}
-                    <div className="h-[40%]">
-                        <GameLog entries={gameLog} autoScroll={true} />
+                    <div className="flex gap-2">
+                        {['STR', 'DEX', 'INT', 'WIS', 'CHA'].map((stat) => (
+                            <button
+                                key={stat}
+                                onClick={() => requestRoll(`${stat} Check`, targetDC)}
+                                className="flex flex-col items-center justify-center w-12 h-12 bg-slate-800 border border-slate-600 hover:border-amber-500 hover:bg-slate-700 rounded-lg transition-all active:scale-95 group"
+                            >
+                                <span className="text-[10px] text-slate-400 group-hover:text-amber-500 font-bold">{stat}</span>
+                                <span className="text-xs">🎲</span>
+                            </button>
+                        ))}
                     </div>
                 </div>
 
-                {/* Right: Party Status Sidebar */}
-                <div className="w-80 flex-shrink-0">
-                    <PartyStatus players={players} gmProfile={MOCK_USER} />
-                </div>
             </div>
         </div>
     )

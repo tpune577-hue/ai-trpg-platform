@@ -47,10 +47,10 @@ export async function POST(request: NextRequest) {
                 price: Number(price), // Ensure price is a number/decimal
                 creatorId: creator.id,
                 isPublished: true,
-                data: {
+                data: JSON.stringify({
                     imageUrl,
                     tags: tags || [],
-                },
+                }),
             },
         })
 

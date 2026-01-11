@@ -1,79 +1,115 @@
-import Link from 'next/link';
 
-export default function Home() {
+import Link from 'next/link';
+import { prisma } from '@/lib/prisma';
+
+export default async function DemoDashboard() {
+  // Fetch data
+  const campaign = await prisma.campaign.findFirst({
+    where: { isActive: true },
+    include: { gm: true }
+  });
+
+  const demoUser = await prisma.user.findUnique({
+    where: { email: 'demo@ai-trpg.com' }
+  });
+
+  // Handle missing data (e.g., if seed wasn't run)
+  if (!campaign || !demoUser) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-200 flex flex-col items-center justify-center p-4">
+        <div className="bg-slate-900 border border-red-500/50 rounded-xl p-8 max-w-md text-center">
+          <h1 className="text-2xl font-bold text-red-500 mb-4">⚠️ Database Empty</h1>
+          <p className="mb-6 text-slate-400">
+            Could not find the Demo Campaign or User. Please run the seed script first.
+          </p>
+          <div className="bg-slate-800 p-4 rounded-lg font-mono text-sm text-left mb-6">
+            <p className="text-green-400">$ npx prisma db seed</p>
+          </div>
+          <button className="px-6 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg transition-colors"
+            onClick={() => window.location.reload()}>
+            Refresh Page
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-200 overflow-hidden relative">
-      {/* Background Ambience */}
-      <div className="absolute inset-0 z-0 overflow-hidden">
-        <div className="absolute top-0 left-1/4 w-96 h-96 bg-amber-500/10 rounded-full blur-[100px] animate-float" style={{ animationDuration: '15s' }}></div>
-        <div className="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-purple-600/10 rounded-full blur-[120px] animate-float" style={{ animationDelay: '5s', animationDuration: '20s' }}></div>
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-center p-6 relative overflow-hidden">
+
+      {/* Background Effects */}
+      <div className="absolute inset-0 z-0 pointer-events-none">
+        <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-indigo-600/10 rounded-full blur-[120px]" />
+        <div className="absolute bottom-[-20%] right-[-10%] w-[50%] h-[50%] bg-amber-600/10 rounded-full blur-[120px]" />
       </div>
 
-      <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col items-center justify-center min-h-screen text-center">
+      <div className="relative z-10 w-full max-w-4xl text-center">
 
-        {/* Hero Section */}
-        <div className="mb-12 animate-fade-in">
-          <div className="inline-block mb-4 px-4 py-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 text-amber-400 text-sm font-medium tracking-wide">
-            AI-POWERED TABLETOP RPG
-          </div>
-          <h1 className="text-5xl md:text-7xl font-bold tracking-tight mb-6 bg-gradient-to-r from-amber-200 via-yellow-100 to-amber-200 bg-clip-text text-transparent drop-shadow-sm">
-            Forged in Code,<br />Bound by Imagination.
+        {/* Header */}
+        <div className="mb-12">
+          <span className="inline-block px-4 py-1.5 rounded-full bg-slate-800/50 border border-slate-700 text-slate-400 text-xs font-bold tracking-wider mb-4">
+            DEVELOPER PREVIEW
+          </span>
+          <h1 className="text-5xl md:text-6xl font-black tracking-tight mb-4 text-transparent bg-clip-text bg-gradient-to-br from-white to-slate-500">
+            Demo Dashboard
           </h1>
-          <p className="text-xl text-slate-400 max-w-2xl mx-auto mb-10 leading-relaxed">
-            Experience the next evolution of TTRPGs. An intelligent Game Master, immersive real-time visuals, and a marketplace of endless possibilities.
+          <p className="text-xl text-slate-400">
+            Test the AI-TRPG Platform capabilities
           </p>
+        </div>
 
-          <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
-            <Link href="/marketplace"
-              className="px-8 py-4 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-bold transition-all shadow-[0_0_20px_rgba(245,158,11,0.3)] hover:shadow-[0_0_30px_rgba(245,158,11,0.5)] transform hover:-translate-y-1">
-              Explore Marketplace
-            </Link>
-            <Link href="/play/demo"
-              className="px-8 py-4 rounded-lg border border-slate-700 hover:border-slate-500 bg-slate-900/50 hover:bg-slate-800 text-slate-300 font-medium transition-all backdrop-blur-sm">
-              Join Demo Session
-            </Link>
+        {/* Campaign Info */}
+        <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-6 mb-12 backdrop-blur-sm max-w-2xl mx-auto">
+          <h2 className="text-sm uppercase tracking-widest text-slate-500 mb-2 font-bold">Active Campaign</h2>
+          <div className="text-3xl font-bold text-amber-500 mb-2">{campaign.title}</div>
+          <div className="flex items-center justify-center gap-4 text-sm text-slate-400">
+            <span className="flex items-center gap-1">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"></path></svg>
+              Code: <span className="font-mono text-white bg-slate-800 px-2 py-0.5 rounded ml-1">{campaign.inviteCode}</span>
+            </span>
+            <span className="w-1 h-1 bg-slate-700 rounded-full"></span>
+            <span>GM: {campaign.gm.name}</span>
           </div>
         </div>
 
-        {/* Feature Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full max-w-5xl mt-8 animate-slide-up" style={{ animationDelay: '0.2s' }}>
-          {/* Card 1 */}
-          <div className="p-6 rounded-xl border border-slate-800 bg-slate-900/40 backdrop-blur-md hover:border-amber-500/50 transition-colors group text-left">
-            <div className="w-12 h-12 mb-4 rounded-lg bg-indigo-500/20 flex items-center justify-center border border-indigo-500/30 group-hover:bg-indigo-500/30 transition-colors">
-              <span className="text-2xl">🤖</span>
-            </div>
-            <h3 className="text-xl font-bold text-slate-100 mb-2">AI Game Master</h3>
-            <p className="text-slate-400 text-sm">
-              An intelligent GM that adapts to your actions, narrates combat, and manages rules in real-time.
-            </p>
-          </div>
+        {/* Action Buttons */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-3xl mx-auto">
 
-          {/* Card 2 */}
-          <div className="p-6 rounded-xl border border-slate-800 bg-slate-900/40 backdrop-blur-md hover:border-amber-500/50 transition-colors group text-left">
-            <div className="w-12 h-12 mb-4 rounded-lg bg-emerald-500/20 flex items-center justify-center border border-emerald-500/30 group-hover:bg-emerald-500/30 transition-colors">
-              <span className="text-2xl">⚔️</span>
+          {/* GM View */}
+          <Link
+            href={`/campaign/${campaign.id}/board`}
+            className="group relative flex flex-col items-center justify-center p-8 h-64 bg-gradient-to-br from-slate-900 to-slate-900 hover:from-indigo-900/40 hover:to-slate-900 border border-slate-800 hover:border-indigo-500/50 rounded-2xl transition-all duration-300 shadow-lg hover:shadow-indigo-500/20"
+          >
+            <div className="w-16 h-16 bg-indigo-500/20 rounded-xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-300">
+              <span className="text-3xl">🖥️</span>
             </div>
-            <h3 className="text-xl font-bold text-slate-100 mb-2">Immersive Combat</h3>
-            <p className="text-slate-400 text-sm">
-              Visual battlemaps, automated turn tracking, and dynamic dice rolls with D&D 5e mechanics.
+            <h3 className="text-2xl font-bold text-white mb-2">Game Master Board</h3>
+            <p className="text-slate-400 group-hover:text-indigo-200 transition-colors">
+              Manage the game state, visual board, and AI narration.
             </p>
-          </div>
+          </Link>
 
-          {/* Card 3 */}
-          <div className="p-6 rounded-xl border border-slate-800 bg-slate-900/40 backdrop-blur-md hover:border-amber-500/50 transition-colors group text-left">
-            <div className="w-12 h-12 mb-4 rounded-lg bg-rose-500/20 flex items-center justify-center border border-rose-500/30 group-hover:bg-rose-500/30 transition-colors">
-              <span className="text-2xl">💎</span>
+          {/* Player View */}
+          <Link
+            href={`/play/${campaign.id}`}
+            className="group relative flex flex-col items-center justify-center p-8 h-64 bg-gradient-to-br from-slate-900 to-slate-900 hover:from-amber-900/40 hover:to-slate-900 border border-slate-800 hover:border-amber-500/50 rounded-2xl transition-all duration-300 shadow-lg hover:shadow-amber-500/20"
+          >
+            <div className="w-16 h-16 bg-amber-500/20 rounded-xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-300">
+              <span className="text-3xl">📱</span>
             </div>
-            <h3 className="text-xl font-bold text-slate-100 mb-2">Creator Economy</h3>
-            <p className="text-slate-400 text-sm">
-              Buy and sell unique character portraits, campaign modules, and map assets in the marketplace.
+            <h3 className="text-2xl font-bold text-white mb-2">Player Controller</h3>
+            <p className="text-slate-400 group-hover:text-amber-200 transition-colors">
+              Join as <span className="text-amber-400 font-semibold">{demoUser.name}</span> to roll dice and act.
             </p>
-          </div>
+          </Link>
         </div>
 
-        <footer className="mt-20 text-slate-600 text-sm">
-          © 2024 AI-TRPG Platform. Built with Next.js & OpenAI.
-        </footer>
+        {/* Footer / Debug */}
+        <div className="mt-12 text-slate-600 text-sm">
+          <p>Debug: Logged in as {demoUser.email} (ID: {demoUser.id.substring(0, 8)}...)</p>
+          <p className="mt-2 text-xs opacity-50">Local Dev Environment v0.1.0</p>
+        </div>
+
       </div>
     </div>
   );

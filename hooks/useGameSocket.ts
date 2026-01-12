@@ -1,189 +1,228 @@
 'use client'
 
 import { useEffect, useState, useRef, useCallback } from 'react'
-import Pusher from 'pusher-js'
-import { DEMO_GAME_STATE, GM_RESPONSE_TEMPLATES } from '@/lib/demo-data'
+import { io, Socket } from 'socket.io-client'
+import { ClientToServerEvents, ServerToClientEvents, PlayerActionData, GameStateUpdate, UserProfile, SocketChatMessage } from '@/types/socket'
 
-export const useGameSocket = (campaignId: string | null) => {
+// Default empty state to prevent null errors
+const DEFAULT_GAME_STATE: GameStateUpdate = {
+    currentScene: 'Waiting for GM...',
+    activeCharacters: [],
+    turnOrder: []
+}
+
+interface UseGameSocketOptions {
+    sessionToken?: string
+    userProfile?: any
+    autoConnect?: boolean
+    onError?: (error: any) => void
+    onReconnect?: () => void
+}
+
+export const useGameSocket = (campaignId: string | null, options: UseGameSocketOptions = {}) => {
+    const [socket, setSocket] = useState<Socket<ServerToClientEvents, ClientToServerEvents> | null>(null)
     const [isConnected, setIsConnected] = useState(false)
+    const [isInRoom, setIsInRoom] = useState(false)
+    const [latency, setLatency] = useState(0)
+    const [connectionError, setConnectionError] = useState<string | null>(null)
+    const [roomInfo, setRoomInfo] = useState<any>(null)
 
-    // State กลาง (เก็บไว้ที่ Client แต่ Sync ผ่าน Pusher Event)
-    const currentGameStateRef = useRef<any>({
-        ...DEMO_GAME_STATE,
-        sceneImageUrl: 'https://img.freepik.com/premium-photo/majestic-misty-redwood-forest-with-lush-green-ferns-sunlight-filtering-through-fog_996993-7424.jpg',
-        activeNpcs: []
+    // Event refs
+    const eventCallbacksRef = useRef({
+        onPlayerAction: (action: PlayerActionData) => { },
+        onGameStateUpdate: (state: GameStateUpdate) => { },
+        onChatMessage: (message: SocketChatMessage) => { },
+        onPlayerJoined: (profile: UserProfile) => { },
+        onPlayerLeft: (data: { userId: string, userName: string }) => { },
+        onTyping: (data: { userId: string, userName: string, isTyping: boolean }) => { },
+        onDiceResult: (result: any) => { },
+        onPrivateSceneUpdate: (data: { sceneId: string | null }) => { },
+        onWhisperReceived: (data: { sender: string, message: string }) => { },
+        // ✅ 1. ADD THIS: เพิ่ม Callback Ref สำหรับ Roll Request
+        onRollRequested: (request: { checkType: string, dc: number }) => { }
     })
 
-    const eventCallbacksRef = useRef<{
-        onPlayerAction?: (action: any) => void
-        onGameStateUpdate?: (state: any) => void
-        onChatMessage?: (message: any) => void
-        onPlayerJoined?: (profile: any) => void
-        onDiceResult?: (result: any) => void
-        onRollRequested?: (request: any) => void
-    }>({})
-
     useEffect(() => {
-        if (!campaignId) return
+        if (!campaignId || !options.sessionToken) return
 
-        // 1. Setup Pusher Connection
-        const pusher = new Pusher(process.env.NEXT_PUBLIC_PUSHER_KEY!, {
-            cluster: process.env.NEXT_PUBLIC_PUSHER_CLUSTER!,
+        const socketInstance = io({
+            auth: {
+                sessionToken: options.sessionToken,
+                campaignId: campaignId
+            },
+            autoConnect: options.autoConnect ?? true
         })
 
-        const channelName = `campaign-${campaignId}`
-        const channel = pusher.subscribe(channelName)
+        socketInstance.on('connect', () => {
+            console.log('🔌 Socket Connected:', socketInstance.id)
+            setIsConnected(true)
+            setConnectionError(null)
 
-        console.log(`🔌 Connected to Pusher Channel: ${channelName}`)
-        setIsConnected(true)
-
-        // 2. Listen for Events
-        channel.bind('game-event', (data: any) => {
-            // เมื่อได้รับ Event จาก Pusher ให้มาประมวลผลที่นี่ (เหมือนตอนรับจาก BroadcastChannel)
-            handleIncomingEvent(data)
+            socketInstance.emit('join_room', { campaignId }, (response) => {
+                if (response?.success) {
+                    setIsInRoom(true)
+                } else if (response?.error) {
+                    setConnectionError(response.error)
+                }
+            })
         })
 
-        // Initial Load
-        const timer = setTimeout(() => {
-            if (eventCallbacksRef.current.onGameStateUpdate) {
-                eventCallbacksRef.current.onGameStateUpdate(currentGameStateRef.current)
-            }
-        }, 500)
+        socketInstance.on('disconnect', () => {
+            console.log('🔌 Socket Disconnected')
+            setIsConnected(false)
+            setIsInRoom(false)
+        })
+
+        socketInstance.on('connect_error', (err) => {
+            console.error('Socket Connection Error:', err)
+            setConnectionError(err.message)
+            options.onError?.(err)
+        })
+
+        // Event Listeners
+        socketInstance.on('game:action', (data) => eventCallbacksRef.current.onPlayerAction(data))
+        socketInstance.on('game:state_update', (data) => eventCallbacksRef.current.onGameStateUpdate(data))
+        socketInstance.on('game:scene_update', (data) => {
+            eventCallbacksRef.current.onGameStateUpdate({ currentScene: data.sceneId } as any)
+        })
+        socketInstance.on('chat:message', (data) => eventCallbacksRef.current.onChatMessage(data))
+        socketInstance.on('room:player_joined', (data) => eventCallbacksRef.current.onPlayerJoined(data.userProfile))
+        socketInstance.on('room:player_left', (data) => eventCallbacksRef.current.onPlayerLeft(data))
+        socketInstance.on('chat:typing', (data) => eventCallbacksRef.current.onTyping(data))
+        socketInstance.on('game:dice_result', (data) => eventCallbacksRef.current.onDiceResult(data))
+
+        // Private events
+        socketInstance.on('player:private_scene_update', (data) => eventCallbacksRef.current.onPrivateSceneUpdate(data))
+        socketInstance.on('player:whisper_received', (data) => eventCallbacksRef.current.onWhisperReceived(data))
+
+        // ✅ 2. ADD THIS: Listener รับ Event คำสั่ง Roll จาก Server
+        // (ชื่อ event ต้องตรงกับที่ Server emit มานะครับ ถ้า Server ส่งเป็น game:action ต้องไปดักใน onPlayerAction แทน)
+        socketInstance.on('game:roll_request', (data) => eventCallbacksRef.current.onRollRequested(data))
+
+        socketInstance.on('room:joined', (data) => {
+            setRoomInfo(data.roomInfo)
+        })
+
+        setSocket(socketInstance)
 
         return () => {
-            channel.unbind_all()
-            channel.unsubscribe()
-            pusher.disconnect()
-            setIsConnected(false)
+            socketInstance.disconnect()
         }
-    }, [campaignId])
+    }, [campaignId, options.sessionToken])
 
-    // --- Logic การประมวลผลข้อมูล (ย้ายมาจาก sendPlayerAction เดิม) ---
-    const handleIncomingEvent = (actionData: any) => {
+    // --- Actions ---
+    // ... (ส่วน Actions คงเดิม) ...
 
-        // ถ้าเป็น Event ประเภทอื่นที่ไม่เกี่ยวกับ State เกม (เช่น Request Roll)
-        if (actionData.type === 'GM_REQUEST_ROLL') { // แก้ key นิดหน่อยเพื่อให้รองรับข้อมูลดิบ
-            if (eventCallbacksRef.current.onRollRequested) eventCallbacksRef.current.onRollRequested(actionData.payload)
-            return
-        }
-
-        // ถ้าเป็น Player Action (เช่น Join Game) ส่งให้ Callback ฝั่ง Board ดู
-        if (eventCallbacksRef.current.onPlayerAction && actionData.actionType === 'JOIN_GAME') {
-            eventCallbacksRef.current.onPlayerAction(actionData)
-        }
-
-        // --- Logic อัปเดต State (เหมือนเดิมเป๊ะ) ---
-        let narration = null
-        let diceResult = null
-        let baseText = ""
-
-        let newState = { ...currentGameStateRef.current }
-
-        if (actionData.actionType === 'GM_UPDATE_SCENE') {
-            if (actionData.payload.sceneImageUrl) newState.sceneImageUrl = actionData.payload.sceneImageUrl
-            if (actionData.payload.activeNpcs) newState.activeNpcs = actionData.payload.activeNpcs
-        }
-        else if (actionData.actionType === 'JOIN_GAME') {
-            baseText = "has joined the adventure."
-        }
-        else if (actionData.actionType === 'dice_roll') {
-            const isSuccess = actionData.total >= (actionData.dc || 10)
-            const resultText = isSuccess ? "(Success!)" : "(Failed...)"
-            baseText = `rolled ${actionData.checkType}: ${actionData.total} ${resultText}`
-            diceResult = { total: actionData.total, detail: `1d20 (${actionData.roll}) + ${actionData.mod}` }
-        }
-        else if (actionData.actionType === 'custom') {
-            baseText = actionData.description
-        }
-        else if (actionData.actionType === 'attack') baseText = "prepares to attack!"
-        else if (actionData.actionType === 'move') baseText = "is moving to a new position."
-        else if (actionData.actionType === 'talk') baseText = "tries to talk to someone."
-        else if (actionData.actionType === 'inspect') baseText = "is looking around carefully."
-
-        // ประกอบร่าง "Name : Action"
-        if (baseText) {
-            if (actionData.actorName && actionData.actorName !== 'Game Master') {
-                if (actionData.actionType === 'custom') {
-                    narration = `${actionData.actorName} : ${baseText}`
-                } else {
-                    narration = `${actionData.actorName} : ${baseText}`
-                }
-            } else {
-                narration = baseText
+    const sendPlayerAction = useCallback((action: PlayerActionData) => {
+        return new Promise<{ success: boolean; error?: string }>((resolve) => {
+            if (!socket || !campaignId) {
+                resolve({ success: false, error: 'Not connected' })
+                return
             }
-        }
-
-        let newChatMessage = null
-        if (narration) {
-            newChatMessage = {
-                id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-                content: narration,
-                type: actionData.actionType === 'custom' && actionData.actorName === 'Game Master' ? 'NARRATION' : 'ACTION',
-                senderName: actionData.actorName || 'GM',
-                createdAt: new Date().toISOString()
-            }
-
-            if (actionData.actionType !== 'JOIN_GAME' && actionData.actionType !== 'dice_roll') {
-                newState.currentScene = narration
-            }
-            newState.recentEvents = [narration, ...newState.recentEvents]
-        }
-
-        // Update Ref & Trigger Callbacks
-        currentGameStateRef.current = newState
-
-        if (eventCallbacksRef.current.onGameStateUpdate) eventCallbacksRef.current.onGameStateUpdate(newState)
-        if (newChatMessage && eventCallbacksRef.current.onChatMessage) eventCallbacksRef.current.onChatMessage(newChatMessage)
-        if (diceResult && eventCallbacksRef.current.onDiceResult) eventCallbacksRef.current.onDiceResult(diceResult)
-    }
-
-    // --- Actions (เปลี่ยนจาก Broadcast เป็นยิง API) ---
-
-    const sendPlayerAction = useCallback(async (actionData: any) => {
-        // ยิงไปที่ API Route ของเรา
-        try {
-            const res = await fetch('/api/game/pusher', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    action: actionData,
-                    campaignId: campaignId
-                })
-            })
-            if (!res.ok) {
-                const err = await res.json()
-                console.error('❌ Pusher API Error:', err)
-            }
-        } catch (error) {
-            console.error('❌ Network Error sending action:', error)
-        }
-        // หมายเหตุ: เราไม่ต้อง handleIncomingEvent() ที่นี่ เพราะเดี๋ยว Pusher จะส่ง Event กลับมาหาเราเอง (Round-trip)
-        // ทำให้ State ของทุกคน Sync ตรงกัน 100%
-    }, [campaignId])
-
-    const requestRoll = useCallback(async (checkType: string, dc: number = 10) => {
-        // ส่ง payload พิเศษสำหรับ Roll Request
-        const payload = {
-            type: 'GM_REQUEST_ROLL',
-            payload: { checkType, dc, timestamp: Date.now() }
-        }
-
-        await fetch('/api/game/pusher', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                action: payload,
-                campaignId: campaignId
-            })
+            socket.emit('player_action', { campaignId, action }, (res) => resolve(res || { success: true }))
         })
-    }, [campaignId])
+    }, [socket, campaignId])
 
-    const onGameStateUpdate = useCallback((cb: any) => { eventCallbacksRef.current.onGameStateUpdate = cb }, [])
-    const onPlayerAction = useCallback((cb: any) => { eventCallbacksRef.current.onPlayerAction = cb }, [])
-    const onChatMessage = useCallback((cb: any) => { eventCallbacksRef.current.onChatMessage = cb }, [])
-    const onPlayerJoined = useCallback((cb: any) => { eventCallbacksRef.current.onPlayerJoined = cb }, [])
-    const onDiceResult = useCallback((cb: any) => { eventCallbacksRef.current.onDiceResult = cb }, [])
-    const onRollRequested = useCallback((cb: any) => { eventCallbacksRef.current.onRollRequested = cb }, [])
+    const sendChatMessage = useCallback((content: string, type: 'TALK' | 'NARRATION' | 'ACTION' = 'TALK') => {
+        return new Promise<{ success: boolean; error?: string }>((resolve) => {
+            if (!socket || !campaignId) {
+                resolve({ success: false, error: 'Not connected' })
+                return
+            }
+            socket.emit('chat:send', { roomId: campaignId, content, type }, (res) => resolve(res || { success: true }))
+        })
+    }, [socket, campaignId])
 
-    return { isConnected, sendPlayerAction, requestRoll, onGameStateUpdate, onPlayerAction, onChatMessage, onPlayerJoined, onDiceResult, onRollRequested }
+    const sendGMUpdate = useCallback((gameState: GameStateUpdate) => {
+        return new Promise<{ success: boolean; error?: string }>((resolve) => {
+            if (!socket || !campaignId) {
+                resolve({ success: false, error: 'Not connected' })
+                return
+            }
+            socket.emit('gm_update', { roomId: campaignId, gameState }, (res) => resolve(res || { success: true }))
+        })
+    }, [socket, campaignId])
+
+    const setPrivateScene = useCallback((playerId: string, sceneId: string | null) => {
+        if (!socket) return
+        socket.emit('gm:set_private_scene', { playerId, sceneId })
+    }, [socket])
+
+    const sendWhisper = useCallback((targetPlayerId: string, message: string) => {
+        if (!socket) return
+        socket.emit('gm:whisper', { targetPlayerId, message })
+    }, [socket])
+
+    const setGlobalScene = useCallback((sceneId: string) => {
+        if (!socket || !campaignId) return
+        socket.emit('gm:set_global_scene', { campaignId, sceneId })
+    }, [socket, campaignId])
+
+    const measureLatency = useCallback(() => {
+        if (!socket) return
+        const start = Date.now()
+        socket.emit('ping', () => {
+            setLatency(Date.now() - start)
+        })
+    }, [socket])
+
+    const sendTypingIndicator = useCallback((isTyping: boolean) => {
+        if (!socket || !campaignId) return
+        socket.emit('chat:typing', { roomId: campaignId, isTyping })
+    }, [socket, campaignId])
+
+    // Callback Setters
+    const onPlayerAction = useCallback((cb: (action: PlayerActionData) => void) => { eventCallbacksRef.current.onPlayerAction = cb }, [])
+    const onGameStateUpdate = useCallback((cb: (state: GameStateUpdate) => void) => { eventCallbacksRef.current.onGameStateUpdate = cb }, [])
+    const onChatMessage = useCallback((cb: (msg: SocketChatMessage) => void) => { eventCallbacksRef.current.onChatMessage = cb }, [])
+    const onPlayerJoined = useCallback((cb: (profile: UserProfile) => void) => { eventCallbacksRef.current.onPlayerJoined = cb }, [])
+    const onPlayerLeft = useCallback((cb: (data: { userId: string, userName: string }) => void) => { eventCallbacksRef.current.onPlayerLeft = cb }, [])
+    const onTyping = useCallback((cb: (data: { userId: string, userName: string, isTyping: boolean }) => void) => { eventCallbacksRef.current.onTyping = cb }, [])
+    const onDiceResult = useCallback((cb: (result: any) => void) => { eventCallbacksRef.current.onDiceResult = cb }, [])
+    const onPrivateSceneUpdate = useCallback((cb: (data: { sceneId: string | null }) => void) => { eventCallbacksRef.current.onPrivateSceneUpdate = cb }, [])
+    const onWhisperReceived = useCallback((cb: (data: { sender: string, message: string }) => void) => { eventCallbacksRef.current.onWhisperReceived = cb }, [])
+
+    // ✅ 3. ADD THIS: Setter function สำหรับ onRollRequested
+    const onRollRequested = useCallback((cb: (request: { checkType: string, dc: number }) => void) => {
+        eventCallbacksRef.current.onRollRequested = cb
+    }, [])
+
+    // Compatibility shim
+    const requestRoll = useCallback(async (checkType: string, dc: number = 10) => {
+        sendPlayerAction({
+            actionType: 'custom',
+            actorId: 'gm',
+            actorName: 'Game Master',
+            description: `Requested ${checkType} Check (DC ${dc})`,
+            metadata: { type: 'REQUEST_ROLL', checkType, dc }
+        } as any)
+    }, [sendPlayerAction])
+
+    return {
+        socket,
+        isConnected,
+        isInRoom,
+        roomInfo,
+        latency,
+        connectionError,
+        sendPlayerAction,
+        sendChatMessage,
+        sendGMUpdate,
+        sendTypingIndicator,
+        setPrivateScene,
+        sendWhisper,
+        setGlobalScene,
+        measureLatency,
+        onPlayerAction,
+        onGameStateUpdate,
+        onChatMessage,
+        onPlayerJoined,
+        onPlayerLeft,
+        onTyping,
+        onDiceResult,
+        onPrivateSceneUpdate,
+        onWhisperReceived,
+        requestRoll,
+        onRollRequested // ✅ 4. ADD THIS: อย่าลืม return ออกไป
+    }
 }

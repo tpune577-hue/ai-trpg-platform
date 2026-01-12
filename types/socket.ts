@@ -78,8 +78,13 @@ export interface ServerToClientEvents {
     'room:player_joined': (data: { userProfile: UserProfile }) => void
     'room:player_left': (data: { userId: string; userName: string }) => void
 
+    // Private View & Whisper
+    'player:private_scene_update': (data: { sceneId: string | null }) => void
+    'player:whisper_received': (data: { sender: string; message: string }) => void
+
     // Game events
     'game:action': (data: PlayerActionData) => void
+    'game:scene_update': (data: { sceneId: string }) => void
     'game:state_update': (data: GameStateUpdate) => void
     'game:turn_change': (data: { currentTurn: string; turnOrder: string[] }) => void
     'game:dice_result': (data: any) => void
@@ -110,6 +115,11 @@ export interface ClientToServerEvents {
     // Chat
     'chat:send': (data: { roomId: string; content: string; type: 'NARRATION' | 'TALK' | 'ACTION' }, callback?: (response: { success: boolean; messageId?: string; error?: string }) => void) => void
     'chat:typing': (data: { roomId: string; isTyping: boolean }) => void
+
+    // GM Controls
+    'gm:set_private_scene': (data: { playerId: string; sceneId: string | null }) => void
+    'gm:whisper': (data: { targetPlayerId: string; message: string }) => void
+    'gm:set_global_scene': (data: { campaignId: string; sceneId: string }) => void
 
     // Ping for connection health
     'ping': (callback: (latency: number) => void) => void

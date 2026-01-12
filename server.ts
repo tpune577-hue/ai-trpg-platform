@@ -95,6 +95,31 @@ app.prepare().then(() => {
                             socket.emit('player:character_data', charData)
                         }
                     }
+
+                    // --- NEW API: Room Presence ---
+                    const sockets = await io.in(campaignId).fetchSockets()
+                    const connectedPlayers = sockets.map(s => ({
+                        id: s.data.user.id,
+                        name: s.data.user.name,
+                        role: s.data.user.role,
+                        characterId: s.data.user.characterId // ถ้ามี
+                    }))
+
+                    // 1. Tell Me: Room Info
+                    socket.emit('room:joined', {
+                        roomInfo: {
+                            roomId: campaignId,
+                            campaignTitle: campaign.title,
+                            connectedPlayers: connectedPlayers,
+                            gmId: campaign.gmId
+                        },
+                        userProfile: socket.data.user
+                    })
+
+                    // 2. Tell Others: I joined
+                    socket.to(campaignId).emit('room:player_joined', {
+                        userProfile: socket.data.user
+                    })
                 }
             } catch (e) {
                 console.error("Error fetching campaign:", e)
@@ -116,8 +141,144 @@ app.prepare().then(() => {
             await processActionWithAI(io, campaignId, action, socket.data.user)
         })
 
+        // --- GM Controls ---
+
+        // 1. GM: Set Private Scene
+        socket.on('gm:set_private_scene', async (data) => {
+            const { playerId, sceneId } = data
+            const campaignId = socket.data.campaignId
+
+            // Auth Check: ควรเช็คว่าเป็น GM ของ Campaign นี้จริงๆ
+            if (socket.data.user.role !== 'GM' && socket.data.user.role !== 'CREATOR') return
+
+            console.log(`🔒 Setting private scene for ${playerId} to ${sceneId}`)
+
+            try {
+                // Update DB
+                await prisma.campaignPlayer.update({
+                    where: {
+                        campaignId_playerId: {
+                            campaignId: campaignId,
+                            playerId: playerId
+                        }
+                    },
+                    data: {
+                        currentPrivateSceneId: sceneId
+                    }
+                })
+
+                // Notify Target Player
+                const sockets = await io.in(campaignId).fetchSockets()
+                const targetSocket = sockets.find(s => s.data.user.id === playerId)
+                if (targetSocket) {
+                    targetSocket.emit('player:private_scene_update', { sceneId })
+                }
+
+            } catch (e) {
+                console.error("Error setting private scene:", e)
+            }
+        })
+
+        // 2. GM: Whisper
+        socket.on('gm:whisper', async (data) => {
+            const { targetPlayerId, message } = data
+            const campaignId = socket.data.campaignId
+
+            if (socket.data.user.role !== 'GM' && socket.data.user.role !== 'CREATOR') return
+
+            const sockets = await io.in(campaignId).fetchSockets()
+            const targetSocket = sockets.find(s => s.data.user.id === targetPlayerId)
+
+            if (targetSocket) {
+                // Send to Target
+                targetSocket.emit('player:whisper_received', {
+                    sender: socket.data.user.name || "Game Master",
+                    message: message
+                })
+
+                // Send Confirmation back to GM (Sender)
+                socket.emit('player:whisper_received', {
+                    sender: "To " + (targetSocket.data.user.name || "Player"),
+                    message: message
+                })
+            }
+        })
+
+        // 3. GM: Set Global Scene
+        socket.on('gm:set_global_scene', async (data) => {
+            const { campaignId, sceneId } = data
+
+            if (socket.data.user.role !== 'GM' && socket.data.user.role !== 'CREATOR') return
+
+            try {
+                const campaign = await prisma.campaign.findUnique({ where: { id: campaignId } })
+                if (campaign) {
+                    const currentState = parseJSON(campaign.currentState)
+                    const newState = { ...currentState, currentScene: sceneId }
+
+                    // 1. Update Global State
+                    await prisma.campaign.update({
+                        where: { id: campaignId },
+                        data: { currentState: JSON.stringify(newState) }
+                    })
+
+                    // 2. Reset ALL Private Scenes for this campaign
+                    await prisma.campaignPlayer.updateMany({
+                        where: { campaignId: campaignId },
+                        data: { currentPrivateSceneId: null }
+                    })
+
+                    // 3. Broadcast Global Update
+                    io.to(campaignId).emit('game:scene_update', { sceneId })
+                    // แถม state update เต็มๆ ไปด้วย (เผื่อ frontend ใช้อันเดิม)
+                    io.to(campaignId).emit('game:state_update', newState)
+
+                    // 4. Notify everyone that their private scene is cleared
+                    io.to(campaignId).emit('player:private_scene_update', { sceneId: null })
+                }
+            } catch (e) {
+                console.error("Error setting global scene:", e)
+            }
+        })
+
+        // 4. Chat System
+        socket.on('chat:send', async (data, callback) => {
+            const { roomId, content, type } = data
+            const sender = socket.data.user
+
+            try {
+                console.log(`💬 Chat from ${sender.name}: ${content}`)
+
+                const messageData = {
+                    id: Date.now().toString(),
+                    content,
+                    type,
+                    senderId: sender.id,
+                    senderName: sender.name,
+                    timestamp: new Date()
+                }
+
+                // Broadcast
+                io.to(roomId).emit('chat:message', messageData)
+
+                if (callback) callback({ success: true, messageId: messageData.id })
+
+            } catch (e) {
+                console.error("Chat Error:", e)
+                if (callback) callback({ success: false, error: 'Failed to send message' })
+            }
+        })
+
+
         socket.on('disconnect', () => {
-            console.log('👋 User disconnected')
+            const campaignId = socket.data.campaignId
+            if (campaignId) {
+                console.log(`👋 User disconnected from ${campaignId}: ${socket.data.user.name}`)
+                io.to(campaignId).emit('room:player_left', {
+                    userId: socket.data.user.id,
+                    userName: socket.data.user.name
+                })
+            }
         })
     })
 

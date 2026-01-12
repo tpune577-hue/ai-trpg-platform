@@ -110,6 +110,10 @@ model CampaignPlayer {
   playerId   String
   joinedAt   DateTime @default(now())
   isActive   Boolean  @default(true)
+  
+  // Private View State
+  currentPrivateSceneId String?
+  currentPrivateNpcId   String?
 
   campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   player   User     @relation(fields: [playerId], references: [id], onDelete: Cascade)

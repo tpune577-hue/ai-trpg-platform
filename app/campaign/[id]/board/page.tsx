@@ -6,20 +6,8 @@ import { useGameSocket } from '@/hooks/useGameSocket'
 import { SceneDisplay } from '@/components/board/SceneDisplay'
 import { PartyStatus } from '@/components/board/PartyStatus'
 import { GameLog } from '@/components/board/GameLog'
-
-// --- Mock Data ---
-const MOCK_SCENES = [
-    { id: 's1', name: 'Misty Forest', url: 'https://img.freepik.com/premium-photo/majestic-misty-redwood-forest-with-lush-green-ferns-sunlight-filtering-through-fog_996993-7424.jpg' },
-    { id: 's2', name: 'Cave', url: 'https://img.freepik.com/premium-photo/mystical-cave-with-glowing-path_1150025-23150.jpg' },
-    { id: 's3', name: 'เมือง', url: 'https://img.freepik.com/premium-photo/medieval-town-scene-with-knights-horseback_14117-943575.jpg' },
-    { id: 's4', name: 'Dungeon', url: 'https://media.istockphoto.com/id/1308121289/th/%E0%B8%A3%E0%B8%B9%E0%B8%9B%E0%B8%96%E0%B9%88%E0%B8%B2%E0%B8%A2/%E0%B8%84%E0%B8%B2%E0%B8%95%E0%B8%B2%E0%B8%84%E0%B8%AD%E0%B8%A1%E0%B8%9A%E0%B9%8C%E0%B8%A2%E0%B8%B8%E0%B8%84%E0%B8%81%E0%B8%A5%E0%B8%B2%E0%B8%87%E0%B8%97%E0%B8%B5%E0%B9%88%E0%B8%99%E0%B9%88%E0%B8%B2%E0%B8%81%E0%B8%A5%E0%B8%B1%E0%B8%A7%E0%B9%84%E0%B8%A1%E0%B9%88%E0%B8%A1%E0%B8%B5%E0%B8%97%E0%B8%B5%E0%B9%88%E0%B8%AA%E0%B8%B4%E0%B9%89%E0%B8%99%E0%B8%AA%E0%B8%B8%E0%B8%94%E0%B8%9E%E0%B8%A3%E0%B9%89%E0%B8%AD%E0%B8%A1%E0%B8%84%E0%B8%9A%E0%B9%80%E0%B8%9E%E0%B8%A5%E0%B8%B4%E0%B8%87-%E0%B9%81%E0%B8%99%E0%B8%A7%E0%B8%84%E0%B8%B4%E0%B8%94%E0%B8%9D%E0%B8%B1%E0%B8%99%E0%B8%A3%E0%B9%89%E0%B8%B2%E0%B8%A2%E0%B8%A5%E0%B8%B6%E0%B8%81%E0%B8%A5%E0%B8%B1%E0%B8%9A-%E0%B8%81%E0%B8%B2%E0%B8%A3%E0%B9%80%E0%B8%A3%E0%B8%99%E0%B9%80%E0%B8%94%E0%B8%AD%E0%B8%A3%E0%B9%8C-3.jpg?s=612x612&w=0&k=20&c=4xgjyFF3DVq40ymFvz-tVcLGSk4wsD7Yif5F_n9vom4=' },
-]
-
-const MOCK_NPCS = [
-    { id: 'n1', name: 'Shadow Goblin', type: 'ENEMY', imageUrl: 'https://dmdave.com/wp-content/uploads/2020/02/shadow-goblin.png' },
-    { id: 'n2', name: 'Ancient Chest', type: 'NEUTRAL', imageUrl: 'https://www.pngarts.com/files/3/Treasure-Chest-PNG-Download-Image.png' },
-    { id: 'n3', name: 'Village Elder', type: 'FRIENDLY', imageUrl: 'https://s3-eu-west-2.amazonaws.com/dungeon20/images/985066/medium-63ed55ce6d3ac22ce30730a0bf172152f56bf9c8.png?1676026777' }
-]
+import { PlayerControlPanel } from '@/components/board/PlayerControlPanel'
+import { SCENES, NPCS } from '@/lib/game-data'
 
 export default function CampaignBoardPage() {
     const params = useParams()
@@ -28,56 +16,81 @@ export default function CampaignBoardPage() {
     // Game State
     const [gameState, setGameState] = useState<any>(null)
     const [logs, setLogs] = useState<any[]>([])
-    const [players, setPlayers] = useState<any[]>([])
     const [diceResult, setDiceResult] = useState<any>(null)
 
     // UI State
     const [isSidebarOpen, setIsSidebarOpen] = useState(false)
     const [gmInput, setGmInput] = useState('')
     const [targetDC, setTargetDC] = useState(15)
-    const [activeTab, setActiveTab] = useState<'SCENE' | 'NPC'>('SCENE')
-
-    // ❌ เอา Local State ออก
-    // const [currentSceneImg, setCurrentSceneImg] = useState(...)
-    // const [activeNpcs, setActiveNpcs] = useState(...) 
+    // Modified Tabs to include Player Control
+    const [activeTab, setActiveTab] = useState<'SCENE' | 'NPC' | 'PLAYERS'>('SCENE')
 
     const {
+        roomInfo,
         onGameStateUpdate, onChatMessage, onPlayerAction, onDiceResult,
-        requestRoll, sendPlayerAction
-    } = useGameSocket(campaignId)
+        requestRoll, sendPlayerAction,
+        // New Socket Methods
+        setPrivateScene, sendWhisper, setGlobalScene, onWhisperReceived
+    } = useGameSocket(campaignId, {
+        sessionToken: 'DEMO_GM_TOKEN', // GM Token hardcoded for demo board
+        autoConnect: true
+    })
 
     useEffect(() => {
         onGameStateUpdate((state) => setGameState(state))
         onChatMessage((message) => setLogs((prev) => prev.some(log => log.id === message.id) ? prev : [...prev, message]))
 
+        // Listen for Whisper Confirmation (from self)
+        onWhisperReceived((data) => {
+            setLogs((prev) => [...prev, {
+                id: Date.now().toString(),
+                content: `(Whisper ${data.sender}) ${data.message}`,
+                type: 'NARRATION',
+                senderName: 'System',
+                timestamp: new Date()
+            }])
+        })
+
         onPlayerAction((action) => {
-            if (action.actionType === 'JOIN_GAME' && action.characterData) {
-                setPlayers((prev) => {
-                    const idx = prev.findIndex(p => p.id === action.characterData.id)
-                    if (idx !== -1) { const newP = [...prev]; newP[idx] = action.characterData; return newP }
-                    return [...prev, action.characterData]
-                })
-            }
+            // Show action in log immediately
+            setLogs((prev) => [...prev, {
+                id: Date.now().toString(),
+                content: `${action.actorName} used ${action.actionType}: ${action.description}`,
+                type: 'ACTION',
+                senderName: action.actorName,
+                timestamp: new Date()
+            }])
         })
 
         onDiceResult((result) => { setDiceResult(result); setTimeout(() => setDiceResult(null), 4000) })
-    }, [onGameStateUpdate, onChatMessage, onPlayerAction, onDiceResult])
+    }, [onGameStateUpdate, onChatMessage, onPlayerAction, onDiceResult, onWhisperReceived])
 
     const handleGmNarrate = () => {
         if (!gmInput.trim()) return
-        sendPlayerAction({ actionType: 'custom', description: gmInput, actorName: 'Game Master' })
+        sendPlayerAction({ actionType: 'custom', description: gmInput, actorName: 'Game Master' } as any)
         setGmInput('')
     }
 
-    // ✅ NEW: ฟังก์ชันส่งคำสั่งเปลี่ยนฉาก
     const changeScene = (url: string) => {
-        sendPlayerAction({
-            actionType: 'GM_UPDATE_SCENE',
-            payload: { sceneImageUrl: url }
-        })
+        // Fallback or use setGlobalScene if we mapped URLs to IDs
+        // For now using old method for compatibility unless we map IDs
+        // Ideally we should use setGlobalScene but that requires scene IDs.
+        // Let's assume MOCK_SCENES IDs map to something server understands or we send custom action
+
+        // Use the new Global Scene Setter
+        // Find ID from URL
+        const scene = SCENES.find(s => s.url === url)
+        if (scene) {
+            setGlobalScene(scene.id)
+        } else {
+            // Fallback for custom URLs
+            sendPlayerAction({
+                actionType: 'GM_UPDATE_SCENE',
+                payload: { sceneImageUrl: url }
+            } as any)
+        }
     }
 
-    // ✅ NEW: ฟังก์ชันส่งคำสั่ง Toggle NPC
     const toggleNpc = (npc: any) => {
         const currentNpcs = gameState?.activeNpcs || []
         const exists = currentNpcs.find((n: any) => n.id === npc.id)
@@ -92,7 +105,7 @@ export default function CampaignBoardPage() {
         sendPlayerAction({
             actionType: 'GM_UPDATE_SCENE',
             payload: { activeNpcs: newNpcs }
-        })
+        } as any)
     }
 
     return (
@@ -100,7 +113,7 @@ export default function CampaignBoardPage() {
 
             {/* Header */}
             <div className="absolute top-0 w-full h-14 bg-slate-900/90 border-b border-slate-700 flex justify-between items-center px-4 z-50 backdrop-blur-md shadow-lg">
-                <h1 className="text-amber-500 font-bold tracking-widest text-sm md:text-lg uppercase glow-text">The Shadow's Veil</h1>
+                <h1 className="text-amber-500 font-bold tracking-widest text-sm md:text-lg uppercase glow-text">The Shadow's Veil (GM)</h1>
                 <div className="flex items-center gap-4">
                     <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="lg:hidden p-2 text-slate-300 border border-slate-700 rounded bg-slate-800">
                         {isSidebarOpen ? '✖' : '☰ Menu'}
@@ -116,8 +129,7 @@ export default function CampaignBoardPage() {
                     <div className="h-[50%] md:h-[60%] relative bg-black">
                         <SceneDisplay
                             sceneDescription={gameState?.currentScene}
-                            // ✅ ใช้ค่าจาก gameState กลางแทน local state
-                            imageUrl={gameState?.sceneImageUrl}
+                            imageUrl={gameState?.sceneImageUrl || (SCENES.find(s => s.id === gameState?.currentScene)?.url)} // Fallback to map ID to URL
                             npcs={gameState?.activeNpcs || []}
                         />
                         {diceResult && (
@@ -140,22 +152,24 @@ export default function CampaignBoardPage() {
                     lg:relative lg:translate-x-0 lg:block lg:pt-0 lg:w-80 lg:shadow-none flex flex-col h-full
                 `}>
                     {/* 1. PARTY STATUS */}
-                    <div className="h-[40%] flex flex-col border-b border-slate-700 bg-slate-900/50">
+                    <div className="h-[30%] flex flex-col border-b border-slate-700 bg-slate-900/50">
                         <div className="p-3 border-b border-slate-800 flex justify-between items-center bg-slate-900">
-                            <h2 className="text-amber-500 font-bold text-xs tracking-wider uppercase">Party Status ({players.length})</h2>
+                            <h2 className="text-amber-500 font-bold text-xs tracking-wider uppercase">Party Status ({roomInfo?.connectedPlayers?.length || 0})</h2>
                             <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden text-slate-500">✕</button>
                         </div>
                         <div className="p-3 space-y-3 overflow-y-auto custom-scrollbar flex-1">
-                            <PartyStatus characters={players} />
-                            {players.length === 0 && <div className="text-center text-slate-600 text-xs italic mt-4">No heroes yet...</div>}
+                            {/* Use Connected Players from Room Info */}
+                            <PartyStatus characters={roomInfo?.connectedPlayers || []} />
+                            {(!roomInfo?.connectedPlayers || roomInfo.connectedPlayers.length === 0) && <div className="text-center text-slate-600 text-xs italic mt-4">No heroes yet...</div>}
                         </div>
                     </div>
 
                     {/* 2. GM CONTROLS */}
                     <div className="flex-1 flex flex-col bg-slate-950 min-h-0">
                         <div className="flex border-b border-slate-800">
-                            <button onClick={() => setActiveTab('SCENE')} className={`flex-1 py-3 text-xs font-bold uppercase tracking-wide transition-colors ${activeTab === 'SCENE' ? 'bg-slate-800 text-amber-500 border-b-2 border-amber-500' : 'text-slate-500 hover:text-slate-300'}`}>🌄 Scenes</button>
-                            <button onClick={() => setActiveTab('NPC')} className={`flex-1 py-3 text-xs font-bold uppercase tracking-wide transition-colors ${activeTab === 'NPC' ? 'bg-slate-800 text-amber-500 border-b-2 border-amber-500' : 'text-slate-500 hover:text-slate-300'}`}>👤 NPCs ({gameState?.activeNpcs?.length || 0})</button>
+                            <button onClick={() => setActiveTab('SCENE')} className={`flex-1 py-3 text-xs font-bold uppercase tracking-wide transition-colors ${activeTab === 'SCENE' ? 'bg-slate-800 text-amber-500 border-b-2 border-amber-500' : 'text-slate-500 hover:text-slate-300'}`}>Scenes</button>
+                            <button onClick={() => setActiveTab('NPC')} className={`flex-1 py-3 text-xs font-bold uppercase tracking-wide transition-colors ${activeTab === 'NPC' ? 'bg-slate-800 text-amber-500 border-b-2 border-amber-500' : 'text-slate-500 hover:text-slate-300'}`}>NPCs</button>
+                            <button onClick={() => setActiveTab('PLAYERS')} className={`flex-1 py-3 text-xs font-bold uppercase tracking-wide transition-colors ${activeTab === 'PLAYERS' ? 'bg-slate-800 text-amber-500 border-b-2 border-amber-500' : 'text-slate-500 hover:text-slate-300'}`}>Players</button>
                         </div>
 
                         <div className="flex-1 p-3 overflow-y-auto custom-scrollbar">
@@ -163,11 +177,10 @@ export default function CampaignBoardPage() {
                             {/* SCENE TAB */}
                             {activeTab === 'SCENE' && (
                                 <div className="grid grid-cols-2 gap-2">
-                                    {MOCK_SCENES.map(scene => (
+                                    {SCENES.map(scene => (
                                         <div
                                             key={scene.id}
-                                            // ✅ เปลี่ยนเป็นเรียก changeScene()
-                                            onClick={() => changeScene(scene.url)}
+                                            onClick={() => changeScene(scene.url)} // This now uses setGlobalScene if matches
                                             className={`
                                                 relative aspect-video rounded-lg overflow-hidden cursor-pointer border-2 transition-all group
                                                 ${gameState?.sceneImageUrl === scene.url ? 'border-amber-500 ring-2 ring-amber-500/30' : 'border-slate-700 hover:border-slate-500'}
@@ -190,7 +203,7 @@ export default function CampaignBoardPage() {
                                 <div className="space-y-3">
                                     <div className="text-[10px] text-slate-500 uppercase font-bold text-center mb-2">Click to Toggle Overlay</div>
                                     <div className="grid grid-cols-3 gap-2">
-                                        {MOCK_NPCS.map(npc => {
+                                        {NPCS.map(npc => {
                                             const isActive = gameState?.activeNpcs?.some((n: any) => n.id === npc.id)
                                             let borderColor = 'border-slate-600'
                                             if (isActive) {
@@ -202,7 +215,6 @@ export default function CampaignBoardPage() {
                                             return (
                                                 <div
                                                     key={npc.id}
-                                                    // ✅ เปลี่ยนเป็นเรียก toggleNpc()
                                                     onClick={() => toggleNpc(npc)}
                                                     className={`
                                                         flex flex-col items-center gap-1 cursor-pointer p-2 rounded-lg transition-all
@@ -220,6 +232,17 @@ export default function CampaignBoardPage() {
                                         })}
                                     </div>
                                 </div>
+                            )}
+
+                            {/* PLAYERS TAB */}
+                            {activeTab === 'PLAYERS' && (
+                                <PlayerControlPanel
+                                    players={roomInfo?.connectedPlayers || []}
+                                    scenes={SCENES}
+                                    onSetPrivateScene={setPrivateScene}
+                                    onSetGlobalScene={setGlobalScene}
+                                    onWhisper={sendWhisper}
+                                />
                             )}
                         </div>
                     </div>

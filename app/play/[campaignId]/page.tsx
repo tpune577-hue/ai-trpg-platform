@@ -7,6 +7,7 @@ import { generateCharacter } from '@/lib/character-utils'
 
 import { SceneDisplay } from '@/components/board/SceneDisplay'
 import { GameLog } from '@/components/board/GameLog'
+import { SCENES } from '@/lib/game-data' // Import shared scenes
 
 export default function PlayerControllerPage() {
     const params = useParams()
@@ -19,14 +20,24 @@ export default function PlayerControllerPage() {
     const [gameState, setGameState] = useState<any>(null)
     const [rollRequest, setRollRequest] = useState<any>(null)
 
+    // New State for Private View & Whisper
+    const [privateSceneId, setPrivateSceneId] = useState<string | null>(null)
+    const [lastWhisper, setLastWhisper] = useState<{ sender: string, message: string } | null>(null)
+
     const logContainerRef = useRef<HTMLDivElement>(null)
 
     const {
         sendPlayerAction,
         onGameStateUpdate,
         onRollRequested,
-        onChatMessage
-    } = useGameSocket(campaignId)
+        onChatMessage,
+        // New Hooks
+        onPrivateSceneUpdate,
+        onWhisperReceived
+    } = useGameSocket(campaignId, {
+        sessionToken: 'DEMO_PLAYER_TOKEN',
+        autoConnect: true
+    })
 
     useEffect(() => {
         const myPlayerId = `player-${Math.floor(Math.random() * 10000)}`
@@ -41,7 +52,7 @@ export default function PlayerControllerPage() {
                 actorName: myChar.name,
                 characterData: myChar,
                 description: 'has joined the party.'
-            })
+            } as any)
         }, 1500)
 
         return () => clearTimeout(timer)
@@ -56,7 +67,31 @@ export default function PlayerControllerPage() {
                 if (logContainerRef.current) logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight
             }, 100)
         })
-    }, [onRollRequested, onGameStateUpdate, onChatMessage])
+
+        // Listen for Private Scene Updates
+        onPrivateSceneUpdate((data) => {
+            console.log("🔒 Private Scene Update:", data)
+            setPrivateSceneId(data.sceneId)
+        })
+
+        // Listen for Whispers
+        onWhisperReceived((data) => {
+            console.log("🤫 Whisper Received:", data)
+            setLastWhisper(data)
+            // Auto hide whisper toast after 8 seconds
+            setTimeout(() => setLastWhisper(null), 8000)
+
+            // Also add to log for persistence
+            setLogs((prev) => [...prev, {
+                id: Date.now().toString(),
+                content: `(Whisper from ${data.sender}) ${data.message}`,
+                type: 'NARRATION', // Use valid type
+                senderName: 'System',
+                timestamp: new Date()
+            }])
+        })
+
+    }, [onRollRequested, onGameStateUpdate, onChatMessage, onPrivateSceneUpdate, onWhisperReceived])
 
     const handleAction = async (actionType: string) => {
         await sendPlayerAction({
@@ -65,7 +100,7 @@ export default function PlayerControllerPage() {
             actorName: character?.name,
             // คำอยายจะไปถูกจัดการที่ useGameSocket อีกที
             description: `performed ${actionType}`
-        })
+        } as any)
     }
 
     const handleRollResponse = async () => {
@@ -83,7 +118,7 @@ export default function PlayerControllerPage() {
             mod: mod,
             total: roll + mod,
             actorName: character?.name
-        })
+        } as any)
         setRollRequest(null)
     }
 
@@ -94,9 +129,16 @@ export default function PlayerControllerPage() {
             actorId: character?.id,
             actorName: character?.name,
             description: customAction
-        })
+        } as any)
         setCustomAction('')
     }
+
+    // Logic to determine active scene
+    const activeSceneId = privateSceneId || gameState?.currentScene
+    const activeSceneData = SCENES.find(s => s.id === activeSceneId) || null
+    // Fallback to gameState.sceneImageUrl if sending old format, or default placeholder
+    const activeImageUrl = activeSceneData?.url || gameState?.sceneImageUrl || "https://img.freepik.com/premium-photo/majestic-misty-redwood-forest-with-lush-green-ferns-sunlight-filtering-through-fog_996993-7424.jpg"
+    const activeDescription = activeSceneData?.name || gameState?.currentScene || "Connecting..."
 
     return (
         <div className="h-[100dvh] bg-slate-950 text-white flex flex-col font-sans overflow-hidden">
@@ -135,10 +177,17 @@ export default function PlayerControllerPage() {
             {/* SCENE AREA */}
             <div className="h-[30vh] md:h-[35vh] relative bg-black shrink-0">
                 <SceneDisplay
-                    sceneDescription={gameState?.currentScene || "Connecting..."}
-                    imageUrl={gameState?.sceneImageUrl || "https://img.freepik.com/premium-photo/majestic-misty-redwood-forest-with-lush-green-ferns-sunlight-filtering-through-fog_996993-7424.jpg"}
+                    sceneDescription={activeDescription}
+                    imageUrl={activeImageUrl}
                     npcs={gameState?.activeNpcs || []}
                 />
+
+                {/* Visual Indicator for Private Scene */}
+                {privateSceneId && (
+                    <div className="absolute top-2 right-2 bg-indigo-900/80 text-indigo-100 text-[10px] font-bold px-2 py-1 rounded-full border border-indigo-500/50 flex items-center gap-1 shadow-lg backdrop-blur-sm animate-pulse-slow">
+                        <span>🔒</span> Private Vision
+                    </div>
+                )}
             </div>
 
             {/* ACTIONS & CONTROLS */}
@@ -178,6 +227,20 @@ export default function PlayerControllerPage() {
                     <GameLog logs={logs} />
                 </div>
             </div>
+
+            {/* Whisper Toast Overlay */}
+            {lastWhisper && (
+                <div className="fixed top-20 left-1/2 -translate-x-1/2 w-[90%] max-w-sm z-50 animate-in slide-in-from-top-5 fade-in duration-300">
+                    <div className="bg-indigo-950/90 border-l-4 border-indigo-500 text-indigo-100 p-4 rounded shadow-2xl backdrop-blur-md flex items-start gap-3">
+                        <div className="text-2xl">🤫</div>
+                        <div className="flex-1">
+                            <div className="font-bold text-xs uppercase text-indigo-400 mb-1">Whisper from {lastWhisper.sender}</div>
+                            <p className="text-sm font-medium italic">"{lastWhisper.message}"</p>
+                        </div>
+                        <button onClick={() => setLastWhisper(null)} className="text-indigo-400 hover:text-white">✕</button>
+                    </div>
+                </div>
+            )}
 
             {/* Dice Popup */}
             {rollRequest && (

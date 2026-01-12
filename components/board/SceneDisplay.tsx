@@ -1,38 +1,87 @@
+'use client'
 /* eslint-disable @next/next/no-img-element */
-import React from 'react'
 
-export const SceneDisplay = ({ sceneDescription, imageUrl }: { sceneDescription: string, imageUrl?: string }) => {
+interface NpcData {
+    id: string
+    name: string
+    imageUrl: string
+    type: 'FRIENDLY' | 'ENEMY' | 'NEUTRAL'
+}
+
+interface SceneDisplayProps {
+    sceneDescription?: string
+    imageUrl?: string
+    npcs?: NpcData[]
+}
+
+export const SceneDisplay = ({ sceneDescription, imageUrl, npcs = [] }: SceneDisplayProps) => {
+
+    const getNpcGlow = (type: string) => {
+        switch (type) {
+            case 'FRIENDLY': return 'drop-shadow-[0_0_15px_rgba(16,185,129,0.5)]'
+            case 'ENEMY': return 'drop-shadow-[0_0_15px_rgba(239,68,68,0.5)]'
+            case 'NEUTRAL': default: return 'drop-shadow-[0_0_8px_rgba(255,255,255,0.3)]'
+        }
+    }
+
     return (
-        <div className="relative w-full h-full bg-slate-900 overflow-hidden group">
-            {/* Background Image with Gradient Fade */}
-            <img
-                src={imageUrl || "https://images.unsplash.com/photo-1519074069444-1ba4fff66d16?q=80&w=2574"}
-                alt="Scene"
-                className="w-full h-full object-cover opacity-60 group-hover:opacity-50 transition-all duration-1000 scale-105"
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-transparent to-transparent" />
-
-            {/* Title Overlay */}
-            <div className="absolute top-6 w-full text-center">
-                <div className="inline-block border-b-2 border-amber-500/50 pb-2">
-                    <h2 className="text-2xl font-bold text-amber-500 tracking-[0.2em] uppercase text-shadow-glow">The Misty Forest</h2>
-                </div>
+        <div className="relative w-full h-full overflow-hidden bg-black group select-none">
+            {/* 1. Background Image (z-0) */}
+            <div className="absolute inset-0 z-0">
+                <img
+                    src={imageUrl || "/images/placeholder.jpg"}
+                    alt="Scene"
+                    className="w-full h-full object-cover opacity-90 transition-transform duration-[20s] ease-linear scale-105 group-hover:scale-110"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/10 to-black/40"></div>
             </div>
 
-            {/* Text Description Overlay (เหมือนในรูป) */}
-            <div className="absolute bottom-12 left-1/2 transform -translate-x-1/2 w-3/4">
-                <div className="relative bg-slate-900/80 backdrop-blur-md border border-amber-500/30 p-6 rounded-lg shadow-2xl">
-                    {/* Decorative Corners */}
-                    <div className="absolute -top-1 -left-1 w-3 h-3 border-t-2 border-l-2 border-amber-500"></div>
-                    <div className="absolute -top-1 -right-1 w-3 h-3 border-t-2 border-r-2 border-amber-500"></div>
-                    <div className="absolute -bottom-1 -left-1 w-3 h-3 border-b-2 border-l-2 border-amber-500"></div>
-                    <div className="absolute -bottom-1 -right-1 w-3 h-3 border-b-2 border-r-2 border-amber-500"></div>
+            {/* 2. NPC Overlay Area (z-20) -> อยู่หลัง Text Box */}
+            {npcs.length > 0 && (
+                <div className="absolute bottom-0 left-0 w-full flex justify-center items-end gap-4 md:gap-12 px-4 z-20 pointer-events-none">
+                    {npcs.map((npc, index) => (
+                        <div
+                            key={npc.id}
+                            className="flex flex-col items-center justify-end group/npc relative animate-in slide-in-from-bottom-10 fade-in duration-700"
+                            style={{ animationDelay: `${index * 100}ms` }}
+                        >
+                            {/* ป้ายชื่อ (อยู่บนหัว) */}
+                            <div className="mb-2 px-2 py-0.5 bg-black/60 text-slate-200 text-[10px] font-bold rounded backdrop-blur-md border border-white/10 transition-opacity group-hover/npc:opacity-100 sm:opacity-60 shadow-lg whitespace-nowrap animate-bounce-slow">
+                                {npc.name}
+                            </div>
 
-                    <p className="text-lg text-amber-100/90 text-center font-serif leading-relaxed italic">
-                        "{sceneDescription || 'The adventure awaits...'}"
+                            {/* รูปตัวละคร */}
+                            <div className="relative z-10 flex flex-col items-center">
+                                {/* เงาที่พื้น */}
+                                <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-[70%] h-3 bg-black/80 blur-md rounded-[100%] -z-10"></div>
+
+                                <img
+                                    src={npc.imageUrl}
+                                    alt={npc.name}
+                                    className={`
+                                        max-h-[220px] md:max-h-[350px] w-auto object-contain 
+                                        transition-all duration-300 group-hover/npc:scale-105 group-hover/npc:-translate-y-1
+                                        ${getNpcGlow(npc.type)}
+                                    `}
+                                />
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {/* 3. Scene Description Text (z-30) -> อยู่หน้าสุด บัง NPC */}
+            <div className="absolute bottom-2 left-2 right-2 md:bottom-4 md:left-4 md:right-4 z-30 pointer-events-none flex justify-center">
+                <div className="bg-black/60 backdrop-blur-md border border-amber-500/50 p-3 md:p-4 rounded-xl shadow-[0_0_20px_rgba(0,0,0,0.5)] w-full max-w-3xl text-center">
+                    <h2 className="text-amber-500 font-bold text-xs md:text-sm uppercase tracking-widest mb-1 opacity-90">
+                        Current Scene
+                    </h2>
+                    <p className="text-slate-200 text-sm md:text-base font-serif italic leading-relaxed line-clamp-3 drop-shadow-md">
+                        {sceneDescription || "The adventure awaits..."}
                     </p>
                 </div>
             </div>
+
         </div>
     )
 }

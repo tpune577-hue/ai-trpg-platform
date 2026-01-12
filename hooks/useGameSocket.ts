@@ -6,11 +6,8 @@ import { DEMO_GAME_STATE, GM_RESPONSE_TEMPLATES } from '@/lib/demo-data'
 export const useGameSocket = (campaignId: string | null) => {
     const [isConnected, setIsConnected] = useState(false)
 
-    // ✅ เก็บ State กลางไว้ที่นี่ เพื่อให้ Sync กันได้จริง
-    // (ในของจริงคือ Database แต่ใน Mock เราใช้ Ref ช่วยจำค่าล่าสุดไว้)
     const currentGameStateRef = useRef<any>({
         ...DEMO_GAME_STATE,
-        // ค่าเริ่มต้น
         sceneImageUrl: 'https://img.freepik.com/premium-photo/majestic-misty-redwood-forest-with-lush-green-ferns-sunlight-filtering-through-fog_996993-7424.jpg',
         activeNpcs: []
     })
@@ -38,7 +35,6 @@ export const useGameSocket = (campaignId: string | null) => {
                 if (eventCallbacksRef.current.onRollRequested) eventCallbacksRef.current.onRollRequested(payload)
             }
             if (type === 'SYNC_UPDATE') {
-                // อัปเดต Ref กลางให้ตรงกันทุกหน้าต่าง
                 currentGameStateRef.current = payload.newState
                 if (eventCallbacksRef.current.onGameStateUpdate) eventCallbacksRef.current.onGameStateUpdate(payload.newState)
                 if (eventCallbacksRef.current.onChatMessage && payload.chatMessage) eventCallbacksRef.current.onChatMessage(payload.chatMessage)
@@ -46,13 +42,10 @@ export const useGameSocket = (campaignId: string | null) => {
             }
         }
 
-        // Initial Load
         const timer = setTimeout(() => {
             if (eventCallbacksRef.current.onGameStateUpdate) {
                 eventCallbacksRef.current.onGameStateUpdate(currentGameStateRef.current)
             }
-
-            // ... (Mock Players logic เดิม) ...
         }, 500)
 
         return () => {
@@ -67,7 +60,6 @@ export const useGameSocket = (campaignId: string | null) => {
     const sendPlayerAction = useCallback((actionData: any) => {
         const syncChannel = new BroadcastChannel('game_demo_channel')
 
-        // ถ้าไม่ใช่คำสั่ง GM Update ให้ broadcast action ไปก่อน
         if (actionData.actionType !== 'GM_UPDATE_SCENE') {
             syncChannel.postMessage({ type: 'PLAYER_ACTION', payload: actionData })
         }
@@ -75,40 +67,47 @@ export const useGameSocket = (campaignId: string | null) => {
         setTimeout(() => {
             let narration = null
             let diceResult = null
+            let baseText = ""
 
-            // ดึง State ล่าสุดมาตั้งต้น
             let newState = { ...currentGameStateRef.current }
 
-            // ✅ LOGIC ใหม่: ถ้า GM สั่งเปลี่ยนฉาก/NPC
+            // --- 1. กำหนดข้อความพื้นฐาน ---
             if (actionData.actionType === 'GM_UPDATE_SCENE') {
-                // อัปเดตข้อมูลฉากลงใน State กลาง
                 if (actionData.payload.sceneImageUrl) newState.sceneImageUrl = actionData.payload.sceneImageUrl
                 if (actionData.payload.activeNpcs) newState.activeNpcs = actionData.payload.activeNpcs
-
-                // ไม่ต้องสร้าง Chat Log ก็ได้ หรือจะสร้างก็ได้ (ในที่นี้ไม่สร้างเพื่อให้เปลี่ยนเนียนๆ)
             }
             else if (actionData.actionType === 'JOIN_GAME') {
-                narration = `${actionData.actorName} has joined the adventure.`
+                baseText = "has joined the adventure."
             }
             else if (actionData.actionType === 'dice_roll') {
                 const isSuccess = actionData.total >= (actionData.dc || 10)
                 const resultText = isSuccess ? "(Success!)" : "(Failed...)"
-                narration = `${actionData.actorName} rolled ${actionData.checkType}: ${actionData.total} ${resultText}`
+                baseText = `rolled ${actionData.checkType}: ${actionData.total} ${resultText}`
                 diceResult = { total: actionData.total, detail: `1d20 (${actionData.roll}) + ${actionData.mod}` }
             }
             else if (actionData.actionType === 'custom') {
-                narration = actionData.description
-                newState.currentScene = narration // อัปเดต Text บรรยายฉากด้วย
+                baseText = actionData.description
             }
-            // ... (Logic Action อื่นๆ เหมือนเดิม) ...
-            else if (actionData.actionType === 'attack') { narration = GM_RESPONSE_TEMPLATES.attack; diceResult = { total: 15, detail: "1d20 (12) + STR (3)" } }
-            else if (actionData.actionType === 'magic') narration = GM_RESPONSE_TEMPLATES.magic
-            else if (actionData.actionType === 'heal') narration = GM_RESPONSE_TEMPLATES.heal
-            else if (actionData.actionType === 'move') narration = GM_RESPONSE_TEMPLATES.move
-            else if (actionData.actionType === 'talk') narration = GM_RESPONSE_TEMPLATES.talk
-            else if (actionData.actionType === 'inspect') narration = GM_RESPONSE_TEMPLATES.explore
+            // ✅ 4 Actions หลัก (แค่บอกว่าทำอะไร ไม่ต้องทอยเต๋า)
+            else if (actionData.actionType === 'attack') baseText = "prepares to attack!"
+            else if (actionData.actionType === 'move') baseText = "is moving to a new position."
+            else if (actionData.actionType === 'talk') baseText = "tries to talk to someone."
+            else if (actionData.actionType === 'inspect') baseText = "is looking around carefully."
 
-            // Create Chat Message (ถ้ามี narration)
+            // --- 2. ประกอบร่าง "Name : Action" ---
+            if (baseText) {
+                if (actionData.actorName && actionData.actorName !== 'Game Master') {
+                    if (actionData.actionType === 'custom') {
+                        narration = `${actionData.actorName} : ${baseText}`
+                    } else {
+                        narration = `${actionData.actorName} : ${baseText}`
+                    }
+                } else {
+                    narration = baseText
+                }
+            }
+
+            // --- 3. Update State ---
             let newChatMessage = null
             if (narration) {
                 newChatMessage = {
@@ -118,19 +117,20 @@ export const useGameSocket = (campaignId: string | null) => {
                     senderName: actionData.actorName || 'GM',
                     createdAt: new Date().toISOString()
                 }
-                newState.currentScene = narration // อัปเดต Text ปัจจุบัน
+
+                if (actionData.actionType !== 'JOIN_GAME' && actionData.actionType !== 'dice_roll') {
+                    newState.currentScene = narration
+                }
+
                 newState.recentEvents = [narration, ...newState.recentEvents]
             }
 
-            // Update Ref
             currentGameStateRef.current = newState
 
-            // Trigger Local Callbacks
             if (eventCallbacksRef.current.onGameStateUpdate) eventCallbacksRef.current.onGameStateUpdate(newState)
             if (newChatMessage && eventCallbacksRef.current.onChatMessage) eventCallbacksRef.current.onChatMessage(newChatMessage)
             if (diceResult && eventCallbacksRef.current.onDiceResult) eventCallbacksRef.current.onDiceResult(diceResult)
 
-            // Broadcast State Update ไปให้ทุกคน
             syncChannel.postMessage({ type: 'SYNC_UPDATE', payload: { newState, chatMessage: newChatMessage, diceResult } })
             syncChannel.close()
         }, 100)

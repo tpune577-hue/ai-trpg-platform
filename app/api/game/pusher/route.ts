@@ -17,6 +17,7 @@ export async function POST(req: Request) {
 
         // ส่งข้อมูลไปที่ Channel ตาม campaignId
         // Event ชื่อ 'game-event'
+        console.log(`📡 Pusher Trigger: channel=campaign-${campaignId}, event=game-event`, action)
         await pusher.trigger(`campaign-${campaignId}`, 'game-event', action)
 
         return NextResponse.json({ success: true })

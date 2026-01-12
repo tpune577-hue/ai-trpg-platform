@@ -141,14 +141,22 @@ export const useGameSocket = (campaignId: string | null) => {
 
     const sendPlayerAction = useCallback(async (actionData: any) => {
         // ยิงไปที่ API Route ของเรา
-        await fetch('/api/game/pusher', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                action: actionData,
-                campaignId: campaignId
+        try {
+            const res = await fetch('/api/game/pusher', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: actionData,
+                    campaignId: campaignId
+                })
             })
-        })
+            if (!res.ok) {
+                const err = await res.json()
+                console.error('❌ Pusher API Error:', err)
+            }
+        } catch (error) {
+            console.error('❌ Network Error sending action:', error)
+        }
         // หมายเหตุ: เราไม่ต้อง handleIncomingEvent() ที่นี่ เพราะเดี๋ยว Pusher จะส่ง Event กลับมาหาเราเอง (Round-trip)
         // ทำให้ State ของทุกคน Sync ตรงกัน 100%
     }, [campaignId])

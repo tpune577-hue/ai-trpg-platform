@@ -23,7 +23,7 @@ const MOCK_NPCS = [
 
 export default function CampaignBoardPage() {
     const params = useParams()
-    const campaignId = params.campaignId as string
+    const campaignId = params.id as string
 
     // Game State
     const [gameState, setGameState] = useState<any>(null)

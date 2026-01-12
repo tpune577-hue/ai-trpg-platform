@@ -17,6 +17,7 @@ export default function CampaignBoardPage() {
     const [gameState, setGameState] = useState<any>(null)
     const [logs, setLogs] = useState<any[]>([])
     const [diceResult, setDiceResult] = useState<any>(null)
+    const [gmNarration, setGmNarration] = useState<string>('') // For GM narration text
 
     // UI State
     const [isSidebarOpen, setIsSidebarOpen] = useState(false)
@@ -32,21 +33,24 @@ export default function CampaignBoardPage() {
         // New Socket Methods
         setPrivateScene, sendWhisper, setGlobalScene, onWhisperReceived
     } = useGameSocket(campaignId, {
-        sessionToken: 'DEMO_GM_TOKEN', // GM Token hardcoded for demo board
+        sessionToken: 'DEMO_GM_TOKEN',
+        userId: 'DEMO_GM_TOKEN', // Add userId for event filtering
         autoConnect: true
     })
 
     useEffect(() => {
-        onGameStateUpdate((state) => setGameState(state))
+        onGameStateUpdate((newState) => setGameState((prev: any) => ({
+            ...prev,
+            ...newState
+        })))
         onChatMessage((message) => setLogs((prev) => prev.some(log => log.id === message.id) ? prev : [...prev, message]))
-
-        // Listen for Whisper Confirmation (from self)
+        // Listen for Whisper (show in log for GM)
         onWhisperReceived((data) => {
             setLogs((prev) => [...prev, {
                 id: Date.now().toString(),
-                content: `(Whisper ${data.sender}) ${data.message}`,
-                type: 'NARRATION',
-                senderName: 'System',
+                content: `💬 Whisper to ${data.sender}: ${data.message}`,
+                type: 'WHISPER',
+                senderName: 'GM',
                 timestamp: new Date()
             }])
         })
@@ -60,9 +64,25 @@ export default function CampaignBoardPage() {
                 senderName: action.actorName,
                 timestamp: new Date()
             }])
+
+            // If it's GM narration (custom action from Game Master), show in scene
+            if (action.actorName === 'Game Master' && action.actionType === 'custom') {
+                setGmNarration(action.description)
+            }
         })
 
-        onDiceResult((result) => { setDiceResult(result); setTimeout(() => setDiceResult(null), 4000) })
+        onDiceResult((result) => {
+            setDiceResult(result)
+            // Add dice result to log (without DC)
+            setLogs((prev) => [...prev, {
+                id: Date.now().toString(),
+                content: `🎲 ${result.actorName || 'Player'} rolled ${result.roll} + ${result.mod} = ${result.total} ${result.total >= result.dc ? '✅ Success!' : '❌ Failed'}`,
+                type: 'DICE',
+                senderName: 'System',
+                timestamp: new Date()
+            }])
+            setTimeout(() => setDiceResult(null), 4000)
+        })
     }, [onGameStateUpdate, onChatMessage, onPlayerAction, onDiceResult, onWhisperReceived])
 
     const handleGmNarrate = () => {
@@ -102,9 +122,14 @@ export default function CampaignBoardPage() {
             newNpcs = [...currentNpcs, npc]
         }
 
+        // Only update NPCs, preserve current scene
         sendPlayerAction({
             actionType: 'GM_UPDATE_SCENE',
-            payload: { activeNpcs: newNpcs }
+            payload: {
+                activeNpcs: newNpcs,
+                currentScene: gameState?.currentScene, // Preserve current scene
+                sceneImageUrl: gameState?.sceneImageUrl // Preserve current image
+            }
         } as any)
     }
 
@@ -128,7 +153,7 @@ export default function CampaignBoardPage() {
                 <div className="flex-1 flex flex-col w-full h-full min-w-0">
                     <div className="h-[50%] md:h-[60%] relative bg-black">
                         <SceneDisplay
-                            sceneDescription={gameState?.currentScene}
+                            sceneDescription={gmNarration || SCENES.find(s => s.id === gameState?.currentScene)?.name || gameState?.currentScene || 'The adventure awaits...'}
                             imageUrl={gameState?.sceneImageUrl || (SCENES.find(s => s.id === gameState?.currentScene)?.url)} // Fallback to map ID to URL
                             npcs={gameState?.activeNpcs || []}
                         />
@@ -242,6 +267,10 @@ export default function CampaignBoardPage() {
                                     onSetPrivateScene={setPrivateScene}
                                     onSetGlobalScene={setGlobalScene}
                                     onWhisper={sendWhisper}
+                                    onRequestRoll={(playerId, checkType, dc) => {
+                                        console.log(`🎲 Requesting ${checkType} check (DC ${dc}) from player ${playerId}`)
+                                        requestRoll(checkType, dc, playerId)
+                                    }}
                                 />
                             )}
                         </div>

@@ -1,228 +1,215 @@
 'use client'
 
 import { useEffect, useState, useRef, useCallback } from 'react'
-import { io, Socket } from 'socket.io-client'
-import { ClientToServerEvents, ServerToClientEvents, PlayerActionData, GameStateUpdate, UserProfile, SocketChatMessage } from '@/types/socket'
+import Pusher from 'pusher-js'
+import { PlayerActionData, GameStateUpdate, SocketChatMessage, UserProfile } from '@/types/socket'
 
-// Default empty state to prevent null errors
-const DEFAULT_GAME_STATE: GameStateUpdate = {
-    currentScene: 'Waiting for GM...',
-    activeCharacters: [],
-    turnOrder: []
-}
+// ตั้งค่า Pusher Client
+const pusherClient = new Pusher(process.env.NEXT_PUBLIC_PUSHER_KEY!, {
+    cluster: process.env.NEXT_PUBLIC_PUSHER_CLUSTER!,
+})
 
-interface UseGameSocketOptions {
-    sessionToken?: string
-    userProfile?: any
-    autoConnect?: boolean
-    onError?: (error: any) => void
-    onReconnect?: () => void
-}
-
-export const useGameSocket = (campaignId: string | null, options: UseGameSocketOptions = {}) => {
-    const [socket, setSocket] = useState<Socket<ServerToClientEvents, ClientToServerEvents> | null>(null)
+export const useGameSocket = (campaignId: string | null, options: any = {}) => {
     const [isConnected, setIsConnected] = useState(false)
-    const [isInRoom, setIsInRoom] = useState(false)
-    const [latency, setLatency] = useState(0)
-    const [connectionError, setConnectionError] = useState<string | null>(null)
-    const [roomInfo, setRoomInfo] = useState<any>(null)
+    const [roomInfo, setRoomInfo] = useState<any>(null) // Mock room info for Pusher
 
-    // Event refs
+    // Event Refs
     const eventCallbacksRef = useRef({
         onPlayerAction: (action: PlayerActionData) => { },
         onGameStateUpdate: (state: GameStateUpdate) => { },
         onChatMessage: (message: SocketChatMessage) => { },
-        onPlayerJoined: (profile: UserProfile) => { },
-        onPlayerLeft: (data: { userId: string, userName: string }) => { },
-        onTyping: (data: { userId: string, userName: string, isTyping: boolean }) => { },
         onDiceResult: (result: any) => { },
-        onPrivateSceneUpdate: (data: { sceneId: string | null }) => { },
+        onRollRequested: (request: { checkType: string, dc: number }) => { },
+        // ✅ เพิ่มกลับมาให้ครบครับ
         onWhisperReceived: (data: { sender: string, message: string }) => { },
-        // ✅ 1. ADD THIS: เพิ่ม Callback Ref สำหรับ Roll Request
-        onRollRequested: (request: { checkType: string, dc: number }) => { }
+        onPrivateSceneUpdate: (data: { sceneId: string | null }) => { },
+        onPlayerJoined: (profile: UserProfile) => { },
     })
 
     useEffect(() => {
-        if (!campaignId || !options.sessionToken) return
+        if (!campaignId) return
 
-        const socketInstance = io({
-            auth: {
-                sessionToken: options.sessionToken,
-                campaignId: campaignId
-            },
-            autoConnect: options.autoConnect ?? true
-        })
+        const channelName = `campaign-${campaignId}`
+        const channel = pusherClient.subscribe(channelName)
 
-        socketInstance.on('connect', () => {
-            console.log('🔌 Socket Connected:', socketInstance.id)
-            setIsConnected(true)
-            setConnectionError(null)
+        console.log(`🔌 Pusher Subscribed: ${channelName}`)
+        setIsConnected(true)
 
-            socketInstance.emit('join_room', { campaignId }, (response) => {
-                if (response?.success) {
-                    setIsInRoom(true)
-                } else if (response?.error) {
-                    setConnectionError(response.error)
+        // Track connected players via JOIN_GAME events
+        // Initialize with empty list
+        setRoomInfo({ connectedPlayers: [] })
+
+        // Get current user ID from options (for filtering targeted events)
+        const currentUserId = options.userId || options.sessionToken
+
+        // Listen for ALL events
+        channel.bind('game-event', (data: any) => {
+            // 1. Dispatch Game State
+            if (data.actionType === 'GM_UPDATE_SCENE' || data.gameState) {
+                eventCallbacksRef.current.onGameStateUpdate(data.gameState || { currentScene: data.payload?.sceneImageUrl })
+            }
+
+            // 2. Dispatch Roll Request (with filtering for targeted player)
+            if (data.actionType === 'GM_REQUEST_ROLL') {
+                console.log('📨 GM_REQUEST_ROLL event received:', {
+                    targetPlayerId: data.targetPlayerId,
+                    currentUserId,
+                    payload: data.payload
+                })
+
+                // Only show roll request if it's for me OR if no specific target (broadcast to all)
+                if (!data.targetPlayerId || data.targetPlayerId === currentUserId) {
+                    console.log('✅ Processing roll request for me')
+                    eventCallbacksRef.current.onRollRequested(data.payload)
+                } else {
+                    console.log('❌ Roll request not for me, ignoring')
                 }
-            })
+            }
+
+            // 3. Dispatch Dice Result
+            if (data.actionType === 'dice_roll') {
+                eventCallbacksRef.current.onDiceResult(data)
+            }
+
+            // 4. Player Actions
+            if (['move', 'attack', 'talk', 'inspect', 'custom', 'JOIN_GAME'].includes(data.actionType)) {
+                eventCallbacksRef.current.onPlayerAction(data)
+
+                // Track player joins for room info
+                if (data.actionType === 'JOIN_GAME' && data.characterData) {
+                    setRoomInfo((prev: any) => {
+                        const existing = prev?.connectedPlayers || []
+                        const alreadyExists = existing.some((p: any) => p.id === data.characterData.id)
+                        if (alreadyExists) return prev
+
+                        return {
+                            ...prev,
+                            connectedPlayers: [...existing, {
+                                id: data.characterData.id,
+                                name: data.characterData.name || data.actorName,
+                                role: data.characterData.role || 'PLAYER',
+                                hp: data.characterData.hp,
+                                maxHp: data.characterData.maxHp,
+                                avatarUrl: data.characterData.avatarUrl
+                            }]
+                        }
+                    })
+                }
+            }
+
+            // ✅ 5. Whisper (Handle Whispers) - WITH FILTERING
+            if (data.type === 'WHISPER' || data.actionType === 'WHISPER') {
+                console.log('📨 Whisper event received:', data, 'currentUserId:', currentUserId)
+
+                // Only process if this whisper is for me OR if I'm the sender (GM confirmation)
+                if (!data.targetPlayerId || data.targetPlayerId === currentUserId || currentUserId === 'DEMO_GM_TOKEN') {
+                    console.log('✅ Processing whisper')
+                    eventCallbacksRef.current.onWhisperReceived({
+                        sender: data.sender || 'System',
+                        message: data.message || data.payload?.message
+                    })
+                } else {
+                    console.log('❌ Whisper filtered out - not for me')
+                }
+            }
+
+            // ✅ 6. Private Scene Update - WITH FILTERING
+            if (data.type === 'PRIVATE_SCENE_UPDATE') {
+                console.log('📨 Private scene event received:', data, 'currentUserId:', currentUserId)
+
+                // Only process if this is for me OR if it's a global clear (no targetPlayerId)
+                if (!data.targetPlayerId || data.targetPlayerId === currentUserId) {
+                    console.log('✅ Processing private scene update')
+                    eventCallbacksRef.current.onPrivateSceneUpdate({
+                        sceneId: data.payload?.sceneId
+                    })
+                } else {
+                    console.log('❌ Private scene filtered out - not for me')
+                }
+            }
         })
-
-        socketInstance.on('disconnect', () => {
-            console.log('🔌 Socket Disconnected')
-            setIsConnected(false)
-            setIsInRoom(false)
-        })
-
-        socketInstance.on('connect_error', (err) => {
-            console.error('Socket Connection Error:', err)
-            setConnectionError(err.message)
-            options.onError?.(err)
-        })
-
-        // Event Listeners
-        socketInstance.on('game:action', (data) => eventCallbacksRef.current.onPlayerAction(data))
-        socketInstance.on('game:state_update', (data) => eventCallbacksRef.current.onGameStateUpdate(data))
-        socketInstance.on('game:scene_update', (data) => {
-            eventCallbacksRef.current.onGameStateUpdate({ currentScene: data.sceneId } as any)
-        })
-        socketInstance.on('chat:message', (data) => eventCallbacksRef.current.onChatMessage(data))
-        socketInstance.on('room:player_joined', (data) => eventCallbacksRef.current.onPlayerJoined(data.userProfile))
-        socketInstance.on('room:player_left', (data) => eventCallbacksRef.current.onPlayerLeft(data))
-        socketInstance.on('chat:typing', (data) => eventCallbacksRef.current.onTyping(data))
-        socketInstance.on('game:dice_result', (data) => eventCallbacksRef.current.onDiceResult(data))
-
-        // Private events
-        socketInstance.on('player:private_scene_update', (data) => eventCallbacksRef.current.onPrivateSceneUpdate(data))
-        socketInstance.on('player:whisper_received', (data) => eventCallbacksRef.current.onWhisperReceived(data))
-
-        // ✅ 2. ADD THIS: Listener รับ Event คำสั่ง Roll จาก Server
-        // (ชื่อ event ต้องตรงกับที่ Server emit มานะครับ ถ้า Server ส่งเป็น game:action ต้องไปดักใน onPlayerAction แทน)
-        socketInstance.on('game:roll_request', (data) => eventCallbacksRef.current.onRollRequested(data))
-
-        socketInstance.on('room:joined', (data) => {
-            setRoomInfo(data.roomInfo)
-        })
-
-        setSocket(socketInstance)
 
         return () => {
-            socketInstance.disconnect()
+            channel.unbind_all()
+            channel.unsubscribe()
         }
-    }, [campaignId, options.sessionToken])
+    }, [campaignId])
 
-    // --- Actions ---
-    // ... (ส่วน Actions คงเดิม) ...
+    // --- Sending Actions (API Calls) ---
+    // Helper function to call API
+    const callApi = async (body: any) => {
+        try {
+            await fetch('/api/game/pusher', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ...body, campaignId })
+            })
+        } catch (err) {
+            console.error('API Error:', err)
+        }
+    }
 
-    const sendPlayerAction = useCallback((action: PlayerActionData) => {
-        return new Promise<{ success: boolean; error?: string }>((resolve) => {
-            if (!socket || !campaignId) {
-                resolve({ success: false, error: 'Not connected' })
-                return
-            }
-            socket.emit('player_action', { campaignId, action }, (res) => resolve(res || { success: true }))
-        })
-    }, [socket, campaignId])
+    const sendPlayerAction = useCallback((action: PlayerActionData) => callApi({ action }), [campaignId])
 
-    const sendChatMessage = useCallback((content: string, type: 'TALK' | 'NARRATION' | 'ACTION' = 'TALK') => {
-        return new Promise<{ success: boolean; error?: string }>((resolve) => {
-            if (!socket || !campaignId) {
-                resolve({ success: false, error: 'Not connected' })
-                return
-            }
-            socket.emit('chat:send', { roomId: campaignId, content, type }, (res) => resolve(res || { success: true }))
-        })
-    }, [socket, campaignId])
+    const sendGMUpdate = useCallback((gameState: GameStateUpdate) =>
+        callApi({ action: { actionType: 'GM_UPDATE_SCENE', payload: gameState } }),
+        [campaignId])
 
-    const sendGMUpdate = useCallback((gameState: GameStateUpdate) => {
-        return new Promise<{ success: boolean; error?: string }>((resolve) => {
-            if (!socket || !campaignId) {
-                resolve({ success: false, error: 'Not connected' })
-                return
-            }
-            socket.emit('gm_update', { roomId: campaignId, gameState }, (res) => resolve(res || { success: true }))
-        })
-    }, [socket, campaignId])
+    const requestRoll = useCallback((checkType: string, dc: number = 10, targetPlayerId?: string) =>
+        callApi({ action: { type: 'GM_REQUEST_ROLL', targetPlayerId, payload: { checkType, dc } } }),
+        [campaignId])
 
-    const setPrivateScene = useCallback((playerId: string, sceneId: string | null) => {
-        if (!socket) return
-        socket.emit('gm:set_private_scene', { playerId, sceneId })
-    }, [socket])
+    // ✅ เพิ่ม Methods ฝั่ง GM Control ให้ครบ
+    const setPrivateScene = useCallback((playerId: string, sceneId: string | null) =>
+        callApi({ action: { type: 'PRIVATE_SCENE_UPDATE', targetPlayerId: playerId, payload: { sceneId } } }),
+        [campaignId])
 
-    const sendWhisper = useCallback((targetPlayerId: string, message: string) => {
-        if (!socket) return
-        socket.emit('gm:whisper', { targetPlayerId, message })
-    }, [socket])
+    const sendWhisper = useCallback((targetPlayerId: string, message: string) =>
+        callApi({ action: { type: 'WHISPER', targetPlayerId, message, sender: 'GM' } }),
+        [campaignId])
 
-    const setGlobalScene = useCallback((sceneId: string) => {
-        if (!socket || !campaignId) return
-        socket.emit('gm:set_global_scene', { campaignId, sceneId })
-    }, [socket, campaignId])
+    const setGlobalScene = useCallback((sceneId: string) =>
+        sendGMUpdate({ currentScene: sceneId } as any),
+        [sendGMUpdate])
 
-    const measureLatency = useCallback(() => {
-        if (!socket) return
-        const start = Date.now()
-        socket.emit('ping', () => {
-            setLatency(Date.now() - start)
-        })
-    }, [socket])
+    // --- Callback Setters ---
+    const onGameStateUpdate = (cb: any) => { eventCallbacksRef.current.onGameStateUpdate = cb }
+    const onPlayerAction = (cb: any) => { eventCallbacksRef.current.onPlayerAction = cb }
+    const onChatMessage = (cb: any) => { eventCallbacksRef.current.onChatMessage = cb }
+    const onDiceResult = (cb: any) => { eventCallbacksRef.current.onDiceResult = cb }
+    const onRollRequested = (cb: any) => { eventCallbacksRef.current.onRollRequested = cb }
+    // ✅ Setter ที่หายไป
+    const onWhisperReceived = (cb: any) => { eventCallbacksRef.current.onWhisperReceived = cb }
+    const onPrivateSceneUpdate = (cb: any) => { eventCallbacksRef.current.onPrivateSceneUpdate = cb }
+    const onPlayerJoined = (cb: any) => { eventCallbacksRef.current.onPlayerJoined = cb }
 
-    const sendTypingIndicator = useCallback((isTyping: boolean) => {
-        if (!socket || !campaignId) return
-        socket.emit('chat:typing', { roomId: campaignId, isTyping })
-    }, [socket, campaignId])
+    // Stubs
+    const measureLatency = () => { }
+    const sendChatMessage = async (content: string) => { }
+    const sendTypingIndicator = () => { }
 
-    // Callback Setters
-    const onPlayerAction = useCallback((cb: (action: PlayerActionData) => void) => { eventCallbacksRef.current.onPlayerAction = cb }, [])
-    const onGameStateUpdate = useCallback((cb: (state: GameStateUpdate) => void) => { eventCallbacksRef.current.onGameStateUpdate = cb }, [])
-    const onChatMessage = useCallback((cb: (msg: SocketChatMessage) => void) => { eventCallbacksRef.current.onChatMessage = cb }, [])
-    const onPlayerJoined = useCallback((cb: (profile: UserProfile) => void) => { eventCallbacksRef.current.onPlayerJoined = cb }, [])
-    const onPlayerLeft = useCallback((cb: (data: { userId: string, userName: string }) => void) => { eventCallbacksRef.current.onPlayerLeft = cb }, [])
-    const onTyping = useCallback((cb: (data: { userId: string, userName: string, isTyping: boolean }) => void) => { eventCallbacksRef.current.onTyping = cb }, [])
-    const onDiceResult = useCallback((cb: (result: any) => void) => { eventCallbacksRef.current.onDiceResult = cb }, [])
-    const onPrivateSceneUpdate = useCallback((cb: (data: { sceneId: string | null }) => void) => { eventCallbacksRef.current.onPrivateSceneUpdate = cb }, [])
-    const onWhisperReceived = useCallback((cb: (data: { sender: string, message: string }) => void) => { eventCallbacksRef.current.onWhisperReceived = cb }, [])
-
-    // ✅ 3. ADD THIS: Setter function สำหรับ onRollRequested
-    const onRollRequested = useCallback((cb: (request: { checkType: string, dc: number }) => void) => {
-        eventCallbacksRef.current.onRollRequested = cb
-    }, [])
-
-    // Compatibility shim
-    const requestRoll = useCallback(async (checkType: string, dc: number = 10) => {
-        sendPlayerAction({
-            actionType: 'custom',
-            actorId: 'gm',
-            actorName: 'Game Master',
-            description: `Requested ${checkType} Check (DC ${dc})`,
-            metadata: { type: 'REQUEST_ROLL', checkType, dc }
-        } as any)
-    }, [sendPlayerAction])
-
+    // ✅ RETURN ทุกอย่างออกไปให้ครบ
     return {
-        socket,
         isConnected,
-        isInRoom,
         roomInfo,
-        latency,
-        connectionError,
         sendPlayerAction,
-        sendChatMessage,
         sendGMUpdate,
-        sendTypingIndicator,
-        setPrivateScene,
-        sendWhisper,
-        setGlobalScene,
-        measureLatency,
-        onPlayerAction,
-        onGameStateUpdate,
-        onChatMessage,
-        onPlayerJoined,
-        onPlayerLeft,
-        onTyping,
-        onDiceResult,
-        onPrivateSceneUpdate,
-        onWhisperReceived,
         requestRoll,
-        onRollRequested // ✅ 4. ADD THIS: อย่าลืม return ออกไป
+        setPrivateScene, // <--- มาแล้ว
+        sendWhisper,     // <--- มาแล้ว
+        setGlobalScene,  // <--- มาแล้ว
+
+        onGameStateUpdate,
+        onPlayerAction,
+        onChatMessage,
+        onDiceResult,
+        onRollRequested,
+        onWhisperReceived, // <--- แก้ Error ตัวนี้
+        onPrivateSceneUpdate,
+        onPlayerJoined,
+
+        measureLatency,
+        sendChatMessage,
+        sendTypingIndicator
     }
 }

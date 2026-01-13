@@ -3,10 +3,10 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { useGameSocket } from '@/hooks/useGameSocket'
+import { GameLog } from '@/components/board/GameLog'
 import { SceneDisplay } from '@/components/board/SceneDisplay'
 import { PartyStatus } from '@/components/board/PartyStatus'
-import { GameLog } from '@/components/board/GameLog'
-import { PlayerControlPanel } from '@/components/board/PlayerControlPanel'
+import { EnhancedPartyStatus } from '@/components/board/EnhancedPartyStatus'
 import { SCENES, NPCS } from '@/lib/game-data'
 
 export default function CampaignBoardPage() {
@@ -16,7 +16,6 @@ export default function CampaignBoardPage() {
     // Game State
     const [gameState, setGameState] = useState<any>(null)
     const [logs, setLogs] = useState<any[]>([])
-    const [diceResult, setDiceResult] = useState<any>(null)
     const [gmNarration, setGmNarration] = useState<string>('') // For GM narration text
 
     // UI State
@@ -24,66 +23,124 @@ export default function CampaignBoardPage() {
     const [gmInput, setGmInput] = useState('')
     const [targetDC, setTargetDC] = useState(15)
     // Modified Tabs to include Player Control
-    const [activeTab, setActiveTab] = useState<'SCENE' | 'NPC' | 'PLAYERS'>('SCENE')
+    const [activeTab, setActiveTab] = useState<'SCENE' | 'NPC' | 'PARTY'>('SCENE')
+    const [diceResult, setDiceResult] = useState<any>(null)
+    const [playerInventories, setPlayerInventories] = useState<Record<string, any[]>>({})
 
     const {
         roomInfo,
         onGameStateUpdate, onChatMessage, onPlayerAction, onDiceResult,
         requestRoll, sendPlayerAction,
         // New Socket Methods
-        setPrivateScene, sendWhisper, setGlobalScene, onWhisperReceived
+        setPrivateScene, sendWhisper, setGlobalScene, onWhisperReceived,
+        giveItem // ✅ 1. เพิ่ม giveItem ที่รับมาจาก Hook
     } = useGameSocket(campaignId, {
-        sessionToken: 'DEMO_GM_TOKEN',
-        userId: 'DEMO_GM_TOKEN', // Add userId for event filtering
+        sessionToken: 'DEMO_GM_TOKEN', // GM Token hardcoded for demo board
         autoConnect: true
     })
 
     useEffect(() => {
+        // ✅ Merge State เพื่อไม่ให้ข้อมูล Scene หาย
         onGameStateUpdate((newState) => setGameState((prev: any) => ({
             ...prev,
             ...newState
         })))
+
         onChatMessage((message) => setLogs((prev) => prev.some(log => log.id === message.id) ? prev : [...prev, message]))
-        // Listen for Whisper (show in log for GM)
+
+        // Listen for Whisper Confirmation (from self)
         onWhisperReceived((data) => {
             setLogs((prev) => [...prev, {
                 id: Date.now().toString(),
-                content: `💬 Whisper to ${data.sender}: ${data.message}`,
-                type: 'WHISPER',
-                senderName: 'GM',
+                content: `(Whisper ${data.sender}) ${data.message}`,
+                type: 'NARRATION',
+                senderName: 'System',
                 timestamp: new Date()
             }])
         })
 
         onPlayerAction((action) => {
-            // Show action in log immediately
-            setLogs((prev) => [...prev, {
-                id: Date.now().toString(),
-                content: `${action.actorName} used ${action.actionType}: ${action.description}`,
-                type: 'ACTION',
-                senderName: action.actorName,
-                timestamp: new Date()
-            }])
+            console.log('🎮 GM Board received action:', action)
+
+            // Skip generic logging for inventory actions (they have custom logging below)
+            if (action.actionType !== 'GM_MANAGE_INVENTORY') {
+                // Special format for GM narration
+                const content = (action.actorName === 'Game Master' && action.actionType === 'custom')
+                    ? action.description
+                    : `${action.actorName} used ${action.actionType}: ${action.description}`
+
+                console.log('📝 Adding to GM log:', content)
+
+                setLogs((prev) => [...prev, {
+                    id: Date.now().toString(),
+                    content,
+                    type: action.actionType === 'custom' ? 'NARRATION' : 'ACTION',
+                    senderName: action.actorName,
+                    timestamp: new Date()
+                }])
+            }
 
             // If it's GM narration (custom action from Game Master), show in scene
             if (action.actorName === 'Game Master' && action.actionType === 'custom') {
                 setGmNarration(action.description)
             }
+
+            // Track player inventory updates
+            if (action.actionType === 'PLAYER_INVENTORY_UPDATE') {
+                const items = action.payload?.inventory || []
+                // Only update if we have items or if it's an empty array (cleared inventory)
+                if (Array.isArray(items)) {
+                    setPlayerInventories(prev => ({
+                        ...prev,
+                        [action.targetPlayerId || '']: items
+                    }))
+                }
+            }
+
+            // Log item giving events
+            if (action.actionType === 'GM_MANAGE_INVENTORY' && action.payload) {
+                const { itemData, action: mode } = action.payload
+                const targetPlayer = roomInfo?.connectedPlayers?.find((p: any) => p.id === action.targetPlayerId)
+
+                if (mode === 'GIVE_CUSTOM' && itemData) {
+                    setLogs((prev) => [...prev, {
+                        id: `${Date.now()}-item`,
+                        content: `🎁 GM gave "${itemData.name}" to ${targetPlayer?.name || 'Unknown Player'}`,
+                        type: 'SYSTEM',
+                        senderName: 'System',
+                        timestamp: new Date()
+                    }])
+                }
+            }
         })
 
         onDiceResult((result) => {
             setDiceResult(result)
-            // Add dice result to log (without DC)
+            setTimeout(() => setDiceResult(null), 4000)
+
+            // Add dice result to log - use playerName from result first, then actorName fallback
+            const playerName = result.playerName || result.actorName || roomInfo?.connectedPlayers?.find((p: any) => p.id === result.playerId)?.name || 'Unknown Player'
+            const modifier = result.modifier !== undefined ? result.modifier : 0
+            const success = result.total >= (result.dc || 0)
+            const successText = success ? '✅ Success' : '❌ Failed'
+
             setLogs((prev) => [...prev, {
-                id: Date.now().toString(),
-                content: `🎲 ${result.actorName || 'Player'} rolled ${result.roll} + ${result.mod} = ${result.total} ${result.total >= result.dc ? '✅ Success!' : '❌ Failed'}`,
+                id: `${Date.now()}-dice`,
+                content: `🎲 ${playerName} rolled ${result.checkType}: ${result.roll} + ${modifier} = ${result.total} (DC ${result.dc}) ${successText}`,
                 type: 'DICE',
-                senderName: 'System',
+                senderName: playerName,
                 timestamp: new Date()
             }])
-            setTimeout(() => setDiceResult(null), 4000)
         })
-    }, [onGameStateUpdate, onChatMessage, onPlayerAction, onDiceResult, onWhisperReceived])
+    }, [onGameStateUpdate, onChatMessage, onPlayerAction, onDiceResult, onWhisperReceived, roomInfo?.connectedPlayers])
+
+    useEffect(() => {
+        console.log('🔧 GM Board useGameSocket setup:', {
+            hasOnPlayerAction: !!onPlayerAction,
+            hasRoomInfo: !!roomInfo,
+            campaignId
+        })
+    }, [onPlayerAction, roomInfo, campaignId])
 
     const handleGmNarrate = () => {
         if (!gmInput.trim()) return
@@ -92,11 +149,6 @@ export default function CampaignBoardPage() {
     }
 
     const changeScene = (url: string) => {
-        // Fallback or use setGlobalScene if we mapped URLs to IDs
-        // For now using old method for compatibility unless we map IDs
-        // Ideally we should use setGlobalScene but that requires scene IDs.
-        // Let's assume MOCK_SCENES IDs map to something server understands or we send custom action
-
         // Use the new Global Scene Setter
         // Find ID from URL
         const scene = SCENES.find(s => s.url === url)
@@ -113,22 +165,21 @@ export default function CampaignBoardPage() {
 
     const toggleNpc = (npc: any) => {
         const currentNpcs = gameState?.activeNpcs || []
-        const exists = currentNpcs.find((n: any) => n.id === npc.id)
-
+        const isActive = currentNpcs.some((n: any) => n.id === npc.id)
         let newNpcs
-        if (exists) {
+
+        if (isActive) {
             newNpcs = currentNpcs.filter((n: any) => n.id !== npc.id)
         } else {
             newNpcs = [...currentNpcs, npc]
         }
 
-        // Only update NPCs, preserve current scene
         sendPlayerAction({
             actionType: 'GM_UPDATE_SCENE',
             payload: {
                 activeNpcs: newNpcs,
-                currentScene: gameState?.currentScene, // Preserve current scene
-                sceneImageUrl: gameState?.sceneImageUrl // Preserve current image
+                currentScene: gameState?.currentScene,
+                sceneImageUrl: gameState?.sceneImageUrl
             }
         } as any)
     }
@@ -151,10 +202,10 @@ export default function CampaignBoardPage() {
 
                 {/* LEFT: Scene & Log */}
                 <div className="flex-1 flex flex-col w-full h-full min-w-0">
-                    <div className="h-[50%] md:h-[60%] relative bg-black">
+                    <div className="h-[60%] relative bg-black">
                         <SceneDisplay
-                            sceneDescription={gmNarration || SCENES.find(s => s.id === gameState?.currentScene)?.name || gameState?.currentScene || 'The adventure awaits...'}
-                            imageUrl={gameState?.sceneImageUrl || (SCENES.find(s => s.id === gameState?.currentScene)?.url)} // Fallback to map ID to URL
+                            sceneDescription={gmNarration || SCENES.find(s => s.id === gameState?.currentScene)?.name || SCENES[0]?.name || 'Adventure Awaits'}
+                            imageUrl={gameState?.sceneImageUrl || (SCENES.find(s => s.id === gameState?.currentScene)?.url) || SCENES[0]?.url}
                             npcs={gameState?.activeNpcs || []}
                         />
                         {diceResult && (
@@ -165,36 +216,23 @@ export default function CampaignBoardPage() {
                             </div>
                         )}
                     </div>
-                    <div className="flex-1 bg-slate-950 border-t border-slate-800 relative min-h-0">
-                        <div className="h-full pt-2 p-4"><GameLog logs={logs} /></div>
+                    <div className="h-[40%] bg-slate-950 border-t border-slate-800 relative">
+                        <div className="h-full p-4"><GameLog logs={logs} /></div>
                     </div>
                 </div>
 
                 {/* RIGHT SIDEBAR */}
                 <div className={`
-                    fixed inset-y-0 right-0 z-40 w-80 bg-slate-900 border-l border-slate-700 shadow-2xl transform transition-transform duration-300 ease-in-out pt-14
+                    fixed inset-y-0 right-0 z-40 w-96 bg-slate-900 border-l border-slate-700 shadow-2xl transform transition-transform duration-300 ease-in-out pt-14
                     ${isSidebarOpen ? 'translate-x-0' : 'translate-x-full'}
-                    lg:relative lg:translate-x-0 lg:block lg:pt-0 lg:w-80 lg:shadow-none flex flex-col h-full
+                    lg:relative lg:translate-x-0 lg:block lg:pt-0 lg:w-96 lg:shadow-none flex flex-col h-full overflow-hidden
                 `}>
-                    {/* 1. PARTY STATUS */}
-                    <div className="h-[30%] flex flex-col border-b border-slate-700 bg-slate-900/50">
-                        <div className="p-3 border-b border-slate-800 flex justify-between items-center bg-slate-900">
-                            <h2 className="text-amber-500 font-bold text-xs tracking-wider uppercase">Party Status ({roomInfo?.connectedPlayers?.length || 0})</h2>
-                            <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden text-slate-500">✕</button>
-                        </div>
-                        <div className="p-3 space-y-3 overflow-y-auto custom-scrollbar flex-1">
-                            {/* Use Connected Players from Room Info */}
-                            <PartyStatus characters={roomInfo?.connectedPlayers || []} />
-                            {(!roomInfo?.connectedPlayers || roomInfo.connectedPlayers.length === 0) && <div className="text-center text-slate-600 text-xs italic mt-4">No heroes yet...</div>}
-                        </div>
-                    </div>
-
-                    {/* 2. GM CONTROLS */}
+                    {/* TABS */}
                     <div className="flex-1 flex flex-col bg-slate-950 min-h-0">
                         <div className="flex border-b border-slate-800">
                             <button onClick={() => setActiveTab('SCENE')} className={`flex-1 py-3 text-xs font-bold uppercase tracking-wide transition-colors ${activeTab === 'SCENE' ? 'bg-slate-800 text-amber-500 border-b-2 border-amber-500' : 'text-slate-500 hover:text-slate-300'}`}>Scenes</button>
                             <button onClick={() => setActiveTab('NPC')} className={`flex-1 py-3 text-xs font-bold uppercase tracking-wide transition-colors ${activeTab === 'NPC' ? 'bg-slate-800 text-amber-500 border-b-2 border-amber-500' : 'text-slate-500 hover:text-slate-300'}`}>NPCs</button>
-                            <button onClick={() => setActiveTab('PLAYERS')} className={`flex-1 py-3 text-xs font-bold uppercase tracking-wide transition-colors ${activeTab === 'PLAYERS' ? 'bg-slate-800 text-amber-500 border-b-2 border-amber-500' : 'text-slate-500 hover:text-slate-300'}`}>Players</button>
+                            <button onClick={() => setActiveTab('PARTY')} className={`flex-1 py-3 text-xs font-bold uppercase tracking-wide transition-colors ${activeTab === 'PARTY' ? 'bg-slate-800 text-amber-500 border-b-2 border-amber-500' : 'text-slate-500 hover:text-slate-300'}`}>👥 Party ({roomInfo?.connectedPlayers?.length || 0})</button>
                         </div>
 
                         <div className="flex-1 p-3 overflow-y-auto custom-scrollbar">
@@ -259,18 +297,37 @@ export default function CampaignBoardPage() {
                                 </div>
                             )}
 
-                            {/* PLAYERS TAB */}
-                            {activeTab === 'PLAYERS' && (
-                                <PlayerControlPanel
+                            {/* PARTY TAB */}
+                            {activeTab === 'PARTY' && (
+                                <EnhancedPartyStatus
                                     players={roomInfo?.connectedPlayers || []}
                                     scenes={SCENES}
                                     onSetPrivateScene={setPrivateScene}
-                                    onSetGlobalScene={setGlobalScene}
                                     onWhisper={sendWhisper}
-                                    onRequestRoll={(playerId, checkType, dc) => {
-                                        console.log(`🎲 Requesting ${checkType} check (DC ${dc}) from player ${playerId}`)
-                                        requestRoll(checkType, dc, playerId)
+                                    onGiveItem={(targetPlayerId: string, itemData: any, action: 'GIVE_CUSTOM' | 'REMOVE') => {
+                                        // 1. Send to server
+                                        giveItem(targetPlayerId, itemData, action)
+
+                                        // 2. Optimistic Update (Immediate Feedback)
+                                        setPlayerInventories(prev => {
+                                            const currentItems = prev[targetPlayerId] || []
+                                            if (action === 'REMOVE') {
+                                                return {
+                                                    ...prev,
+                                                    [targetPlayerId]: currentItems.filter((i: any) => i.id !== itemData.id)
+                                                }
+                                            } else {
+                                                // Check duplicate before adding optimistically
+                                                if (currentItems.some((i: any) => i.id === itemData.id)) return prev
+                                                return {
+                                                    ...prev,
+                                                    [targetPlayerId]: [...currentItems, itemData]
+                                                }
+                                            }
+                                        })
                                     }}
+                                    onRequestRoll={(playerId, checkType, dc) => requestRoll(checkType, dc, playerId)}
+                                    playerInventories={playerInventories}
                                 />
                             )}
                         </div>

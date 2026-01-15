@@ -3,18 +3,26 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams } from 'next/navigation'
 import { useGameSocket } from '@/hooks/useGameSocket'
+// หมายเหตุ: ฟังก์ชัน generateCharacter อาจจะต้อง mock หรือ import ให้ถูก
+// ถ้าไม่มีไฟล์นี้ ให้ใช้ mock data หรือลบออกชั่วคราว
 import { generateCharacter } from '@/lib/character-utils'
 
 import { SceneDisplay } from '@/components/board/SceneDisplay'
 import { GameLog } from '@/components/board/GameLog'
-import { SCENES } from '@/lib/game-data'
+// import { SCENES } from '@/lib/game-data' // ใช้ข้อมูลจาก Socket/DB แทน หรือถ้ามีไฟล์นี้อยู่ก็ uncomment ได้
 
 export default function PlayerControllerPage() {
     const params = useParams()
-    const campaignId = params.campaignId as string
+    // ✅ FIX: เปลี่ยนจาก campaignId เป็น code ให้ตรงกับ folder [code]
+    const joinCode = params.code as string
 
-    // Generate stable player ID
-    const [playerId] = useState(() => `player-${Math.floor(Math.random() * 10000)}`)
+    // Generate stable player ID (ในอนาคตควรรับมาจาก Lobby ผ่าน localStorage หรือ Query)
+    const [playerId] = useState(() => {
+        if (typeof window !== 'undefined') {
+            return localStorage.getItem('trpg_player_id') || `player-${Math.floor(Math.random() * 10000)}`
+        }
+        return `player-${Math.floor(Math.random() * 10000)}`
+    })
 
     // Game State
     const [character, setCharacter] = useState<any>(null)
@@ -48,7 +56,7 @@ export default function PlayerControllerPage() {
         onDiceResult,
         onPrivateSceneUpdate,
         onWhisperReceived
-    } = useGameSocket(campaignId, {
+    } = useGameSocket(joinCode, { // ✅ ใช้ joinCode แทน campaignId
         sessionToken: 'DEMO_PLAYER_TOKEN',
         userId: playerId,
         autoConnect: true
@@ -64,7 +72,7 @@ export default function PlayerControllerPage() {
         }
     }
 
-    // ✅ Effect: Handle Virtual Keyboard (Like LINE/Messenger)
+    // ✅ Effect: Handle Virtual Keyboard
     useEffect(() => {
         if (!window.visualViewport) return
 
@@ -86,7 +94,15 @@ export default function PlayerControllerPage() {
     useEffect(() => {
         if (hasJoined.current) return
 
-        const myChar = generateCharacter(playerId)
+        // ⚠️ NOTE: ตรงนี้เป็นการสุ่มตัวละคร ถ้าอยากให้ตรงกับที่เลือกใน Lobby 
+        // ต้องดึงข้อมูลจาก Server หรือ LocalStorage มาใช้แทน generateCharacter
+        // แต่ตอนนี้ใช้แบบเดิมไปก่อนตาม Request
+        const myChar = generateCharacter ? generateCharacter(playerId) : {
+            name: 'Adventurer',
+            hp: 20, maxHp: 20, mp: 10, maxMp: 10,
+            avatarUrl: 'https://placehold.co/100x100/333/FFF?text=Hero'
+        }
+
         setCharacter(myChar)
         hasJoined.current = true
 
@@ -111,7 +127,6 @@ export default function PlayerControllerPage() {
 
         const handleLog = (msg: any) => {
             setLogs((prev) => {
-                // Check if log with same ID already exists
                 if (prev.some(l => l.id === msg.id)) return prev
                 return [...prev, msg]
             })
@@ -136,18 +151,14 @@ export default function PlayerControllerPage() {
 
         if (onPlayerAction) {
             onPlayerAction((action) => {
-                // 🎁 INVENTORY LOGIC - Only process if this item is for ME
+                // Inventory Logic
                 if (action.actionType === 'GM_MANAGE_INVENTORY' && action.targetPlayerId === playerId) {
                     const { itemData, action: mode } = action.payload || {};
 
                     if (mode === 'GIVE_CUSTOM' || mode === 'ADD') {
-                        // Check for duplicates before adding
                         setInventory(prev => {
                             const exists = prev.some(item => item.id === itemData.id)
-                            if (exists) {
-                                console.log('⚠️ Duplicate item prevented:', itemData.id)
-                                return prev
-                            }
+                            if (exists) return prev
                             return [...prev, itemData]
                         })
 
@@ -158,13 +169,11 @@ export default function PlayerControllerPage() {
                             senderName: 'System',
                             timestamp: new Date()
                         })
-                        return; // Stop processing to avoid double logs
+                        return;
                     }
 
                     if (mode === 'REMOVE') {
-                        // Remove item from inventory
                         setInventory(prev => prev.filter(item => item.id !== itemData.id))
-
                         handleLog({
                             id: Date.now().toString(),
                             content: `❌ GM removed: ${itemData.name}`,
@@ -174,33 +183,21 @@ export default function PlayerControllerPage() {
                         })
                         return;
                     }
-                    return; // Don't show regular action log for inventory events
+                    return;
                 }
 
-                // Normal Action Log
-                // Skip special actions that have their own logging logic
+                // Normal Log
                 const skipGenericLog = ['GM_MANAGE_INVENTORY', 'dice_roll', 'use_item', 'JOIN_GAME', 'join', 'PLAYER_INVENTORY_UPDATE']
                 if (skipGenericLog.includes(action.actionType)) {
-
-                    // Handle JOIN log specifically to prevent duplicates
                     if (action.actionType === 'JOIN_GAME' || action.actionType === 'join') {
-                        const joinId = `join-${action.actorId || action.actorName}`
-                        console.log('🔗 Processing Join Log:', {
-                            actionType: action.actionType,
-                            actorId: action.actorId,
-                            actorName: action.actorName,
-                            generatedId: joinId
-                        })
-
                         handleLog({
-                            id: joinId,
+                            id: `join-${action.actorId || action.actorName}`,
                             content: `${action.actorName} joined the party!`,
                             type: 'SYSTEM',
                             senderName: 'System',
                             timestamp: new Date()
                         })
                     }
-
                     return
                 }
 
@@ -277,10 +274,10 @@ export default function PlayerControllerPage() {
     }
 
     // Scene Logic
-    const activeSceneId = privateSceneId || gameState?.currentScene
-    const activeSceneData = SCENES.find(s => s.id === activeSceneId) || null
-    const activeImageUrl = activeSceneData?.url || gameState?.sceneImageUrl || "https://img.freepik.com/premium-photo/majestic-misty-redwood-forest-with-lush-green-ferns-sunlight-filtering-through-fog_996993-7424.jpg"
-    const activeDescription = gmNarration || activeSceneData?.name || gameState?.currentScene || "Connecting..."
+    // หมายเหตุ: ถ้าไม่มีตัวแปร SCENES ให้ใช้ Fallback image
+    // const activeSceneData = SCENES.find(s => s.id === (privateSceneId || gameState?.currentScene)) || null
+    const activeImageUrl = gameState?.sceneImageUrl || "https://img.freepik.com/premium-photo/majestic-misty-redwood-forest-with-lush-green-ferns-sunlight-filtering-through-fog_996993-7424.jpg"
+    const activeDescription = gmNarration || gameState?.currentScene || "Connecting..."
 
     return (
         <div className="h-[100dvh] bg-slate-950 text-white flex flex-col font-sans overflow-hidden">
@@ -294,7 +291,7 @@ export default function PlayerControllerPage() {
                         </div>
                         <div className="min-w-0">
                             <div className="font-bold text-amber-500 text-sm truncate max-w-[120px]">{character?.name || 'Loading...'}</div>
-                            <div className="text-[10px] text-slate-400 uppercase tracking-wide bg-slate-800 px-1.5 py-0.5 rounded inline-block">{character?.role || '...'}</div>
+                            <div className="text-[10px] text-slate-400 uppercase tracking-wide bg-slate-800 px-1.5 py-0.5 rounded inline-block">{character?.role || 'Adventurer'}</div>
                         </div>
                     </div>
                     <div className="w-24 md:w-32 flex flex-col gap-1 shrink-0">
@@ -419,7 +416,6 @@ export default function PlayerControllerPage() {
                         <p className="text-sm text-slate-300 mb-6 font-light leading-relaxed">"{selectedItemDetail.description}"</p>
                         <button
                             onClick={() => {
-                                // Send item usage action
                                 sendPlayerAction({
                                     actorName: character?.name || 'Player',
                                     actionType: 'use_item',
@@ -427,7 +423,6 @@ export default function PlayerControllerPage() {
                                     payload: { itemId: selectedItemDetail.id, itemName: selectedItemDetail.name }
                                 } as any)
 
-                                // Show local feedback
                                 setLogs((prev) => [...prev, {
                                     id: Date.now().toString(),
                                     content: `You used ${selectedItemDetail.name}`,

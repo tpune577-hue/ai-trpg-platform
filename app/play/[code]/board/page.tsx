@@ -3,52 +3,105 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { useGameSocket } from '@/hooks/useGameSocket'
+import { getLobbyInfo } from '@/app/actions/game'
 import { GameLog } from '@/components/board/GameLog'
 import { SceneDisplay } from '@/components/board/SceneDisplay'
-import { PartyStatus } from '@/components/board/PartyStatus'
 import { EnhancedPartyStatus } from '@/components/board/EnhancedPartyStatus'
-import { SCENES, NPCS } from '@/lib/game-data'
 
 export default function CampaignBoardPage() {
     const params = useParams()
-    const campaignId = params.id as string
+    const joinCode = params.code as string
+
+    // --- GAME DATA FROM DB ---
+    const [campaignScenes, setCampaignScenes] = useState<any[]>([])
+    const [campaignNpcs, setCampaignNpcs] = useState<any[]>([])
+    const [dbPlayers, setDbPlayers] = useState<any[]>([]) // ✅ เก็บ Player จาก DB
+    const [isLoadingData, setIsLoadingData] = useState(true)
 
     // Game State
-    const [gameState, setGameState] = useState<any>(null)
+    const [gameState, setGameState] = useState<any>({
+        currentScene: null,
+        sceneImageUrl: '',
+        activeNpcs: []
+    })
     const [logs, setLogs] = useState<any[]>([])
-    const [gmNarration, setGmNarration] = useState<string>('') // For GM narration text
+    const [gmNarration, setGmNarration] = useState<string>('')
 
     // UI State
     const [isSidebarOpen, setIsSidebarOpen] = useState(false)
     const [gmInput, setGmInput] = useState('')
     const [targetDC, setTargetDC] = useState(15)
-    // Modified Tabs to include Player Control
+
     const [activeTab, setActiveTab] = useState<'SCENE' | 'NPC' | 'PARTY'>('SCENE')
     const [diceResult, setDiceResult] = useState<any>(null)
     const [playerInventories, setPlayerInventories] = useState<Record<string, any[]>>({})
 
+    // Socket Hook
     const {
         roomInfo,
         onGameStateUpdate, onChatMessage, onPlayerAction, onDiceResult,
         requestRoll, sendPlayerAction,
-        // New Socket Methods
         setPrivateScene, sendWhisper, setGlobalScene, onWhisperReceived,
-        giveItem // ✅ 1. เพิ่ม giveItem ที่รับมาจาก Hook
-    } = useGameSocket(campaignId, {
-        sessionToken: 'DEMO_GM_TOKEN', // GM Token hardcoded for demo board
+        giveItem
+    } = useGameSocket(joinCode, {
+        sessionToken: 'DEMO_GM_TOKEN',
         autoConnect: true
     })
 
+    // ✅ 1. Fetch Data & Setup Initial State
     useEffect(() => {
-        // ✅ Merge State เพื่อไม่ให้ข้อมูล Scene หาย
-        onGameStateUpdate((newState) => setGameState((prev: any) => ({
-            ...prev,
-            ...newState
-        })))
+        const fetchCampaignData = async () => {
+            try {
+                const data = await getLobbyInfo(joinCode)
+                if (data) {
+                    // Set Asset Data
+                    if (data.campaign) {
+                        setCampaignScenes(data.campaign.scenes || [])
+                        setCampaignNpcs(data.campaign.npcs || [])
+                    }
+
+                    // ✅ Set Player Data from DB (Fix Player List not showing)
+                    if (data.players) {
+                        // Map ข้อมูล DB ให้ตรงกับ Format ที่ UI ใช้นิดหน่อย
+                        const mappedPlayers = data.players.map((p: any) => ({
+                            id: p.id,
+                            name: p.name,
+                            role: p.role,
+                            // แปลง characterData string เป็น object
+                            character: p.characterData ? JSON.parse(p.characterData) : {}
+                        }))
+                        setDbPlayers(mappedPlayers)
+                    }
+
+                    // Set Initial Scene (ถ้ายังไม่มี state จาก Server)
+                    if (!gameState.currentScene && data.campaign?.scenes?.length > 0) {
+                        const firstScene = data.campaign.scenes[0]
+                        setGameState((prev: any) => ({
+                            ...prev,
+                            currentScene: firstScene.id,
+                            sceneImageUrl: firstScene.imageUrl
+                        }))
+                    }
+                }
+            } catch (err) {
+                console.error("Failed to fetch campaign data:", err)
+            } finally {
+                setIsLoadingData(false)
+            }
+        }
+        fetchCampaignData()
+    }, [joinCode])
+
+    // Socket Event Listeners
+    useEffect(() => {
+        // เมื่อ Server ส่ง State มาให้อัปเดตตาม (แต่ถ้าเรากดเอง เราจะอัปเดตนำไปก่อนแล้ว)
+        onGameStateUpdate((newState) => {
+            console.log("📥 GameState Update:", newState)
+            setGameState((prev: any) => ({ ...prev, ...newState }))
+        })
 
         onChatMessage((message) => setLogs((prev) => prev.some(log => log.id === message.id) ? prev : [...prev, message]))
 
-        // Listen for Whisper Confirmation (from self)
         onWhisperReceived((data) => {
             setLogs((prev) => [...prev, {
                 id: Date.now().toString(),
@@ -60,16 +113,11 @@ export default function CampaignBoardPage() {
         })
 
         onPlayerAction((action) => {
-            console.log('🎮 GM Board received action:', action)
-
-            // Skip generic logging for inventory actions (they have custom logging below)
+            // ... (Logging Logic เหมือนเดิม) ...
             if (action.actionType !== 'GM_MANAGE_INVENTORY') {
-                // Special format for GM narration
                 const content = (action.actorName === 'Game Master' && action.actionType === 'custom')
                     ? action.description
                     : `${action.actorName} used ${action.actionType}: ${action.description}`
-
-                console.log('📝 Adding to GM log:', content)
 
                 setLogs((prev) => [...prev, {
                     id: Date.now().toString(),
@@ -80,36 +128,14 @@ export default function CampaignBoardPage() {
                 }])
             }
 
-            // If it's GM narration (custom action from Game Master), show in scene
             if (action.actorName === 'Game Master' && action.actionType === 'custom') {
                 setGmNarration(action.description)
             }
 
-            // Track player inventory updates
             if (action.actionType === 'PLAYER_INVENTORY_UPDATE') {
                 const items = action.payload?.inventory || []
-                // Only update if we have items or if it's an empty array (cleared inventory)
                 if (Array.isArray(items)) {
-                    setPlayerInventories(prev => ({
-                        ...prev,
-                        [action.targetPlayerId || '']: items
-                    }))
-                }
-            }
-
-            // Log item giving events
-            if (action.actionType === 'GM_MANAGE_INVENTORY' && action.payload) {
-                const { itemData, action: mode } = action.payload
-                const targetPlayer = roomInfo?.connectedPlayers?.find((p: any) => p.id === action.targetPlayerId)
-
-                if (mode === 'GIVE_CUSTOM' && itemData) {
-                    setLogs((prev) => [...prev, {
-                        id: `${Date.now()}-item`,
-                        content: `🎁 GM gave "${itemData.name}" to ${targetPlayer?.name || 'Unknown Player'}`,
-                        type: 'SYSTEM',
-                        senderName: 'System',
-                        timestamp: new Date()
-                    }])
+                    setPlayerInventories(prev => ({ ...prev, [action.targetPlayerId || '']: items }))
                 }
             }
         })
@@ -117,30 +143,17 @@ export default function CampaignBoardPage() {
         onDiceResult((result) => {
             setDiceResult(result)
             setTimeout(() => setDiceResult(null), 4000)
-
-            // Add dice result to log - use playerName from result first, then actorName fallback
-            const playerName = result.playerName || result.actorName || roomInfo?.connectedPlayers?.find((p: any) => p.id === result.playerId)?.name || 'Unknown Player'
-            const modifier = result.modifier !== undefined ? result.modifier : 0
-            const success = result.total >= (result.dc || 0)
-            const successText = success ? '✅ Success' : '❌ Failed'
-
+            const playerName = result.playerName || result.actorName || 'Unknown'
+            const successText = result.total >= (result.dc || 0) ? '✅ Success' : '❌ Failed'
             setLogs((prev) => [...prev, {
                 id: `${Date.now()}-dice`,
-                content: `🎲 ${playerName} rolled ${result.checkType}: ${result.roll} + ${modifier} = ${result.total} (DC ${result.dc}) ${successText}`,
+                content: `🎲 ${playerName} rolled ${result.checkType}: ${result.roll} + ${result.modifier || 0} = ${result.total} (DC ${result.dc}) ${successText}`,
                 type: 'DICE',
                 senderName: playerName,
                 timestamp: new Date()
             }])
         })
-    }, [onGameStateUpdate, onChatMessage, onPlayerAction, onDiceResult, onWhisperReceived, roomInfo?.connectedPlayers])
-
-    useEffect(() => {
-        console.log('🔧 GM Board useGameSocket setup:', {
-            hasOnPlayerAction: !!onPlayerAction,
-            hasRoomInfo: !!roomInfo,
-            campaignId
-        })
-    }, [onPlayerAction, roomInfo, campaignId])
+    }, [onGameStateUpdate, onChatMessage, onPlayerAction, onDiceResult, onWhisperReceived])
 
     const handleGmNarrate = () => {
         if (!gmInput.trim()) return
@@ -148,21 +161,27 @@ export default function CampaignBoardPage() {
         setGmInput('')
     }
 
-    const changeScene = (url: string) => {
-        // Use the new Global Scene Setter
-        // Find ID from URL
-        const scene = SCENES.find(s => s.url === url)
-        if (scene) {
-            setGlobalScene(scene.id)
-        } else {
-            // Fallback for custom URLs
-            sendPlayerAction({
-                actionType: 'GM_UPDATE_SCENE',
-                payload: { sceneImageUrl: url }
-            } as any)
-        }
+    // ✅ Fix: Scene Changing (Optimistic Update + Correct Payload)
+    const changeScene = (sceneId: string, imageUrl: string) => {
+        // 1. อัปเดตหน้าจอ GM ทันที (ไม่ต้องรอ Server)
+        setGameState((prev: any) => ({
+            ...prev,
+            currentScene: sceneId,
+            sceneImageUrl: imageUrl
+        }))
+
+        // 2. ส่งคำสั่งไปบอก Player คนอื่น
+        sendPlayerAction({
+            actionType: 'GM_UPDATE_SCENE',
+            payload: {
+                currentScene: sceneId,
+                sceneImageUrl: imageUrl,
+                activeNpcs: gameState.activeNpcs // ส่ง NPC ชุดเดิมไปด้วย เดี๋ยวหาย
+            }
+        } as any)
     }
 
+    // ✅ Fix: NPC Toggling (Optimistic Update)
     const toggleNpc = (npc: any) => {
         const currentNpcs = gameState?.activeNpcs || []
         const isActive = currentNpcs.some((n: any) => n.id === npc.id)
@@ -171,9 +190,18 @@ export default function CampaignBoardPage() {
         if (isActive) {
             newNpcs = currentNpcs.filter((n: any) => n.id !== npc.id)
         } else {
-            newNpcs = [...currentNpcs, npc]
+            // ต้องแน่ใจว่า NPC มี avatarUrl (DB ใช้ avatarUrl, UI อาจจะใช้ imageUrl)
+            const npcData = { ...npc, imageUrl: npc.avatarUrl || npc.imageUrl }
+            newNpcs = [...currentNpcs, npcData]
         }
 
+        // 1. อัปเดตหน้าจอ GM ทันที
+        setGameState((prev: any) => ({
+            ...prev,
+            activeNpcs: newNpcs
+        }))
+
+        // 2. ส่งคำสั่ง
         sendPlayerAction({
             actionType: 'GM_UPDATE_SCENE',
             payload: {
@@ -184,12 +212,24 @@ export default function CampaignBoardPage() {
         } as any)
     }
 
+    if (isLoadingData) return <div className="h-screen bg-slate-950 flex items-center justify-center text-amber-500 animate-pulse">Loading Campaign Data...</div>
+
+    // Helper Variables
+    const currentSceneUrl = gameState?.sceneImageUrl || campaignScenes[0]?.imageUrl || '/placeholder.jpg'
+    const currentSceneName = gmNarration || campaignScenes.find(s => s.id === gameState?.currentScene)?.name || 'Adventure Log'
+
+    // ✅ Merge Players: ใช้ DB Players เป็นหลัก ถ้ามี Socket Info ให้เอามาแปะ (เช่น Online Status)
+    // แต่เบื้องต้นใช้ dbPlayers ไปก่อนเพื่อให้รายชื่อขึ้นแน่นอน
+    const displayPlayers = dbPlayers.length > 0 ? dbPlayers : (roomInfo?.connectedPlayers || [])
+
     return (
         <div className="flex h-screen bg-[#0f172a] text-slate-200 overflow-hidden font-sans relative">
 
             {/* Header */}
             <div className="absolute top-0 w-full h-14 bg-slate-900/90 border-b border-slate-700 flex justify-between items-center px-4 z-50 backdrop-blur-md shadow-lg">
-                <h1 className="text-amber-500 font-bold tracking-widest text-sm md:text-lg uppercase glow-text">The Shadow's Veil (GM)</h1>
+                <h1 className="text-amber-500 font-bold tracking-widest text-sm md:text-lg uppercase glow-text">
+                    GM Dashboard (Code: {joinCode})
+                </h1>
                 <div className="flex items-center gap-4">
                     <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="lg:hidden p-2 text-slate-300 border border-slate-700 rounded bg-slate-800">
                         {isSidebarOpen ? '✖' : '☰ Menu'}
@@ -204,8 +244,8 @@ export default function CampaignBoardPage() {
                 <div className="flex-1 flex flex-col w-full h-full min-w-0">
                     <div className="h-[60%] relative bg-black">
                         <SceneDisplay
-                            sceneDescription={gmNarration || SCENES.find(s => s.id === gameState?.currentScene)?.name || SCENES[0]?.name || 'Adventure Awaits'}
-                            imageUrl={gameState?.sceneImageUrl || (SCENES.find(s => s.id === gameState?.currentScene)?.url) || SCENES[0]?.url}
+                            sceneDescription={currentSceneName}
+                            imageUrl={currentSceneUrl}
                             npcs={gameState?.activeNpcs || []}
                         />
                         {diceResult && (
@@ -232,7 +272,7 @@ export default function CampaignBoardPage() {
                         <div className="flex border-b border-slate-800">
                             <button onClick={() => setActiveTab('SCENE')} className={`flex-1 py-3 text-xs font-bold uppercase tracking-wide transition-colors ${activeTab === 'SCENE' ? 'bg-slate-800 text-amber-500 border-b-2 border-amber-500' : 'text-slate-500 hover:text-slate-300'}`}>Scenes</button>
                             <button onClick={() => setActiveTab('NPC')} className={`flex-1 py-3 text-xs font-bold uppercase tracking-wide transition-colors ${activeTab === 'NPC' ? 'bg-slate-800 text-amber-500 border-b-2 border-amber-500' : 'text-slate-500 hover:text-slate-300'}`}>NPCs</button>
-                            <button onClick={() => setActiveTab('PARTY')} className={`flex-1 py-3 text-xs font-bold uppercase tracking-wide transition-colors ${activeTab === 'PARTY' ? 'bg-slate-800 text-amber-500 border-b-2 border-amber-500' : 'text-slate-500 hover:text-slate-300'}`}>👥 Party ({roomInfo?.connectedPlayers?.length || 0})</button>
+                            <button onClick={() => setActiveTab('PARTY')} className={`flex-1 py-3 text-xs font-bold uppercase tracking-wide transition-colors ${activeTab === 'PARTY' ? 'bg-slate-800 text-amber-500 border-b-2 border-amber-500' : 'text-slate-500 hover:text-slate-300'}`}>👥 Party ({displayPlayers.length})</button>
                         </div>
 
                         <div className="flex-1 p-3 overflow-y-auto custom-scrollbar">
@@ -240,20 +280,21 @@ export default function CampaignBoardPage() {
                             {/* SCENE TAB */}
                             {activeTab === 'SCENE' && (
                                 <div className="grid grid-cols-2 gap-2">
-                                    {SCENES.map(scene => (
+                                    {campaignScenes.length === 0 && <p className="col-span-2 text-center text-slate-500 text-xs py-4">No scenes found.</p>}
+                                    {campaignScenes.map(scene => (
                                         <div
                                             key={scene.id}
-                                            onClick={() => changeScene(scene.url)} // This now uses setGlobalScene if matches
+                                            onClick={() => changeScene(scene.id, scene.imageUrl)}
                                             className={`
                                                 relative aspect-video rounded-lg overflow-hidden cursor-pointer border-2 transition-all group
-                                                ${gameState?.sceneImageUrl === scene.url ? 'border-amber-500 ring-2 ring-amber-500/30' : 'border-slate-700 hover:border-slate-500'}
+                                                ${gameState?.sceneImageUrl === scene.imageUrl ? 'border-amber-500 ring-2 ring-amber-500/30' : 'border-slate-700 hover:border-slate-500'}
                                             `}
                                         >
-                                            <img src={scene.url} alt={scene.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
+                                            <img src={scene.imageUrl} alt={scene.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
                                             <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent flex items-end p-2">
                                                 <span className="text-[10px] font-bold text-white truncate">{scene.name}</span>
                                             </div>
-                                            {gameState?.sceneImageUrl === scene.url && (
+                                            {gameState?.sceneImageUrl === scene.imageUrl && (
                                                 <div className="absolute top-1 right-1 bg-amber-500 text-black text-[8px] font-bold px-1.5 py-0.5 rounded">ACTIVE</div>
                                             )}
                                         </div>
@@ -266,7 +307,7 @@ export default function CampaignBoardPage() {
                                 <div className="space-y-3">
                                     <div className="text-[10px] text-slate-500 uppercase font-bold text-center mb-2">Click to Toggle Overlay</div>
                                     <div className="grid grid-cols-3 gap-2">
-                                        {NPCS.map(npc => {
+                                        {campaignNpcs.map(npc => {
                                             const isActive = gameState?.activeNpcs?.some((n: any) => n.id === npc.id)
                                             let borderColor = 'border-slate-600'
                                             if (isActive) {
@@ -285,7 +326,7 @@ export default function CampaignBoardPage() {
                                                     `}
                                                 >
                                                     <div className={`w-12 h-12 rounded-full border-2 overflow-hidden bg-white/10 ${borderColor}`}>
-                                                        <img src={npc.imageUrl} alt={npc.name} className={`w-full h-full object-cover transition-all ${!isActive && 'grayscale opacity-60'}`} />
+                                                        <img src={npc.avatarUrl} alt={npc.name} className={`w-full h-full object-cover transition-all ${!isActive && 'grayscale opacity-60'}`} />
                                                     </div>
                                                     <span className={`text-[9px] font-bold truncate max-w-full ${isActive ? 'text-white' : 'text-slate-500'}`}>
                                                         {npc.name}
@@ -297,32 +338,22 @@ export default function CampaignBoardPage() {
                                 </div>
                             )}
 
-                            {/* PARTY TAB */}
+                            {/* PARTY TAB (Fix: ใช้ displayPlayers) */}
                             {activeTab === 'PARTY' && (
                                 <EnhancedPartyStatus
-                                    players={roomInfo?.connectedPlayers || []}
-                                    scenes={SCENES}
+                                    players={displayPlayers} // ✅ ส่ง DB Players ที่มีรายชื่อครบถ้วน
+                                    scenes={campaignScenes}
                                     onSetPrivateScene={setPrivateScene}
                                     onWhisper={sendWhisper}
                                     onGiveItem={(targetPlayerId: string, itemData: any, action: 'GIVE_CUSTOM' | 'REMOVE') => {
-                                        // 1. Send to server
                                         giveItem(targetPlayerId, itemData, action)
-
-                                        // 2. Optimistic Update (Immediate Feedback)
                                         setPlayerInventories(prev => {
                                             const currentItems = prev[targetPlayerId] || []
                                             if (action === 'REMOVE') {
-                                                return {
-                                                    ...prev,
-                                                    [targetPlayerId]: currentItems.filter((i: any) => i.id !== itemData.id)
-                                                }
+                                                return { ...prev, [targetPlayerId]: currentItems.filter((i: any) => i.id !== itemData.id) }
                                             } else {
-                                                // Check duplicate before adding optimistically
                                                 if (currentItems.some((i: any) => i.id === itemData.id)) return prev
-                                                return {
-                                                    ...prev,
-                                                    [targetPlayerId]: [...currentItems, itemData]
-                                                }
+                                                return { ...prev, [targetPlayerId]: [...currentItems, itemData] }
                                             }
                                         })
                                     }}

@@ -2,7 +2,6 @@
 
 generator client {
   provider = "prisma-client-js"
-  engineType = "library"
 }
 
 datasource db {
@@ -10,187 +9,138 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// User model
+// --- USER & AUTH ---
 model User {
-  id            String   @id @default(uuid())
-  email         String   @unique
-  name          String?
-  role          String   @default("PLAYER")
-  passwordHash  String?
-  image         String?
-  emailVerified DateTime?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-
-  // เก็บรายการของที่ซื้อเป็นข้อความ
-  purchasedAssets String   @default("[]")
-
-  // Relations
-  characters       Character[]
-  gmCampaigns      Campaign[]        @relation("GameMaster")
-  playerCampaigns  CampaignPlayer[]
-  chatMessages     ChatMessage[]
-  marketplaceItems MarketplaceItem[]
-  accounts         Account[]
-  sessions         Session[]
-
-  @@index([email])
-  @@index([role])
+  id               String     @id @default(cuid())
+  email            String     @unique
+  name             String?
+  
+  // Relation: เกมที่สร้างเอง
+  createdCampaigns Campaign[] 
+  // Relation: เกมที่ซื้อมา
+  ownedCampaigns   Purchase[] 
 }
 
-// NextAuth Models (Standard)
-model Account {
-  id                String  @id @default(uuid())
-  userId            String
-  type              String
-  provider          String
-  providerAccountId String
-  refresh_token     String?
-  access_token      String?
-  expires_at        Int?
-  token_type        String?
-  scope             String?
-  id_token          String?
-  session_state     String?
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([provider, providerAccountId])
-  @@index([userId])
-}
-
-model Session {
-  id           String   @id @default(uuid())
-  sessionToken String   @unique
-  userId       String
-  expires      DateTime
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-}
-
-model VerificationToken {
-  identifier String
-  token      String   @unique
-  expires    DateTime
-
-  @@unique([identifier, token])
-}
-
-// Campaign model
+// --- CAMPAIGN TEMPLATE (สินค้า/ต้นฉบับ) ---
 model Campaign {
-  id           String   @id @default(uuid())
-  title        String
-  description  String?
-  theme        String?
-  inviteCode   String   @unique @default(cuid())
-  isActive     Boolean  @default(true)
-  maxPlayers   Int      @default(6)
+  id          String   @id @default(cuid())
+  title       String
+  description String? 
+  coverImage  String?
+  tags        String? 
   
-  // แก้เป็น String เพื่อความชัวร์
-  currentState String?
-  
-  gmId         String
-  gm           User     @relation("GameMaster", fields: [gmId], references: [id], onDelete: Cascade)
-  
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  // Story Details
+  storyIntro  String? 
+  storyMid    String? 
+  storyEnd    String? 
 
-  characters     Character[]
-  players        CampaignPlayer[]
-  chatMessages   ChatMessage[]
+  // Marketplace Fields
+  isPublished Boolean  @default(false)
+  price       Int      @default(0) 
+  
+  // Assets
+  scenes      Scene[]
+  npcs        Npc[]
+  items       Item[]
+  preGens     PreGenCharacter[] 
+  
+  // Relations
+  creatorId   String
+  creator     User     @relation(fields: [creatorId], references: [id])
+  purchases   Purchase[]
+  sessions    GameSession[]
 
-  @@index([gmId])
-  @@index([inviteCode])
-  @@index([isActive])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
-model CampaignPlayer {
-  id         String   @id @default(uuid())
-  campaignId String
-  playerId   String
-  joinedAt   DateTime @default(now())
-  isActive   Boolean  @default(true)
-  
-  // Private View State
-  currentPrivateSceneId String?
-  currentPrivateNpcId   String?
-
-  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-  player   User     @relation(fields: [playerId], references: [id], onDelete: Cascade)
-
-  @@unique([campaignId, playerId])
-  @@index([campaignId])
-  @@index([playerId])
+model Scene {
+  id          String   @id @default(cuid())
+  name        String
+  imageUrl    String
+  description String?
+  campaignId  String
+  campaign    Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
 }
 
-// Character model
-model Character {
-  id          String   @id @default(uuid())
+model Npc {
+  id          String   @id @default(cuid())
+  name        String
+  avatarUrl   String
+  type        String   
+  stats       String?  
+  campaignId  String
+  campaign    Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+}
+
+model Item {
+  id          String   @id @default(cuid())
   name        String
   description String?
+  type        String   
+  icon        String?
+  campaignId  String
+  campaign    Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+}
+
+model PreGenCharacter {
+  id          String   @id @default(cuid())
+  name        String
+  bio         String?
   avatarUrl   String?
-  level       Int      @default(1)
-  experience  Int      @default(0)
+  stats       String?  
   
-  // แก้เป็น String เพื่อความชัวร์
-  stats       String
-  inventory   String
-  
+  campaignId  String
+  campaign    Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+}
+
+// --- MARKETPLACE TRANSACTION ---
+model Purchase {
+  id          String   @id @default(cuid())
   userId      String
   campaignId  String
-  
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  purchasedAt DateTime @default(now())
 
-  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [userId], references: [id])
+  campaign    Campaign @relation(fields: [campaignId], references: [id])
 
-  @@index([userId])
-  @@index([campaignId])
-  @@index([isActive])
+  @@unique([userId, campaignId]) 
 }
 
-model ChatMessage {
-  id         String      @id @default(uuid())
-  content    String
-  type       String      @default("TALK")
-  senderId   String
-  senderName String?
-  campaignId String
-  isEdited   Boolean     @default(false)
-  createdAt  DateTime    @default(now())
-  updatedAt  DateTime    @updatedAt
+// --- GAME SESSION (ห้องเล่นจริง) ---
+model GameSession {
+  id             String   @id @default(cuid())
+  joinCode       String   @unique 
+  status         String   @default("WAITING") 
+  
+  // Current State
+  currentSceneId String?
+  activeNpcs     String?  
+  
+  // Lobby Settings
+  isAiGm         Boolean  @default(false)
 
-  sender   User     @relation(fields: [senderId], references: [id], onDelete: Cascade)
-  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-
-  @@index([campaignId, createdAt])
-  @@index([senderId])
-  @@index([type])
+  // Campaign 
+  campaignId     String?
+  campaign       Campaign? @relation(fields: [campaignId], references: [id])
+  
+  players        Player[]
+  
+  createdAt      DateTime @default(now())
 }
 
-model MarketplaceItem {
-  id          String   @id @default(uuid())
-  title       String
-  description String?
-  type        String
-  price       Decimal
+model Player {
+  id            String      @id @default(cuid())
+  name          String
+  role          String      @default("PLAYER") 
+  isReady       Boolean     @default(false)
   
-  // แก้เป็น String เพื่อความชัวร์
-  data        String
+  characterData String?     
+  preGenId      String?
   
-  creatorId   String
-  isPublished Boolean  @default(false)
-  downloads   Int      @default(0)
-  rating      Decimal?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  sessionId     String
+  session       GameSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
-  creator User @relation(fields: [creatorId], references: [id], onDelete: Cascade)
-
-  @@index([creatorId])
-  @@index([type])
-  @@index([isPublished])
-  @@index([createdAt])
+  // ✅ เพิ่ม field นี้เพื่อให้เรียงลำดับคนเข้าห้องได้
+  createdAt     DateTime    @default(now()) 
 }

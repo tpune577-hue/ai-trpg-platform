@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useGameSocket } from '@/hooks/useGameSocket'
-import { getLobbyInfo, submitReview } from '@/app/actions/game'
+import { getLobbyInfo, submitReview, updateCharacterStats } from '@/app/actions/game'
 import { SceneDisplay } from '@/components/board/SceneDisplay'
 import { GameLog } from '@/components/board/GameLog'
 
@@ -28,6 +28,7 @@ export default function PlayerControllerPage() {
     })
 
     const [character, setCharacter] = useState<any>(null)
+    const [playerName, setPlayerName] = useState<string>('')
     const hasJoined = useRef(false)
 
     // --- GAME STATE ---
@@ -36,6 +37,7 @@ export default function PlayerControllerPage() {
         sceneImageUrl: '',
         activeNpcs: []
     })
+    const [campaignScenes, setCampaignScenes] = useState<any[]>([])
 
     // --- UI STATE ---
     const [logs, setLogs] = useState<any[]>([])
@@ -47,6 +49,7 @@ export default function PlayerControllerPage() {
     // --- OVERLAYS ---
     const [selectedItemDetail, setSelectedItemDetail] = useState<any>(null)
     const [rollRequest, setRollRequest] = useState<any>(null)
+    const [willBoost, setWillBoost] = useState(0)
     const [lastWhisper, setLastWhisper] = useState<{ sender: string, message: string } | null>(null)
     const [privateSceneId, setPrivateSceneId] = useState<string | null>(null)
 
@@ -55,6 +58,11 @@ export default function PlayerControllerPage() {
     const [rating, setRating] = useState(5)
     const [reviewComment, setReviewComment] = useState('')
     const [isSubmittingReview, setIsSubmittingReview] = useState(false)
+
+    // --- DEBUG STATE ---
+    const [debugLogs, setDebugLogs] = useState<string[]>([])
+    const [showDebug, setShowDebug] = useState(false)
+    const addDebugLog = (msg: string) => setDebugLogs(prev => [msg, ...prev].slice(0, 20))
 
     // Refs
     const logContainerRef = useRef<HTMLDivElement>(null)
@@ -75,6 +83,19 @@ export default function PlayerControllerPage() {
         userId: playerId,
         autoConnect: true
     })
+
+    // Load player name from localStorage
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            const savedSession = localStorage.getItem(`trpg_session_${joinCode}`)
+            if (savedSession) {
+                try {
+                    const data = JSON.parse(savedSession)
+                    if (data.name) setPlayerName(data.name)
+                } catch (e) { }
+            }
+        }
+    }, [joinCode])
 
     // --- 1. INITIAL SYNC & JOIN ---
     useEffect(() => {
@@ -117,24 +138,42 @@ export default function PlayerControllerPage() {
                     activeNpcs: targetNpcs
                 })
 
+                // Store campaign scenes for private scene lookup
+                setCampaignScenes(session.campaign?.scenes || [])
+
+                // Load character data from session
+                const myPlayer = session.players?.find((p: any) => p.id === playerId)
+                if (myPlayer) {
+                    let charData: any = {}
+                    try {
+                        charData = myPlayer.characterData ? JSON.parse(myPlayer.characterData) : {}
+                    } catch (e) {
+                        console.error("Character data parse error:", e)
+                    }
+
+                    setCharacter({
+                        name: charData.name || myPlayer.name || 'Adventurer',
+                        hp: charData.hp || 20,
+                        maxHp: charData.maxHp || 20,
+                        mp: charData.mp || 10,
+                        maxMp: charData.maxMp || 10,
+                        avatarUrl: charData.avatarUrl || charData.imageUrl || 'https://placehold.co/100x100/333/FFF?text=Hero',
+                        stats: charData.stats || charData // If stats is nested, use it; otherwise use entire charData
+                    })
+                }
+
             } catch (error) { console.error("Sync Error:", error) }
 
-            // B. Join as Character
-            if (!hasJoined.current) {
-                const myChar = {
-                    name: 'Adventurer',
-                    hp: 20, maxHp: 20, mp: 10, maxMp: 10,
-                    avatarUrl: 'https://placehold.co/100x100/333/FFF?text=Hero'
-                }
-                setCharacter(myChar)
+            // B. Join as Character (only if not already joined)
+            if (!hasJoined.current && character) {
                 hasJoined.current = true
 
                 setTimeout(() => {
                     sendPlayerAction({
                         actionType: 'JOIN_GAME',
                         actorId: playerId,
-                        actorName: myChar.name,
-                        characterData: { ...myChar, id: playerId },
+                        actorName: character.name,
+                        characterData: { ...character, id: playerId },
                         description: 'has joined the party.'
                     } as any)
                 }, 1000)
@@ -147,26 +186,44 @@ export default function PlayerControllerPage() {
     useEffect(() => {
         if (onRollRequested) onRollRequested((req) => setRollRequest(req))
 
-        // ✅ FIX: Handle Game State Update safely (Parse JSON string if needed)
+        // ✅ FIX: Handle Game State Update safely
         if (onGameStateUpdate) {
             onGameStateUpdate((newState: any) => {
-                console.log("🔄 Global State Update:", newState)
+                const logMsg = `🔄 Update: ${JSON.stringify(newState).slice(0, 100)}...`
+                console.log(logMsg)
+                addDebugLog(logMsg)
+
                 setGameState((prev: any) => {
+                    // Safe Parse NPCs
                     let updatedNpcs = newState.activeNpcs
-                    // ถ้า activeNpcs ส่งมาเป็น String ให้ Parse ก่อน
                     if (typeof updatedNpcs === 'string') {
-                        try { updatedNpcs = JSON.parse(updatedNpcs) } catch (e) { }
+                        try { updatedNpcs = JSON.parse(updatedNpcs) } catch (e) {
+                            console.error("NPC Parse Error", e)
+                            addDebugLog(`❌ NPC Parse Error: ${e}`)
+                        }
                     }
-                    return {
+
+                    // Construct new state ensuring we don't lose existing data if not sent
+                    const nextState = {
                         ...prev,
-                        ...newState,
-                        activeNpcs: updatedNpcs || prev.activeNpcs || []
+                        ...newState, // Overwrite with new data
+                        currentScene: newState.currentScene || prev.currentScene,
+                        sceneImageUrl: newState.sceneImageUrl || prev.sceneImageUrl,
+                        activeNpcs: updatedNpcs !== undefined ? updatedNpcs : (prev.activeNpcs || [])
                     }
+
+                    addDebugLog(`✅ State Applied: Scene=${nextState.currentScene}`)
+                    console.log("✅ New Game State Applied:", nextState)
+                    return nextState
                 })
             })
         }
 
-        if (onPrivateSceneUpdate) onPrivateSceneUpdate((data) => setPrivateSceneId(data.sceneId))
+        if (onPrivateSceneUpdate) onPrivateSceneUpdate((data) => {
+            console.log("🔒 Private Scene Update:", data)
+            addDebugLog(`🔒 Private: ${data.sceneId || 'CLEARED'}`)
+            setPrivateSceneId(data.sceneId)
+        })
 
         const handleLog = (msg: any) => {
             setLogs((prev) => {
@@ -190,18 +247,7 @@ export default function PlayerControllerPage() {
             onPlayerAction((action) => {
                 console.log("📥 Action Received:", action.actionType, action)
 
-                // ✅ CASE: GM Updates Scene (Direct from GM Board)
-                if (action.actionType === 'GM_UPDATE_SCENE') {
-                    const payload = action.payload || {}
 
-                    // อัปเดต State ทันทีที่ได้ข้อมูลจาก GM
-                    setGameState((prev: any) => ({
-                        ...prev,
-                        currentScene: payload.currentScene || prev.currentScene,
-                        sceneImageUrl: payload.sceneImageUrl || prev.sceneImageUrl,
-                        activeNpcs: payload.activeNpcs || prev.activeNpcs || []
-                    }))
-                }
 
                 if (action.actionType === 'SESSION_ENDED') {
                     setShowReviewModal(true)
@@ -259,19 +305,78 @@ export default function PlayerControllerPage() {
         }
     }
 
-    const handleAction = async (actionType: string) => { await sendPlayerAction({ actionType, actorId: character?.id, actorName: character?.name, description: `performed ${actionType}` } as any) }
+
+    const handleAction = async (actionType: string) => { await sendPlayerAction({ actionType, actorId: playerId, actorName: character?.name, description: `performed ${actionType}` } as any) }
+
+    // Helper: Get stat modifier based on check type
+    const getStatModifier = (checkType: string): number => {
+        console.log('🎲 Getting stat modifier for:', checkType)
+        console.log('📊 Character stats:', character?.stats)
+
+        if (!character?.stats) {
+            console.log('❌ No character stats found')
+            return 0
+        }
+
+        // Extract stat name from check type (e.g., "STR Check" → "STR")
+        const statName = checkType.split(' ')[0].toUpperCase()
+        console.log('🔍 Looking for stat:', statName)
+
+        // Try to find the stat (case-insensitive)
+        const stat = character.stats[statName] ||
+            character.stats[statName.toLowerCase()] ||
+            character.stats[checkType] ||
+            0
+
+        console.log('✅ Found stat value:', stat)
+        return Number(stat) || 0
+    }
 
     const handleRollResponse = async () => {
         if (!rollRequest) return
         const roll = Math.floor(Math.random() * 20) + 1
-        const mod = 0
-        await sendPlayerAction({ actionType: 'dice_roll', checkType: rollRequest.checkType, dc: rollRequest.dc, roll, mod, total: roll + mod, actorName: character?.name } as any)
+        const mod = getStatModifier(rollRequest.checkType)
+        const total = roll + mod + willBoost
+
+        await sendPlayerAction({
+            actionType: 'dice_roll',
+            checkType: rollRequest.checkType,
+            dc: rollRequest.dc,
+            roll,
+            mod,
+            willBoost,
+            total,
+            actorName: character?.name
+        } as any)
+
+        // Deduct WILL Power if used
+        if (willBoost > 0 && character?.stats) {
+            const newWillPower = (character.stats.willPower || 0) - willBoost
+
+            setCharacter(prev => ({
+                ...prev,
+                stats: {
+                    ...prev.stats,
+                    willPower: newWillPower
+                }
+            }))
+
+            // Save WILL Power to database
+            try {
+                await updateCharacterStats(playerId, { willPower: newWillPower })
+            } catch (error) {
+                console.error('Failed to update WILL Power:', error)
+            }
+        }
+
         setRollRequest(null)
+        setWillBoost(0)
     }
+
 
     const sendCustomAction = async () => {
         if (!customAction.trim()) return
-        await sendPlayerAction({ actionType: 'custom', actorId: character?.id, actorName: character?.name, description: customAction } as any)
+        await sendPlayerAction({ actionType: 'custom', actorId: playerId, actorName: character?.name, description: customAction } as any)
         setCustomAction('')
         setTimeout(() => { scrollToBottom(); inputRef.current?.focus() }, 100)
     }
@@ -300,7 +405,15 @@ export default function PlayerControllerPage() {
         return () => window.visualViewport?.removeEventListener('resize', handleResize)
     }, [])
 
-    const activeImageUrl = gameState?.sceneImageUrl || "https://img.freepik.com/premium-photo/majestic-misty-redwood-forest-with-lush-green-ferns-sunlight-filtering-through-fog_996993-7424.jpg"
+    const activeImageUrl = (() => {
+        // Priority 1: Private Scene (if GM sent this player to a specific location)
+        if (privateSceneId) {
+            const privateScene = campaignScenes.find(s => s.id === privateSceneId)
+            if (privateScene) return privateScene.imageUrl
+        }
+        // Priority 2: Global Scene
+        return gameState?.sceneImageUrl || "https://img.freepik.com/premium-photo/majestic-misty-redwood-forest-with-lush-green-ferns-sunlight-filtering-through-fog_996993-7424.jpg"
+    })()
     const activeDescription = gmNarration || gameState?.currentScene || "Connecting..."
 
     return (
@@ -315,7 +428,7 @@ export default function PlayerControllerPage() {
                         </div>
                         <div>
                             <div className="font-bold text-amber-500 text-sm">{character?.name || 'Loading...'}</div>
-                            <div className="text-[10px] text-slate-400 bg-slate-800 px-1.5 py-0.5 rounded inline-block">Adventurer</div>
+                            <div className="text-[10px] text-slate-400 bg-slate-800 px-1.5 py-0.5 rounded inline-block">{playerName || 'Player'}</div>
                         </div>
                     </div>
                     {/* HP/MP Bars */}
@@ -396,7 +509,7 @@ export default function PlayerControllerPage() {
                         <div className="text-4xl mb-2">{selectedItemDetail.icon || '📦'}</div>
                         <h3 className="font-bold text-amber-500">{selectedItemDetail.name}</h3>
                         <p className="text-sm text-slate-400 my-2">{selectedItemDetail.description}</p>
-                        <button className="bg-blue-600 px-4 py-2 rounded text-white text-sm" onClick={() => { sendPlayerAction({ actionType: 'use_item', payload: { itemId: selectedItemDetail.id, itemName: selectedItemDetail.name }, actorName: character.name } as any); setSelectedItemDetail(null); }}>USE ITEM</button>
+                        <button className="bg-blue-600 px-4 py-2 rounded text-white text-sm" onClick={() => { sendPlayerAction({ actionType: 'use_item', actorId: playerId, payload: { itemId: selectedItemDetail.id, itemName: selectedItemDetail.name }, actorName: character.name, description: `used ${selectedItemDetail.name}` } as any); setSelectedItemDetail(null); }}>USE ITEM</button>
                     </div>
                 </div>
             )}
@@ -406,8 +519,51 @@ export default function PlayerControllerPage() {
                     <div className="bg-slate-900 p-6 rounded-2xl border-2 border-amber-500 w-full max-w-xs text-center">
                         <h2 className="text-xl font-bold text-white">GM Orders Roll!</h2>
                         <div className="text-amber-500 text-2xl font-black my-4">{rollRequest.checkType}</div>
+
+                        {/* WILL Power Boost */}
+                        <div className="bg-slate-800 rounded-xl p-4 mb-4 border border-slate-700">
+                            <div className="flex justify-between items-center mb-2">
+                                <span className="text-xs text-slate-400 font-bold">⚡ WILL BOOST</span>
+                                <span className="text-xs text-amber-400">Available: {character?.stats?.willPower || 0}</span>
+                            </div>
+                            <input
+                                type="number"
+                                min="0"
+                                max={character?.stats?.willPower || 0}
+                                value={willBoost}
+                                onChange={(e) => setWillBoost(Math.min(Number(e.target.value), character?.stats?.willPower || 0))}
+                                className="w-full bg-slate-950 border border-slate-600 rounded-lg p-2 text-center text-white font-bold focus:border-amber-500 outline-none"
+                                placeholder="0"
+                            />
+                            <div className="text-[10px] text-slate-500 mt-2">1 WILL = +1 to roll</div>
+                        </div>
+
+                        {/* Preview */}
+                        <div className="bg-slate-950 rounded-lg p-3 mb-4 text-xs text-slate-300">
+                            <div>Total = Roll + {getStatModifier(rollRequest.checkType)} (stat) + {willBoost} (WILL)</div>
+                        </div>
+
                         <button onClick={handleRollResponse} className="w-full py-3 bg-amber-500 hover:bg-amber-400 text-black font-bold rounded-xl">ROLL D20</button>
                     </div>
+                </div>
+            )}
+            {/* DEBUG TOGGLE */}
+            <button onClick={() => setShowDebug(!showDebug)} className="fixed top-14 right-2 text-[10px] bg-red-900/50 text-red-300 px-2 py-1 rounded z-50 border border-red-800 opacity-50 hover:opacity-100">
+                debug
+            </button>
+
+            {/* DEBUG PANEL */}
+            {showDebug && (
+                <div className="fixed top-20 right-2 w-64 bg-black/90 text-[10px] font-mono p-2 border border-red-500 z-50 rounded h-64 overflow-y-auto pointer-events-auto">
+                    <div className="text-red-400 font-bold border-b border-red-900 mb-1">DEBUG LOG</div>
+                    <div className="mb-2 text-slate-400">
+                        Code: {joinCode}<br />
+                        Socket: {playerId ? 'Ready' : '...'}<br />
+                        Scene: {gameState.currentScene}
+                    </div>
+                    {debugLogs.map((log, i) => (
+                        <div key={i} className="mb-1 border-b border-white/10 pb-1">{log}</div>
+                    ))}
                 </div>
             )}
         </div>

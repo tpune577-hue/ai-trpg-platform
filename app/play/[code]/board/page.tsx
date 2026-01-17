@@ -138,12 +138,40 @@ export default function CampaignBoardPage() {
             }])
         })
         onPlayerAction((action) => {
+            console.log('📥 Board Received Action:', action.actionType, action)
             if (action.actionType === 'PLAYER_KICKED') {
                 setDbPlayers(prev => prev.filter(p => p.id !== action.targetPlayerId))
                 return
             }
-            if (action.actionType !== 'GM_MANAGE_INVENTORY' && action.actionType !== 'GM_UPDATE_SCENE') {
-                const content = (action.actorName === 'Game Master' && action.actionType === 'custom') ? action.description : `${action.actorName} used ${action.actionType}: ${action.description}`
+            if (action.actionType !== 'GM_UPDATE_SCENE') {
+                let content = ''
+                if (action.actorName === 'Game Master' && action.actionType === 'custom') {
+                    content = action.description
+                } else if (action.actorName === 'Game Master') {
+                    // GM actions (like giving items)
+                    content = `Game Master : ${action.description || action.actionType}`
+                } else {
+                    // Player actions - match by actorId
+                    const player = dbPlayers.find(p => p.id === action.actorId)
+
+                    console.log('🔍 Log Debug:', {
+                        actorId: action.actorId,
+                        playerFound: !!player,
+                        playerName: player?.name,
+                        characterName: player?.character?.name,
+                        dbPlayersCount: dbPlayers.length
+                    })
+
+                    if (player) {
+                        const charName = player.character?.name || action.actorName
+                        content = `${player.name} (${charName}) : ${action.description || action.actionType}`
+                    } else {
+                        // Fallback if player not found
+                        console.warn('Player not found for action:', action.actorId)
+                        content = `${action.actorName} : ${action.description || action.actionType}`
+                    }
+                }
+
                 setLogs((prev) => [...prev, {
                     id: Date.now().toString(), content, type: action.actionType === 'custom' ? 'NARRATION' : 'ACTION',
                     senderName: action.actorName, timestamp: new Date()
@@ -157,8 +185,24 @@ export default function CampaignBoardPage() {
                     setPlayerInventories(prev => ({ ...prev, [action.targetPlayerId || '']: items }))
                 }
             }
+
+            // Handle stats updates (e.g., WILL Power changes)
+            if (action.actionType === 'UPDATE_STATS') {
+                setDbPlayers(prev => prev.map(p => {
+                    if (p.id === action.actorId) {
+                        return {
+                            ...p,
+                            stats: {
+                                ...p.stats,
+                                ...action.payload
+                            }
+                        }
+                    }
+                    return p
+                }))
+            }
         })
-        onDiceResult((result) => {
+        onDiceResult(async (result) => {
             setDiceResult(result)
             setTimeout(() => setDiceResult(null), 4000)
             const playerName = result.playerName || result.actorName || 'Unknown'
@@ -167,6 +211,23 @@ export default function CampaignBoardPage() {
                 id: `${Date.now()}-dice`, content: `🎲 ${playerName} rolled ${result.checkType}: ${result.total} (DC ${result.dc}) ${successText}`,
                 type: 'DICE', senderName: playerName, timestamp: new Date()
             }])
+
+            // Refresh player data to sync WILL Power changes
+            if (result.willBoost && result.willBoost > 0) {
+                const data = await getLobbyInfo(joinCode)
+                if (data?.players) {
+                    setDbPlayers(data.players.map((p: any) => {
+                        const charData = p.characterData ? JSON.parse(p.characterData) : {}
+                        return {
+                            id: p.id,
+                            name: p.name,
+                            role: p.role,
+                            character: charData,
+                            stats: charData.stats || charData || {}
+                        }
+                    }))
+                }
+            }
         })
     }, [onGameStateUpdate, onChatMessage, onPlayerAction, onDiceResult, onWhisperReceived])
 
@@ -312,8 +373,7 @@ export default function CampaignBoardPage() {
                                 players={partyPlayers}
                                 scenes={campaignScenes.map(s => ({ id: s.id, name: s.name, url: s.imageUrl }))}
                                 onSetPrivateScene={(pid, sid) => {
-                                    const targetScene = campaignScenes.find(s => s.id === sid)
-                                    setPrivateScene(pid, targetScene || null)
+                                    setPrivateScene(pid, sid)
                                 }}
                                 onWhisper={sendWhisper}
                                 onGiveItem={handleGiveItem}

@@ -42,6 +42,15 @@ export const useGameSocket = (campaignId: string | null, options: any = {}) => {
 
         // --- Listen for ALL events ---
         channel.bind('game-event', (data: any) => {
+            console.log(`🔌 Pusher Event on ${channelName}:`, data.actionType || data.type, data)
+            // Debug for GM_UPDATE_SCENE
+            if (data.actionType === 'GM_UPDATE_SCENE') {
+                console.log("🔍 GM_UPDATE_SCENE Detail:", {
+                    hasGameState: !!data.gameState,
+                    hasPayload: !!data.payload,
+                    keys: Object.keys(data)
+                })
+            }
 
             // 1. Game State Update
             // รองรับทั้ง payload แบบเก่า (activeNpcs) และแบบใหม่ (sceneImageUrl)
@@ -176,15 +185,20 @@ export const useGameSocket = (campaignId: string | null, options: any = {}) => {
         [sendGMUpdate])
 
     // ✅ ฟังก์ชันใหม่: สำหรับแจกของ (ใช้ใน GM Panel)
-    const giveItem = useCallback((targetPlayerId: string, itemData: any, action: 'GIVE_CUSTOM' | 'REMOVE' = 'GIVE_CUSTOM') =>
-        callApi({
+    const giveItem = useCallback((targetPlayerId: string, itemData: any, action: 'GIVE_CUSTOM' | 'REMOVE' = 'GIVE_CUSTOM') => {
+        const actionText = action === 'REMOVE' ? 'removed' : 'gave'
+        const description = `${actionText} ${itemData.name || 'item'}`
+
+        return callApi({
             action: {
                 actionType: 'GM_MANAGE_INVENTORY',
+                actorName: 'Game Master',
+                description,
                 targetPlayerId,
                 payload: { itemData, action }
             }
-        }),
-        [campaignId])
+        })
+    }, [campaignId])
 
     // --- Callback Setters ---
     const onGameStateUpdate = (cb: any) => { eventCallbacksRef.current.onGameStateUpdate = cb }

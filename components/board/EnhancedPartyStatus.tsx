@@ -44,6 +44,7 @@ export function EnhancedPartyStatus({
     // Item Creator State
     const [creationMode, setCreationMode] = useState(false)
     const [newItem, setNewItem] = useState({ name: '', description: '', type: 'MISC' })
+    const [expandedStats, setExpandedStats] = useState<string | null>(null)
 
     const handleWhisperChange = (playerId: string, value: string) => setWhisperInputs(prev => ({ ...prev, [playerId]: value }))
     const handleSceneSelect = (playerId: string, sceneId: string) => setSelectedScenes(prev => ({ ...prev, [playerId]: sceneId }))
@@ -114,8 +115,8 @@ export function EnhancedPartyStatus({
                                     {player.name?.charAt(0) || '?'}
                                 </div>
                                 <div>
-                                    <div className="text-sm font-bold text-slate-200">{player.name}</div>
-                                    <div className="text-[10px] text-slate-500 uppercase">{player.role || 'Adventurer'}</div>
+                                    <div className="text-sm font-bold text-slate-200">{player.character?.name || player.name}</div>
+                                    <div className="text-[10px] text-slate-500 uppercase">{player.name}</div>
                                 </div>
                             </div>
 
@@ -165,13 +166,56 @@ export function EnhancedPartyStatus({
 
                                 {/* Stats Display */}
                                 {player.stats && (
-                                    <div className="grid grid-cols-3 gap-2 mt-2">
-                                        {Object.entries(player.stats).map(([key, val]) => (
-                                            <div key={key} className="bg-slate-800 rounded flex flex-col items-center p-1 border border-slate-700">
-                                                <span className="text-[8px] text-slate-500 font-bold uppercase">{key}</span>
-                                                <span className="text-[10px] text-amber-100 font-mono font-bold">{val as number}</span>
+                                    <div className="space-y-2 mt-2">
+                                        {/* HP, MP, WILL Power - Always Visible */}
+                                        <div className="bg-slate-800 rounded p-2 border border-slate-700 space-y-1">
+                                            <div className="flex justify-between items-center">
+                                                <span className="text-[10px] text-slate-400 font-bold">HP</span>
+                                                <span className="text-[11px] text-green-400 font-mono font-bold">
+                                                    {player.stats.hp || 0} / {player.stats.maxHp || 0}
+                                                </span>
                                             </div>
-                                        ))}
+                                            <div className="flex justify-between items-center">
+                                                <span className="text-[10px] text-slate-400 font-bold">MP</span>
+                                                <span className="text-[11px] text-blue-400 font-mono font-bold">
+                                                    {player.stats.mp || 0} / {player.stats.maxMp || 0}
+                                                </span>
+                                            </div>
+                                            <div className="flex justify-between items-center">
+                                                <span className="text-[10px] text-slate-400 font-bold">WILL Power</span>
+                                                <span className="text-[11px] text-amber-400 font-mono font-bold">
+                                                    {player.stats.willPower || player.stats.will || 0}
+                                                </span>
+                                            </div>
+                                        </div>
+
+                                        {/* Other Stats - Toggleable */}
+                                        {Object.keys(player.stats).filter(key =>
+                                            !['hp', 'maxHp', 'mp', 'maxMp', 'willPower', 'will'].includes(key)
+                                        ).length > 0 && (
+                                                <>
+                                                    <button
+                                                        onClick={() => setExpandedStats(expandedStats === player.id ? null : player.id)}
+                                                        className="w-full bg-slate-800 hover:bg-slate-700 text-slate-300 text-[9px] font-bold py-1 rounded border border-slate-700 transition-colors"
+                                                    >
+                                                        {expandedStats === player.id ? '▼ Hide Other Stats' : '▶ Show Other Stats'}
+                                                    </button>
+
+                                                    {expandedStats === player.id && (
+                                                        <div className="grid grid-cols-3 gap-2">
+                                                            {Object.entries(player.stats)
+                                                                .filter(([key]) => !['hp', 'maxHp', 'mp', 'maxMp', 'willPower', 'will'].includes(key))
+                                                                .map(([key, val]) => (
+                                                                    <div key={key} className="bg-slate-800 rounded flex flex-col items-center p-1 border border-slate-700">
+                                                                        <span className="text-[8px] text-slate-500 font-bold uppercase">{key}</span>
+                                                                        <span className="text-[10px] text-amber-100 font-mono font-bold">{val as number}</span>
+                                                                    </div>
+                                                                ))
+                                                            }
+                                                        </div>
+                                                    )}
+                                                </>
+                                            )}
                                     </div>
                                 )}
 

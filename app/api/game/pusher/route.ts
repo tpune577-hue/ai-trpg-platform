@@ -76,52 +76,66 @@ export async function POST(req: Request) {
             case 'GM_SET_GLOBAL_SCENE': {
                 const { payload } = action
                 const sceneId = payload?.sceneId || payload?.currentScene
+                console.log('🎬 GM_UPDATE_SCENE received:', {
+                    campaignId,
+                    sceneId,
+                    hasPayload: !!payload,
+                    payloadKeys: payload ? Object.keys(payload) : []
+                })
 
-                // Update global state in database
+                // Update global state in database (GameSession, not Campaign!)
                 try {
-                    const campaign = await prisma.campaign.findUnique({
-                        where: { id: campaignId }
+                    const session = await prisma.gameSession.findUnique({
+                        where: { joinCode: campaignId }
                     })
 
-                    if (campaign) {
-                        const currentState = parseJSON(campaign.currentState)
+                    if (session) {
+                        // Parse existing activeNpcs
+                        let currentNpcs = []
+                        try {
+                            currentNpcs = session.activeNpcs ? JSON.parse(session.activeNpcs) : []
+                        } catch (e) { }
+
                         const newState = {
-                            ...currentState,
-                            currentScene: sceneId,
+                            currentScene: sceneId || session.currentSceneId,
                             sceneImageUrl: payload?.sceneImageUrl,
-                            activeNpcs: payload?.activeNpcs !== undefined ? payload.activeNpcs : currentState.activeNpcs
+                            activeNpcs: payload?.activeNpcs !== undefined ? payload.activeNpcs : currentNpcs
                         }
 
-                        await prisma.campaign.update({
-                            where: { id: campaignId },
-                            data: { currentState: JSON.stringify(newState) }
-                        })
-
-                        // Clear all private scenes when global scene changes
-                        await prisma.campaignPlayer.updateMany({
-                            where: { campaignId: campaignId },
-                            data: { currentPrivateSceneId: null }
+                        // Update GameSession
+                        await prisma.gameSession.update({
+                            where: { joinCode: campaignId },
+                            data: {
+                                currentSceneId: newState.currentScene,
+                                activeNpcs: JSON.stringify(newState.activeNpcs)
+                            }
                         })
 
                         // Broadcast global scene update
+                        console.log('📡 Broadcasting GM_UPDATE_SCENE:', {
+                            channelName,
+                            newState,
+                            sceneId: newState.currentScene,
+                            imageUrl: newState.sceneImageUrl
+                        })
                         await pusher.trigger(channelName, 'game-event', {
                             actionType: 'GM_UPDATE_SCENE',
                             gameState: newState,
                             payload: newState
                         })
-
-                        // Also send private scene clear
-                        await pusher.trigger(channelName, 'game-event', {
-                            type: 'PRIVATE_SCENE_UPDATE',
-                            payload: { sceneId: null }
-                        })
                     }
                 } catch (dbError) {
                     console.error('DB error updating scene:', dbError)
                     // Still broadcast even if DB fails
+                    const fallbackState = {
+                        currentScene: sceneId,
+                        sceneImageUrl: payload?.sceneImageUrl,
+                        activeNpcs: payload?.activeNpcs || []
+                    }
                     await pusher.trigger(channelName, 'game-event', {
                         actionType: 'GM_UPDATE_SCENE',
-                        payload
+                        gameState: fallbackState,
+                        payload: fallbackState
                     })
                 }
                 break

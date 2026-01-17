@@ -89,15 +89,18 @@ export async function setPlayerReady(playerId: string, preGenId: string) {
     const preGen = await prisma.preGenCharacter.findUnique({ where: { id: preGenId } })
     if (!preGen) throw new Error("Character Template not found")
 
+    // Parse existing stats and add character name
+    const statsData = preGen.stats ? JSON.parse(preGen.stats) : { hp: 10, maxHp: 10, mp: 10 }
+    statsData.name = preGen.name // Store character name in characterData
+
     await prisma.player.update({
         where: { id: playerId },
         data: {
             isReady: true,
             preGenId: preGenId,
-            name: preGen.name, // อัปเดตชื่อตามตัวละคร Pre-Gen
-            sheetType: preGen.sheetType, // ✅ อัปเดต sheetType ด้วย
-            // Copy Stats มาเป็นของตัวเอง
-            characterData: preGen.stats || JSON.stringify({ hp: 10, maxHp: 10, mp: 10 })
+            // Keep original player name, don't overwrite with character name
+            sheetType: preGen.sheetType,
+            characterData: JSON.stringify(statsData)
         }
     })
 
@@ -231,10 +234,10 @@ export async function saveCharacterSheet(playerId: string, characterData: any) {
             where: { id: playerId },
             data: {
                 isReady: true,
-                name: charName,
+                // Keep original player name, don't overwrite
                 sheetType: sheetType,
-                // แปลง JSON เป็น String ก่อนบันทึก
-                characterData: JSON.stringify(statsData)
+                // Store character name inside characterData
+                characterData: JSON.stringify({ ...statsData, name: charName })
             }
         })
 
@@ -245,5 +248,40 @@ export async function saveCharacterSheet(playerId: string, characterData: any) {
         // Log Error ตัวจริงออกมาดูใน Terminal
         console.error("❌ Save Character Failed (Details):", error);
         throw new Error("Failed to save character. Check server terminal for details.")
+    }
+}
+
+// Update character stats (e.g., WILL Power after use)
+export async function updateCharacterStats(playerId: string, statsUpdate: any) {
+    'use server'
+
+    try {
+        const player = await prisma.player.findUnique({
+            where: { id: playerId }
+        })
+
+        if (!player || !player.characterData) {
+            throw new Error("Player or character data not found")
+        }
+
+        const charData = JSON.parse(player.characterData)
+
+        // Update stats
+        charData.stats = {
+            ...charData.stats,
+            ...statsUpdate
+        }
+
+        await prisma.player.update({
+            where: { id: playerId },
+            data: {
+                characterData: JSON.stringify(charData)
+            }
+        })
+
+        return { success: true }
+    } catch (error) {
+        console.error("❌ Update Stats Failed:", error)
+        throw new Error("Failed to update character stats")
     }
 }

@@ -7,9 +7,6 @@ import { getLobbyInfo, submitReview } from '@/app/actions/game'
 import { SceneDisplay } from '@/components/board/SceneDisplay'
 import { GameLog } from '@/components/board/GameLog'
 
-// Mock Character Generator (ถ้าไม่มีไฟล์นี้ ให้ใช้ fallback ใน useEffect)
-// import { generateCharacter } from '@/lib/character-utils' 
-
 export default function PlayerControllerPage() {
     const params = useParams()
     const router = useRouter()
@@ -18,6 +15,13 @@ export default function PlayerControllerPage() {
     // --- PLAYER STATE ---
     const [playerId] = useState(() => {
         if (typeof window !== 'undefined') {
+            const savedSession = localStorage.getItem(`trpg_session_${joinCode}`)
+            if (savedSession) {
+                try {
+                    const data = JSON.parse(savedSession)
+                    if (data.playerId) return data.playerId
+                } catch (e) { }
+            }
             return localStorage.getItem('trpg_player_id') || `player-${Math.floor(Math.random() * 10000)}`
         }
         return `player-${Math.floor(Math.random() * 10000)}`
@@ -90,7 +94,14 @@ export default function PlayerControllerPage() {
                 let targetSceneUrl = ''
                 let targetNpcs = []
 
-                try { targetNpcs = session.activeNpcs ? JSON.parse(session.activeNpcs) : [] } catch (e) { }
+                // ✅ Parse NPCs safely
+                try {
+                    if (typeof session.activeNpcs === 'string') {
+                        targetNpcs = JSON.parse(session.activeNpcs)
+                    } else if (Array.isArray(session.activeNpcs)) {
+                        targetNpcs = session.activeNpcs
+                    }
+                } catch (e) { console.error("NPC Parse Error", e) }
 
                 if (targetSceneId) {
                     const s = session.campaign?.scenes.find((s: any) => s.id === targetSceneId)
@@ -100,12 +111,11 @@ export default function PlayerControllerPage() {
                     targetSceneUrl = session.campaign.scenes[0].imageUrl
                 }
 
-                setGameState((prev: any) => ({
-                    ...prev,
+                setGameState({
                     currentScene: targetSceneId,
                     sceneImageUrl: targetSceneUrl,
                     activeNpcs: targetNpcs
-                }))
+                })
 
             } catch (error) { console.error("Sync Error:", error) }
 
@@ -119,7 +129,6 @@ export default function PlayerControllerPage() {
                 setCharacter(myChar)
                 hasJoined.current = true
 
-                // Delay slightly to ensure socket is ready
                 setTimeout(() => {
                     sendPlayerAction({
                         actionType: 'JOIN_GAME',
@@ -137,7 +146,26 @@ export default function PlayerControllerPage() {
     // --- 2. SOCKET LISTENERS ---
     useEffect(() => {
         if (onRollRequested) onRollRequested((req) => setRollRequest(req))
-        if (onGameStateUpdate) onGameStateUpdate((s) => setGameState(s)) // Fallback sync
+
+        // ✅ FIX: Handle Game State Update safely (Parse JSON string if needed)
+        if (onGameStateUpdate) {
+            onGameStateUpdate((newState: any) => {
+                console.log("🔄 Global State Update:", newState)
+                setGameState((prev: any) => {
+                    let updatedNpcs = newState.activeNpcs
+                    // ถ้า activeNpcs ส่งมาเป็น String ให้ Parse ก่อน
+                    if (typeof updatedNpcs === 'string') {
+                        try { updatedNpcs = JSON.parse(updatedNpcs) } catch (e) { }
+                    }
+                    return {
+                        ...prev,
+                        ...newState,
+                        activeNpcs: updatedNpcs || prev.activeNpcs || []
+                    }
+                })
+            })
+        }
+
         if (onPrivateSceneUpdate) onPrivateSceneUpdate((data) => setPrivateSceneId(data.sceneId))
 
         const handleLog = (msg: any) => {
@@ -162,26 +190,31 @@ export default function PlayerControllerPage() {
             onPlayerAction((action) => {
                 console.log("📥 Action Received:", action.actionType, action)
 
-                // ✅ CASE: GM Updates Scene (Real-time Sync)
+                // ✅ CASE: GM Updates Scene (Direct from GM Board)
                 if (action.actionType === 'GM_UPDATE_SCENE') {
-                    setGameState((prev: any) => ({ ...prev, ...action.payload }))
-                    // ไม่ต้อง return เพื่อให้ Log ทำงานข้างล่าง (ถ้าอยากให้โชว์ว่า GM เปลี่ยนฉาก)
+                    const payload = action.payload || {}
+
+                    // อัปเดต State ทันทีที่ได้ข้อมูลจาก GM
+                    setGameState((prev: any) => ({
+                        ...prev,
+                        currentScene: payload.currentScene || prev.currentScene,
+                        sceneImageUrl: payload.sceneImageUrl || prev.sceneImageUrl,
+                        activeNpcs: payload.activeNpcs || prev.activeNpcs || []
+                    }))
                 }
 
-                // ✅ CASE: Session Ended
                 if (action.actionType === 'SESSION_ENDED') {
                     setShowReviewModal(true)
                     return
                 }
 
-                // ✅ CASE: Kicked
                 if (action.actionType === 'PLAYER_KICKED' && action.targetPlayerId === playerId) {
                     alert("You have been kicked by the GM.")
                     router.push('/')
                     return
                 }
 
-                // ✅ CASE: Inventory Management
+                // Inventory Management
                 if (action.actionType === 'GM_MANAGE_INVENTORY' && action.targetPlayerId === playerId) {
                     const { itemData, action: mode } = action.payload || {};
                     if (mode === 'GIVE_CUSTOM' || mode === 'ADD') {
@@ -194,19 +227,16 @@ export default function PlayerControllerPage() {
                     return
                 }
 
-                // General Logging
-                if (['GM_MANAGE_INVENTORY', 'dice_roll', 'use_item', 'JOIN_GAME', 'join', 'PLAYER_INVENTORY_UPDATE'].includes(action.actionType)) {
-                    if (action.actionType === 'JOIN_GAME') handleLog({ id: `join-${Date.now()}`, content: `${action.actorName} joined!`, type: 'SYSTEM', senderName: 'System', timestamp: new Date() })
-                    return
+                // General Logs
+                if (!['GM_MANAGE_INVENTORY', 'GM_UPDATE_SCENE'].includes(action.actionType)) {
+                    handleLog({
+                        id: `${Date.now()}-${action.actionType}`,
+                        content: action.description || `${action.actorName} used ${action.actionType}`,
+                        type: 'ACTION',
+                        senderName: action.actorName,
+                        timestamp: new Date()
+                    })
                 }
-
-                handleLog({
-                    id: `${Date.now()}-${action.actionType}`,
-                    content: `${action.actorName} used ${action.actionType}: ${action.description}`,
-                    type: 'ACTION',
-                    senderName: action.actorName,
-                    timestamp: new Date()
-                })
 
                 if (action.actorName === 'Game Master' && action.actionType === 'custom') {
                     setGmNarration(action.description)
@@ -222,7 +252,7 @@ export default function PlayerControllerPage() {
 
     }, [onRollRequested, onGameStateUpdate, onChatMessage, onPrivateSceneUpdate, onWhisperReceived, onPlayerAction, onDiceResult, playerId, router])
 
-    // --- UTILS & HANDLERS ---
+    // --- UTILS ---
     const scrollToBottom = (smooth = true) => {
         if (logContainerRef.current) {
             logContainerRef.current.scrollTo({ top: logContainerRef.current.scrollHeight, behavior: smooth ? 'smooth' : 'auto' })
@@ -234,7 +264,7 @@ export default function PlayerControllerPage() {
     const handleRollResponse = async () => {
         if (!rollRequest) return
         const roll = Math.floor(Math.random() * 20) + 1
-        const mod = 0 // Calculate stats mod if needed
+        const mod = 0
         await sendPlayerAction({ actionType: 'dice_roll', checkType: rollRequest.checkType, dc: rollRequest.dc, roll, mod, total: roll + mod, actorName: character?.name } as any)
         setRollRequest(null)
     }
@@ -259,7 +289,7 @@ export default function PlayerControllerPage() {
         }
     }
 
-    // Virtual Keyboard Fix
+    // Virtual Keyboard
     useEffect(() => {
         if (!window.visualViewport) return
         const handleResize = () => {
@@ -288,6 +318,7 @@ export default function PlayerControllerPage() {
                             <div className="text-[10px] text-slate-400 bg-slate-800 px-1.5 py-0.5 rounded inline-block">Adventurer</div>
                         </div>
                     </div>
+                    {/* HP/MP Bars */}
                     <div className="w-24 flex flex-col gap-1">
                         <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden"><div className="bg-green-500 h-full w-full" /></div>
                         <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden"><div className="bg-blue-500 h-full w-3/4" /></div>
@@ -339,9 +370,7 @@ export default function PlayerControllerPage() {
                 </div>
             </div>
 
-            {/* --- MODALS --- */}
-
-            {/* REVIEW MODAL */}
+            {/* MODALS */}
             {showReviewModal && (
                 <div className="fixed inset-0 bg-black/95 z-[100] flex items-center justify-center p-6 animate-in fade-in zoom-in duration-300 backdrop-blur-md">
                     <div className="bg-slate-900 w-full max-w-sm p-8 rounded-2xl border-2 border-amber-500 shadow-[0_0_50px_rgba(245,158,11,0.3)] text-center relative">
@@ -361,7 +390,6 @@ export default function PlayerControllerPage() {
                 </div>
             )}
 
-            {/* Item Detail & Roll Request Modals */}
             {selectedItemDetail && (
                 <div className="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-6" onClick={() => setSelectedItemDetail(null)}>
                     <div className="bg-slate-900 p-6 rounded-xl border border-slate-600 w-full max-w-xs text-center">

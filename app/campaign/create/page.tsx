@@ -1,71 +1,119 @@
 'use client'
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { createCampaignAction } from '@/app/actions/campaign'
+import { useState, useEffect } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { createCampaignAction, updateCampaignAction, getCampaignById } from '@/app/actions/campaign'
 import CharacterCreator from '@/components/game/CharacterCreator'
 
 export default function CreateCampaignPage() {
     const router = useRouter()
+    const searchParams = useSearchParams()
+    const campaignId = searchParams.get('id')
+
     const [isLoading, setIsLoading] = useState(false)
+    const [isFetching, setIsFetching] = useState(!!campaignId)
     const [activeTab, setActiveTab] = useState<'GENERAL' | 'STORY' | 'SCENES' | 'NPCS' | 'PREGENS'>('GENERAL')
 
-    // --- Form States (เหมือนเดิม) ---
+    // --- FORM STATES ---
     const [title, setTitle] = useState('')
     const [description, setDescription] = useState('')
     const [price, setPrice] = useState(0)
     const [coverImage, setCoverImage] = useState('')
+
     const [storyIntro, setStoryIntro] = useState('')
     const [storyMid, setStoryMid] = useState('')
     const [storyEnd, setStoryEnd] = useState('')
-    const [scenes, setScenes] = useState<{ name: string, imageUrl: string }[]>([])
-    const [npcs, setNpcs] = useState<{ name: string, type: string, avatarUrl: string }[]>([])
+
+    const [scenes, setScenes] = useState<{ id: string | number, name: string, imageUrl: string }[]>([])
+    const [npcs, setNpcs] = useState<{ id: string | number, name: string, type: string, avatarUrl: string }[]>([])
     const [preGens, setPreGens] = useState<any[]>([])
 
     // UI Helpers
     const [isAddingPreGen, setIsAddingPreGen] = useState(false)
 
-    // ... (Functions add/remove scene, npc, pregen เหมือนเดิม) ...
-    // ใส่ Code addScene, removeScene, addNpc, removeNpc, handleSavePreGen, removePreGen ที่นี่
+    // ✅ LOAD DATA FOR EDITING
+    useEffect(() => {
+        if (!campaignId) return
 
-    const addScene = () => setScenes([...scenes, { name: 'New Scene', imageUrl: '' }])
-    const updateScene = (idx: number, field: string, val: string) => {
-        const newScenes = [...scenes]; newScenes[idx] = { ...newScenes[idx], [field]: val }; setScenes(newScenes)
+        const loadData = async () => {
+            try {
+                const data = await getCampaignById(campaignId)
+                if (!data) return alert("Campaign not found")
+
+                setTitle(data.title)
+                setDescription(data.description || '')
+                setPrice(data.price)
+                setCoverImage(data.coverImage || '')
+                setStoryIntro(data.storyIntro || '')
+                setStoryMid(data.storyMid || '')
+                setStoryEnd(data.storyEnd || '')
+
+                if (data.scenes) setScenes(data.scenes.map((s: any) => ({ id: s.id, name: s.name, imageUrl: s.imageUrl })))
+                if (data.npcs) setNpcs(data.npcs.map((n: any) => ({ id: n.id, name: n.name, type: n.type, avatarUrl: n.avatarUrl })))
+                if (data.preGens) {
+                    setPreGens(data.preGens.map((p: any) => ({
+                        id: p.id,
+                        name: p.name,
+                        imageUrl: p.avatarUrl,
+                        sheetType: p.sheetType,
+                        data: p.stats ? JSON.parse(p.stats) : {}
+                    })))
+                }
+
+            } catch (error) {
+                console.error("Error loading campaign:", error)
+            } finally {
+                setIsFetching(false)
+            }
+        }
+
+        loadData()
+    }, [campaignId])
+
+
+    // --- HANDLERS ---
+
+    const addScene = () => setScenes([...scenes, { id: Date.now(), name: 'New Scene', imageUrl: '' }])
+    const updateScene = (id: string | number, field: string, val: string) => {
+        setScenes(scenes.map(s => s.id === id ? { ...s, [field]: val } : s))
     }
-    const removeScene = (idx: number) => setScenes(scenes.filter((_, i) => i !== idx))
+    const removeScene = (id: string | number) => setScenes(scenes.filter(s => s.id !== id))
 
-    const addNpc = () => setNpcs([...npcs, { name: 'New NPC', type: 'FRIENDLY', avatarUrl: '' }])
-    const updateNpc = (idx: number, field: string, val: string) => {
-        const newNpcs = [...npcs]; newNpcs[idx] = { ...newNpcs[idx], [field]: val }; setNpcs(newNpcs)
+    const addNpc = () => setNpcs([...npcs, { id: Date.now(), name: 'New NPC', type: 'FRIENDLY', avatarUrl: '' }])
+    const updateNpc = (id: string | number, field: string, val: string) => {
+        setNpcs(npcs.map(n => n.id === id ? { ...n, [field]: val } : n))
     }
-    const removeNpc = (idx: number) => setNpcs(npcs.filter((_, i) => i !== idx))
+    const removeNpc = (id: string | number) => setNpcs(npcs.filter(n => n.id !== id))
 
-    const handleSavePreGen = (charData: any) => { setPreGens([...preGens, charData]); setIsAddingPreGen(false) }
+    const handleSavePreGen = (charData: any) => {
+        const newChar = { ...charData, id: `pregen-${Date.now()}` }
+        setPreGens([...preGens, newChar])
+        setIsAddingPreGen(false)
+    }
     const removePreGen = (idx: number) => setPreGens(preGens.filter((_, i) => i !== idx))
 
-
-    // ✅ ฟังก์ชัน Save (รองรับ Draft / Publish)
+    // ✅ SAVE / PUBLISH
     const handleSave = async (isDraft: boolean) => {
-        if (!title) return alert("Title is required (even for draft)")
-
+        if (!title) return alert("Title is required")
         setIsLoading(true)
+
         const payload = {
             title, description, price, coverImage,
             storyIntro, storyMid, storyEnd,
             scenes, npcs, preGens,
-            isPublished: !isDraft // ถ้า Draft = false, ถ้า Publish = true
+            isPublished: !isDraft
         }
 
         try {
-            await createCampaignAction(payload)
-            // ถ้า Draft อาจจะแค่ Alert หรือ Redirect กลับ Dashboard
-            if (isDraft) {
-                alert("✅ Draft Saved! You can edit it later.")
-                router.push('/') // หรือ redirect ไปหน้า My Campaigns
+            if (campaignId) {
+                await updateCampaignAction(campaignId, payload)
+                alert("✅ Campaign Updated!")
             } else {
-                alert("🚀 Campaign Published to Marketplace!")
-                router.push('/')
+                await createCampaignAction(payload)
+                if (isDraft) alert("✅ Draft Saved!")
+                else alert("🚀 Published!")
             }
+            router.push('/')
         } catch (error) {
             console.error(error)
             alert("Failed to save campaign")
@@ -76,18 +124,23 @@ export default function CreateCampaignPage() {
 
     // Styles
     const inputClass = "w-full bg-slate-900 border border-slate-700 rounded-xl p-4 text-white focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none transition-all placeholder-slate-600 text-base"
-    const textareaClass = "w-full min-h-[200px] bg-slate-900 border border-slate-700 rounded-xl p-4 text-white focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none transition-all placeholder-slate-600 text-base leading-relaxed resize-y"
+    const textareaClass = "w-full min-h-[150px] bg-slate-900 border border-slate-700 rounded-xl p-4 text-white focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none transition-all placeholder-slate-600 text-base leading-relaxed resize-y"
+
+    if (isFetching) return <div className="flex h-screen bg-slate-950 items-center justify-center text-white">Loading Campaign Data...</div>
 
     return (
         <div className="flex h-screen bg-slate-950 text-white overflow-hidden font-sans">
 
-            {/* LEFT SIDEBAR */}
+            {/* 1. LEFT SIDEBAR */}
             <div className="w-72 bg-slate-900 border-r border-slate-800 flex flex-col shrink-0 z-20 shadow-xl">
                 <div className="p-6 border-b border-slate-800 bg-slate-900">
-                    <h1 className="text-2xl font-black text-amber-500 uppercase tracking-widest italic">Campaign Studio</h1>
+                    <h1 className="text-2xl font-black text-amber-500 uppercase tracking-widest italic">
+                        {campaignId ? 'Edit Campaign' : 'Campaign Studio'}
+                    </h1>
                     <p className="text-xs text-slate-500 mt-1">Craft your adventure</p>
                 </div>
-                <nav className="flex-1 p-4 space-y-3 overflow-y-auto">
+
+                <nav className="flex-1 p-4 space-y-3 overflow-y-auto custom-scrollbar">
                     <SidebarBtn label="📝 General Info" active={activeTab === 'GENERAL'} onClick={() => setActiveTab('GENERAL')} />
                     <SidebarBtn label="📖 Storyline" active={activeTab === 'STORY'} onClick={() => setActiveTab('STORY')} />
                     <SidebarBtn label="🌄 Scenes & Maps" active={activeTab === 'SCENES'} onClick={() => setActiveTab('SCENES')} />
@@ -95,18 +148,14 @@ export default function CreateCampaignPage() {
                     <SidebarBtn label="🛡️ Pre-Gen Chars" active={activeTab === 'PREGENS'} onClick={() => setActiveTab('PREGENS')} />
                 </nav>
 
-                {/* ✅ Action Buttons Section */}
                 <div className="p-4 border-t border-slate-800 bg-slate-900 space-y-3">
-                    {/* ปุ่ม Save Draft */}
                     <button
                         onClick={() => handleSave(true)}
                         disabled={isLoading}
                         className="w-full bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-base py-3 rounded-xl border border-slate-700 hover:border-slate-500 transition-all active:scale-95"
                     >
-                        {isLoading ? 'Saving...' : '💾 Save Draft'}
+                        {isLoading ? 'Saving...' : (campaignId ? '💾 Update Draft' : '💾 Save Draft')}
                     </button>
-
-                    {/* ปุ่ม Publish */}
                     <button
                         onClick={() => handleSave(false)}
                         disabled={isLoading}
@@ -117,19 +166,14 @@ export default function CreateCampaignPage() {
                 </div>
             </div>
 
-            {/* MAIN CONTENT (เหมือนเดิม) */}
-            <div className="flex-1 overflow-y-auto bg-slate-950 relative">
+            {/* 2. MAIN CONTENT */}
+            <div className="flex-1 overflow-y-auto bg-slate-950 relative custom-scrollbar">
                 <div className="max-w-5xl mx-auto p-8 lg:p-12 pb-32">
-                    {/* ... (TAB CONTENT: GENERAL, STORY, SCENES, NPCs, PREGENS เหมือน Code เดิมเป๊ะๆ) ... */}
-                    {/* Copy ส่วน Tab content จาก Code ก่อนหน้ามาใส่ได้เลยครับ */}
 
-                    {/* ตัวอย่าง Tab General เพื่อให้ Code สมบูรณ์ในบริบทนี้ */}
+                    {/* --- TAB: GENERAL --- */}
                     {activeTab === 'GENERAL' && (
                         <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-300">
-                            <div className="border-b border-slate-800 pb-4 mb-8">
-                                <h2 className="text-4xl font-bold text-white">General Information</h2>
-                                <p className="text-slate-400 mt-2 text-lg">Set up the basics of your campaign.</p>
-                            </div>
+                            <SectionHeader title="General Information" subtitle="Set up the basics of your campaign." />
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                                 <InputGroup label="Campaign Title">
                                     <input value={title} onChange={e => setTitle(e.target.value)} className={inputClass} placeholder="e.g. The Curse of Strahd" style={{ fontSize: '1.25rem', fontWeight: 'bold' }} />
@@ -152,14 +196,10 @@ export default function CreateCampaignPage() {
                         </div>
                     )}
 
-                    {/* Copy Tabs อื่นๆ (STORY, SCENES, NPCS, PREGENS) จาก Code ก่อนหน้ามาใส่ต่อตรงนี้... */}
+                    {/* --- TAB: STORY --- */}
                     {activeTab === 'STORY' && (
-                        /* ...Story Content... */
                         <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-300">
-                            <div className="border-b border-slate-800 pb-4 mb-8">
-                                <h2 className="text-4xl font-bold text-white">Storyline Guide</h2>
-                                <p className="text-slate-400 mt-2 text-lg">Write the plot details for the Game Master.</p>
-                            </div>
+                            <SectionHeader title="Storyline Guide" subtitle="Write the plot details for the Game Master." />
                             <InputGroup label="Act 1: The Beginning (Intro)">
                                 <textarea value={storyIntro} onChange={e => setStoryIntro(e.target.value)} className={textareaClass} placeholder="Start here..." />
                             </InputGroup>
@@ -172,16 +212,134 @@ export default function CreateCampaignPage() {
                         </div>
                     )}
 
-                    {/* ... (TAB SCENES, NPCS, PREGENS Copy มาใส่) ... */}
-                    {/* เพื่อความกระชับ ผมไม่ได้ Copy ซ้ำมาให้ทั้งหมด แต่คุณสามารถใช้ Block เดิมได้เลยครับ */}
-                    {/* สิ่งที่ต้องแก้คือส่วน return หลัก และ Sidebar ด้านซ้ายที่มีปุ่ม Save Draft เพิ่มขึ้นมาครับ */}
+                    {/* --- TAB: SCENES --- */}
+                    {activeTab === 'SCENES' && (
+                        <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-300">
+                            <div className="flex justify-between items-center border-b border-slate-800 pb-4">
+                                <SectionHeader title={`Scenes (${scenes.length})`} subtitle="Locations and battlemaps." noBorder />
+                                <button onClick={addScene} className="bg-amber-600 hover:bg-amber-500 text-black font-bold px-6 py-2 rounded-full text-sm shadow-lg active:scale-95 transition-all">+ Add Scene</button>
+                            </div>
+
+                            {scenes.length === 0 ? (
+                                <EmptyState message="No scenes added yet. Click '+ Add Scene' to start building your world." />
+                            ) : (
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    {scenes.map((scene) => (
+                                        <div key={scene.id} className="bg-slate-900 border border-slate-800 rounded-xl p-4 relative group hover:border-amber-500/50 transition-colors">
+                                            <button onClick={() => removeScene(scene.id)} className="absolute top-2 right-2 z-10 bg-slate-950/80 text-red-500 hover:text-red-400 p-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity">🗑️</button>
+
+                                            <div className="mb-3 aspect-video bg-black rounded-lg overflow-hidden border border-slate-700 relative">
+                                                <img
+                                                    src={scene.imageUrl || 'https://placehold.co/600x400/1e293b/FFF?text=No+Image'}
+                                                    alt="Scene"
+                                                    className="w-full h-full object-cover"
+                                                    onError={(e: any) => e.currentTarget.src = 'https://placehold.co/600x400/1e293b/FFF?text=No+Image'}
+                                                />
+                                            </div>
+
+                                            <div className="space-y-3">
+                                                <input value={scene.name} onChange={e => updateScene(scene.id, 'name', e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded px-3 py-2 text-sm font-bold text-white focus:border-amber-500 outline-none" placeholder="Scene Name" />
+                                                <input value={scene.imageUrl} onChange={e => updateScene(scene.id, 'imageUrl', e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded px-3 py-2 text-xs text-slate-400 font-mono focus:border-amber-500 outline-none" placeholder="Image URL" />
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* --- TAB: NPCs --- */}
+                    {activeTab === 'NPCS' && (
+                        <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-300">
+                            <div className="flex justify-between items-center border-b border-slate-800 pb-4">
+                                <SectionHeader title={`NPCs (${npcs.length})`} subtitle="Characters and enemies." noBorder />
+                                <button onClick={addNpc} className="bg-amber-600 hover:bg-amber-500 text-black font-bold px-6 py-2 rounded-full text-sm shadow-lg active:scale-95 transition-all">+ Add NPC</button>
+                            </div>
+
+                            {npcs.length === 0 ? (
+                                <EmptyState message="No NPCs added yet. Create characters to populate your world." />
+                            ) : (
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                    {npcs.map((npc) => (
+                                        <div key={npc.id} className="bg-slate-900 border border-slate-800 rounded-xl p-4 relative group hover:border-amber-500/50 transition-colors">
+                                            <button onClick={() => removeNpc(npc.id)} className="absolute top-2 right-2 z-10 bg-slate-950/80 text-red-500 hover:text-red-400 p-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity">🗑️</button>
+
+                                            {/* 4:3 Image */}
+                                            <div className="mb-3 aspect-[4/3] bg-black rounded-lg overflow-hidden border border-slate-700 relative">
+                                                <img
+                                                    src={npc.avatarUrl || 'https://placehold.co/400x300/1e293b/FFF?text=?'}
+                                                    className="w-full h-full object-cover"
+                                                    onError={(e: any) => e.currentTarget.src = 'https://placehold.co/400x300/1e293b/FFF?text=?'}
+                                                />
+                                            </div>
+
+                                            <div className="space-y-2">
+                                                <input value={npc.name} onChange={e => updateNpc(npc.id, 'name', e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded px-2 py-1 text-sm font-bold text-white focus:border-amber-500 outline-none" placeholder="Name" />
+                                                <select value={npc.type} onChange={e => updateNpc(npc.id, 'type', e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-slate-400 focus:border-amber-500 outline-none">
+                                                    <option value="FRIENDLY">Friendly</option><option value="ENEMY">Enemy</option><option value="NEUTRAL">Neutral</option>
+                                                </select>
+                                                <input value={npc.avatarUrl} onChange={e => updateNpc(npc.id, 'avatarUrl', e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded px-2 py-1 text-[10px] text-slate-500 font-mono focus:border-amber-500 outline-none" placeholder="Avatar URL" />
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* --- TAB: PREGENS --- */}
+                    {activeTab === 'PREGENS' && (
+                        <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-300">
+                            <div className="flex justify-between items-center border-b border-slate-800 pb-4">
+                                <SectionHeader title={`Pre-Gen Characters (${preGens.length})`} subtitle="Ready-to-play heroes for quick starts." noBorder />
+                                <button onClick={() => setIsAddingPreGen(true)} className="bg-amber-600 hover:bg-amber-500 text-black font-bold px-6 py-2 rounded-full text-sm shadow-lg active:scale-95 transition-all">+ Add Hero</button>
+                            </div>
+
+                            {preGens.length === 0 ? (
+                                <EmptyState message="No Pre-Gen characters. Add some to help players start quickly." />
+                            ) : (
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                    {preGens.map((char, idx) => (
+                                        <div key={idx} className="bg-slate-900 border border-slate-800 rounded-xl p-4 relative group hover:border-amber-500/50 transition-colors">
+                                            <button onClick={() => removePreGen(idx)} className="absolute top-2 right-2 z-10 bg-slate-950/80 text-red-500 hover:text-red-400 p-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity">🗑️</button>
+
+                                            {/* 4:3 Image */}
+                                            <div className="mb-3 aspect-[4/3] bg-black rounded-lg overflow-hidden border border-slate-700 relative">
+                                                <img
+                                                    src={char.imageUrl || char.avatarUrl || 'https://placehold.co/400x300/1e293b/FFF?text=Hero'}
+                                                    className="w-full h-full object-cover"
+                                                    onError={(e: any) => e.currentTarget.src = 'https://placehold.co/400x300/1e293b/FFF?text=Hero'}
+                                                />
+                                                <div className="absolute top-2 right-2">
+                                                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border shadow-sm ${char.sheetType === 'ROLE_AND_ROLL' ? 'bg-amber-900/90 text-amber-400 border-amber-500/50' : 'bg-blue-900/90 text-blue-400 border-blue-500/50'}`}>
+                                                        {char.sheetType === 'ROLE_AND_ROLL' ? 'RnR' : 'STD'}
+                                                    </span>
+                                                </div>
+                                            </div>
+
+                                            <div className="space-y-1">
+                                                <div className="font-bold text-white text-lg truncate">{char.name || char.bio?.name}</div>
+                                                {/* ✅ แก้ไขจุดนี้: ดึง Description จาก data property */}
+                                                <div className="text-xs text-slate-400 line-clamp-2 h-8">
+                                                    {char.data?.description || char.data?.bio?.description || 'No description provided.'}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
                 </div>
             </div>
 
+            {/* Character Creator Modal */}
             {isAddingPreGen && (
                 <CharacterCreator
                     playerId="GM_DRAFT"
-                    onSave={(data) => handleSavePreGen(data)}
+                    initialName="New Hero"
+                    onSave={handleSavePreGen}
                     onCancel={() => setIsAddingPreGen(false)}
                 />
             )}
@@ -190,6 +348,7 @@ export default function CreateCampaignPage() {
 }
 
 // --- Helper Components ---
+
 const SidebarBtn = ({ label, active, onClick }: any) => (
     <button
         onClick={onClick}
@@ -206,8 +365,16 @@ const InputGroup = ({ label, children }: any) => (
     </div>
 )
 
+const SectionHeader = ({ title, subtitle, noBorder }: any) => (
+    <div className={noBorder ? '' : 'border-b border-slate-800 pb-4 mb-8'}>
+        <h2 className="text-4xl font-bold text-white">{title}</h2>
+        <p className="text-slate-400 mt-2 text-lg">{subtitle}</p>
+    </div>
+)
+
 const EmptyState = ({ message }: any) => (
-    <div className="col-span-full py-16 text-center border-2 border-dashed border-slate-800 rounded-2xl bg-slate-900/30">
-        <p className="text-slate-500 text-lg">{message}</p>
+    <div className="col-span-full py-24 text-center border-2 border-dashed border-slate-800 rounded-3xl bg-slate-900/30 flex flex-col items-center justify-center gap-4">
+        <div className="text-5xl opacity-20">📂</div>
+        <p className="text-slate-500 text-lg font-medium max-w-md">{message}</p>
     </div>
 )

@@ -31,14 +31,30 @@ export default function CharacterCreator({ playerId, initialName, onSave, onCanc
         name: initialName || 'Adventurer',
         imageUrl: '',
         description: '',
-        // Standard Values
-        hp: 20, mp: 10, wp: 5, str: 10, dex: 10, int: 10,
+        // Standard Values (Default 0 for Point Buy system)
+        hp: 20, mp: 10, wp: 5,
+        str: 0, dex: 0, int: 0, wis: 0, cha: 0, // ✅ ปรับ Default เป็น 0 และเพิ่ม wis, cha
         // Role & Roll Values (Vitals)
         rr_willPower: 3, rr_health: 10, rr_mental: 5
     })
 
     const handleChange = (key: string, value: any) => {
         setFormData((prev: any) => ({ ...prev, [key]: value }))
+    }
+
+    // ✅ Logic ควบคุม Point Buy ของ Standard (Total <= 9)
+    const MAX_STANDARD_POINTS = 9
+    const currentStandardTotal = (formData.str || 0) + (formData.dex || 0) + (formData.int || 0) + (formData.wis || 0) + (formData.cha || 0)
+
+    const handleStandardStatChange = (key: string, newValue: number) => {
+        if (newValue < 0) return
+
+        // คำนวณผลรวมถ้าเปลี่ยนค่านี้ (ผลรวมเดิม - ค่าเดิม + ค่าใหม่)
+        const diff = newValue - (formData[key] || 0)
+
+        if (currentStandardTotal + diff <= MAX_STANDARD_POINTS) {
+            handleChange(key, newValue)
+        }
     }
 
     const handleSaveClick = async () => {
@@ -59,7 +75,8 @@ export default function CharacterCreator({ playerId, initialName, onSave, onCanc
                     hp: formData.hp, maxHp: formData.hp,
                     mp: formData.mp, maxMp: formData.mp,
                     willPower: formData.wp,
-                    str: formData.str, dex: formData.dex, int: formData.int
+                    str: formData.str, dex: formData.dex, int: formData.int,
+                    wis: formData.wis, cha: formData.cha // ✅ บันทึก wis, cha
                 }
             }
         } else {
@@ -176,14 +193,32 @@ export default function CharacterCreator({ playerId, initialName, onSave, onCanc
                 {/* --- TEMPLATE: STANDARD --- */}
                 {sheetType === 'STANDARD' && (
                     <div className="bg-slate-800/30 p-6 rounded-xl border border-slate-700 animate-in fade-in slide-in-from-bottom-4">
-                        <h3 className="text-xl font-bold text-emerald-400 mb-4">📊 Base Status</h3>
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="text-xl font-bold text-emerald-400">📊 Base Status</h3>
+
+                            {/* ✅ Display Points Remaining */}
+                            <div className="text-xs bg-slate-900 border border-slate-700 px-3 py-1.5 rounded-lg flex gap-2 items-center">
+                                <span className="text-slate-400 uppercase font-bold">Points Remaining:</span>
+                                <span className={`font-mono text-lg font-bold ${MAX_STANDARD_POINTS - currentStandardTotal === 0 ? 'text-red-500' : 'text-emerald-400'}`}>
+                                    {MAX_STANDARD_POINTS - currentStandardTotal}
+                                </span>
+                                <span className="text-slate-600">/ {MAX_STANDARD_POINTS}</span>
+                            </div>
+                        </div>
+
+                        {/* ✅ เพิ่ม WIS, CHA และใช้ handleStandardStatChange */}
                         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4">
+                            {/* Vitals (ใช้ค่าปกติ ไม่รวมใน Point Buy) */}
                             <StatBox label="HP" val={formData.hp} onChange={v => handleChange('hp', v)} color="red" size="large" />
                             <StatBox label="MP" val={formData.mp} onChange={v => handleChange('mp', v)} color="blue" size="large" />
                             <StatBox label="Will Power" val={formData.wp} onChange={v => handleChange('wp', v)} color="purple" size="large" />
-                            <StatBox label="STR" val={formData.str} onChange={v => handleChange('str', v)} />
-                            <StatBox label="DEX" val={formData.dex} onChange={v => handleChange('dex', v)} />
-                            <StatBox label="INT" val={formData.int} onChange={v => handleChange('int', v)} />
+
+                            {/* Attributes (รวมใน Point Buy) */}
+                            <StatBox label="STR" val={formData.str} onChange={v => handleStandardStatChange('str', v)} />
+                            <StatBox label="DEX" val={formData.dex} onChange={v => handleStandardStatChange('dex', v)} />
+                            <StatBox label="INT" val={formData.int} onChange={v => handleStandardStatChange('int', v)} />
+                            <StatBox label="WIS" val={formData.wis} onChange={v => handleStandardStatChange('wis', v)} />
+                            <StatBox label="CHA" val={formData.cha} onChange={v => handleStandardStatChange('cha', v)} />
                         </div>
                     </div>
                 )}
@@ -195,8 +230,6 @@ export default function CharacterCreator({ playerId, initialName, onSave, onCanc
                         {/* Vitals (Single Line Layout) */}
                         <div className="bg-slate-800/50 p-6 rounded-xl border border-slate-700">
                             <h3 className="text-lg font-bold text-emerald-400 mb-4 flex items-center gap-2">❤️ Vitals</h3>
-
-                            {/* ✅ ปรับเป็น Grid 3 Columns เพื่อให้อยู่บรรทัดเดียวกันแน่นอน และเต็มความกว้าง */}
                             <div className="grid grid-cols-3 gap-4 md:gap-8">
                                 <StatBox label="Health" val={formData.rr_health} onChange={v => handleChange('rr_health', v)} color="red" size="compact" />
                                 <StatBox label="Mental" val={formData.rr_mental} onChange={v => handleChange('rr_mental', v)} color="blue" size="compact" />
@@ -275,12 +308,11 @@ export default function CharacterCreator({ playerId, initialName, onSave, onCanc
 const StatBox = ({ label, val, onChange, color = "white", size = "normal" }: any) => {
     const colors: any = { red: 'text-red-400', blue: 'text-blue-400', purple: 'text-purple-400', white: 'text-slate-200' }
 
-    // ✅ Logic ปรับขนาด Compact
+    // Logic ปรับขนาด Compact
     const isCompact = size === 'compact'
     const isLarge = size === 'large'
 
     return (
-        // ปรับให้ w-full เพื่อเต็มช่อง Grid
         <div className={`w-full bg-slate-950 rounded-lg border border-slate-700 flex flex-col items-center justify-center transition-all hover:border-${color === 'white' ? 'slate-500' : color.split('-')[1] + '-500'} ${isCompact ? 'p-3' : isLarge ? 'p-4' : 'p-2'}`}>
             <label className={`font-bold uppercase mb-1 ${colors[color] || colors.white} ${isCompact ? 'text-[10px]' : 'text-xs'}`}>{label}</label>
             <input

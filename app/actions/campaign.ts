@@ -163,3 +163,79 @@ export async function deleteCampaign(id: string) {
         throw new Error("Failed to delete campaign")
     }
 }
+// ... (Imports และ createCampaignAction เดิม) ...
+
+// ✅ เพิ่มฟังก์ชันนี้ต่อท้ายไฟล์ครับ
+// --- 6. UPDATE CAMPAIGN ---
+export async function updateCampaignAction(campaignId: string, data: any) {
+    try {
+        console.log("📝 Updating Campaign:", campaignId)
+
+        // 1. Update Main Info
+        await prisma.campaign.update({
+            where: { id: campaignId },
+            data: {
+                title: data.title,
+                description: data.description,
+                price: data.price || 0,
+                coverImage: data.coverImage,
+                isPublished: data.isPublished,
+                storyIntro: data.storyIntro,
+                storyMid: data.storyMid,
+                storyEnd: data.storyEnd,
+            }
+        })
+
+        // 2. Update Scenes (ลบของเก่าแล้วสร้างใหม่ ง่ายสุดสำหรับความ Consistency)
+        await prisma.scene.deleteMany({ where: { campaignId } })
+        if (data.scenes?.length > 0) {
+            await prisma.scene.createMany({
+                data: data.scenes.map((s: any) => ({
+                    name: s.name,
+                    imageUrl: s.imageUrl,
+                    campaignId: campaignId
+                }))
+            })
+        }
+
+        // 3. Update NPCs
+        await prisma.npc.deleteMany({ where: { campaignId } })
+        if (data.npcs?.length > 0) {
+            await prisma.npc.createMany({
+                data: data.npcs.map((n: any) => ({
+                    name: n.name,
+                    type: n.type,
+                    avatarUrl: n.avatarUrl,
+                    campaignId: campaignId
+                }))
+            })
+        }
+
+        // 4. Update Pre-Gens
+        await prisma.preGenCharacter.deleteMany({ where: { campaignId } })
+        if (data.preGens?.length > 0) {
+            await prisma.preGenCharacter.createMany({
+                data: data.preGens.map((c: any) => {
+                    const bioText = c.data?.bio?.description || c.data?.description || ''
+                    return {
+                        name: c.name,
+                        avatarUrl: c.imageUrl,
+                        sheetType: c.sheetType || 'STANDARD',
+                        bio: bioText,
+                        stats: JSON.stringify(c.data),
+                        campaignId: campaignId
+                    }
+                })
+            })
+        }
+
+        revalidatePath('/')
+        revalidatePath('/campaign/my')
+
+        return { success: true }
+
+    } catch (error) {
+        console.error("❌ Update Campaign Error:", error)
+        throw new Error("Failed to update campaign")
+    }
+}

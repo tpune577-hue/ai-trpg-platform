@@ -42,7 +42,7 @@ export default function CampaignBoardPage() {
     const [tasks, setTasks] = useState<{ id: number, text: string, done: boolean }[]>([])
     const [newTask, setNewTask] = useState('')
 
-    // ✅ DEFINING TASK FUNCTIONS (วางไว้ตรงนี้เพื่อความชัวร์)
+    // ✅ DEFINING TASK FUNCTIONS
     const addTask = () => {
         if (!newTask.trim()) return
         setTasks(prev => [...prev, { id: Date.now(), text: newTask, done: false }])
@@ -93,13 +93,21 @@ export default function CampaignBoardPage() {
                     setSession(data)
                     setCampaignScenes(data.campaign?.scenes || [])
                     setCampaignNpcs(data.campaign?.npcs || [])
+
+                    // ✅ FIX: Map Stats ให้ถูกต้อง
                     if (data.players) {
-                        setDbPlayers(data.players.map((p: any) => ({
-                            id: p.id, name: p.name, role: p.role,
-                            character: p.characterData ? JSON.parse(p.characterData) : {},
-                            stats: p.characterData ? JSON.parse(p.characterData) : {}
-                        })))
+                        setDbPlayers(data.players.map((p: any) => {
+                            const charData = p.characterData ? JSON.parse(p.characterData) : {}
+                            return {
+                                id: p.id,
+                                name: p.name,
+                                role: p.role,
+                                character: charData,
+                                stats: charData.stats || charData || {} // เข้าถึง stats property ถ้ามี
+                            }
+                        }))
                     }
+
                     const savedActiveNpcs = data.activeNpcs ? JSON.parse(data.activeNpcs) : []
                     let initialSceneId = data.currentSceneId
                     let initialSceneUrl = ''
@@ -175,7 +183,7 @@ export default function CampaignBoardPage() {
         sendPlayerAction({ actionType: 'dice_roll', actorName: 'Game Master', checkType: 'D20 Check', roll, mod: 0, total: roll, dc: 0 } as any)
     }
 
-    // ✅ FIX: Change Scene & Send Socket
+    // Change Scene & Send Socket
     const changeScene = async (sceneId: string, imageUrl: string) => {
         const newState = { ...gameState, currentScene: sceneId, sceneImageUrl: imageUrl, activeNpcs: gameState.activeNpcs }
         setGameState(newState)
@@ -190,7 +198,7 @@ export default function CampaignBoardPage() {
         updateGameSessionState(joinCode, { currentScene: sceneId, activeNpcs: gameState.activeNpcs }).catch(console.error)
     }
 
-    // ✅ FIX: Toggle NPC & Send Socket
+    // Toggle NPC & Send Socket
     const toggleNpc = async (npc: any) => {
         const currentNpcs = gameState?.activeNpcs || []
         const isActive = currentNpcs.some((n: any) => n.id === npc.id)
@@ -310,7 +318,7 @@ export default function CampaignBoardPage() {
                                 onWhisper={sendWhisper}
                                 onGiveItem={handleGiveItem}
                                 onRequestRoll={(pid, type, dc) => requestRoll(type, dc, pid)}
-                                onKickPlayer={handleKickPlayer} // ✅ ส่ง Function Kick ไปให้ UI
+                                onKickPlayer={handleKickPlayer}
                                 playerInventories={playerInventories}
                             />
                         )}

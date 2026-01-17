@@ -10,6 +10,7 @@ interface EnhancedPartyStatusProps {
     onWhisper: (targetPlayerId: string, message: string) => void
     onGiveItem: (targetPlayerId: string, itemData: any, action: string) => void
     onRequestRoll?: (playerId: string, checkType: string, dc: number) => void
+    onKickPlayer?: (playerId: string, playerName: string) => void
     playerInventories?: Record<string, any[]>
 }
 
@@ -31,6 +32,7 @@ export function EnhancedPartyStatus({
     onWhisper,
     onGiveItem,
     onRequestRoll,
+    onKickPlayer,
     playerInventories = {}
 }: EnhancedPartyStatusProps) {
     const [expandedPlayer, setExpandedPlayer] = useState<string | null>(null)
@@ -43,21 +45,10 @@ export function EnhancedPartyStatus({
     const [creationMode, setCreationMode] = useState(false)
     const [newItem, setNewItem] = useState({ name: '', description: '', type: 'MISC' })
 
-    const handleWhisperChange = (playerId: string, value: string) => {
-        setWhisperInputs(prev => ({ ...prev, [playerId]: value }))
-    }
-
-    const handleSceneSelect = (playerId: string, sceneId: string) => {
-        setSelectedScenes(prev => ({ ...prev, [playerId]: sceneId }))
-    }
-
-    const handleCheckSelect = (playerId: string, checkType: string) => {
-        setSelectedChecks(prev => ({ ...prev, [playerId]: checkType }))
-    }
-
-    const handleDcChange = (playerId: string, dc: number) => {
-        setDcs(prev => ({ ...prev, [playerId]: dc }))
-    }
+    const handleWhisperChange = (playerId: string, value: string) => setWhisperInputs(prev => ({ ...prev, [playerId]: value }))
+    const handleSceneSelect = (playerId: string, sceneId: string) => setSelectedScenes(prev => ({ ...prev, [playerId]: sceneId }))
+    const handleCheckSelect = (playerId: string, checkType: string) => setSelectedChecks(prev => ({ ...prev, [playerId]: checkType }))
+    const handleDcChange = (playerId: string, dc: number) => setDcs(prev => ({ ...prev, [playerId]: dc }))
 
     const sendWhisper = (playerId: string) => {
         const msg = whisperInputs[playerId]
@@ -68,7 +59,6 @@ export function EnhancedPartyStatus({
 
     const handleCreateAndGive = (targetPlayerId: string) => {
         if (!newItem.name) return;
-
         const customItem = {
             id: `custom-${Date.now()}`,
             name: newItem.name,
@@ -76,13 +66,12 @@ export function EnhancedPartyStatus({
             type: newItem.type,
             icon: getItemIcon(newItem.type)
         }
-
         onGiveItem(targetPlayerId, customItem, 'GIVE_CUSTOM')
     }
 
     return (
         <div className="space-y-3">
-            {/* Item Creator */}
+            {/* Item Creator (คงเดิม) */}
             <div className="bg-slate-800 rounded border border-slate-700 overflow-hidden flex-shrink-0">
                 <div
                     className="p-2 bg-slate-800 flex justify-between items-center cursor-pointer hover:bg-slate-700 transition-colors"
@@ -95,32 +84,15 @@ export function EnhancedPartyStatus({
                 {creationMode && (
                     <div className="p-3 bg-slate-900 border-t border-slate-700 space-y-2">
                         <div className="flex gap-2">
-                            <input
-                                placeholder="Item Name"
-                                className="flex-1 bg-slate-800 text-xs p-2 rounded border border-slate-600 text-white outline-none focus:border-emerald-500"
-                                value={newItem.name}
-                                onChange={e => setNewItem({ ...newItem, name: e.target.value })}
-                            />
-                            <select
-                                className="w-1/3 bg-slate-800 text-xs p-2 rounded border border-slate-600 text-white outline-none"
-                                value={newItem.type}
-                                onChange={e => setNewItem({ ...newItem, type: e.target.value })}
-                            >
+                            <input placeholder="Item Name" className="flex-1 bg-slate-800 text-xs p-2 rounded border border-slate-600 text-white outline-none focus:border-emerald-500" value={newItem.name} onChange={e => setNewItem({ ...newItem, name: e.target.value })} />
+                            <select className="w-1/3 bg-slate-800 text-xs p-2 rounded border border-slate-600 text-white outline-none" value={newItem.type} onChange={e => setNewItem({ ...newItem, type: e.target.value })}>
                                 <option value="MISC">📦 Misc</option>
                                 <option value="WEAPON">⚔️ Wpn</option>
                                 <option value="CONSUMABLE">🧪 Pot</option>
                                 <option value="KEY">🗝️ Key</option>
                             </select>
                         </div>
-                        <textarea
-                            placeholder="Description..."
-                            className="w-full bg-slate-800 text-xs p-2 rounded border border-slate-600 text-slate-300 resize-none h-16 outline-none focus:border-emerald-500"
-                            value={newItem.description}
-                            onChange={e => setNewItem({ ...newItem, description: e.target.value })}
-                        />
-                        <div className="text-[10px] text-emerald-500/80 text-center italic">
-                            Click "GIVE" on a player below to send this item
-                        </div>
+                        <textarea placeholder="Description..." className="w-full bg-slate-800 text-xs p-2 rounded border border-slate-600 text-slate-300 resize-none h-16 outline-none focus:border-emerald-500" value={newItem.description} onChange={e => setNewItem({ ...newItem, description: e.target.value })} />
                     </div>
                 )}
             </div>
@@ -128,14 +100,15 @@ export function EnhancedPartyStatus({
             {/* Player Cards */}
             {players.map(player => {
                 const isExpanded = expandedPlayer === player.id
+                const isGM = player.role === 'GM'
 
                 return (
-                    <div key={player.id} className={`bg-slate-950 rounded border transition-all ${creationMode ? 'border-emerald-500/30' : 'border-slate-800'}`}>
-                        {/* Player Header - Always Visible */}
-                        <div
-                            className="p-3 flex items-center justify-between cursor-pointer hover:bg-slate-900/50"
-                            onClick={() => setExpandedPlayer(isExpanded ? null : player.id)}
-                        >
+                    <div key={player.id} className={`bg-slate-950 rounded border transition-all ${isExpanded ? 'border-amber-500/50' : 'border-slate-800'}`}>
+
+                        {/* ✅ Player Header: ปรับใหม่ตาม Requirement */}
+                        <div className="p-3 flex items-center justify-between">
+
+                            {/* Info Left */}
                             <div className="flex items-center gap-3">
                                 <div className="w-10 h-10 rounded-full bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center text-white font-bold text-sm">
                                     {player.name?.charAt(0) || '?'}
@@ -145,30 +118,56 @@ export function EnhancedPartyStatus({
                                     <div className="text-[10px] text-slate-500 uppercase">{player.role || 'Adventurer'}</div>
                                 </div>
                             </div>
+
+                            {/* Actions Right (ปุ่มแยกกันชัดเจน) */}
                             <div className="flex items-center gap-2">
+
+                                {/* 🎁 ปุ่ม Give (ถ้าเปิดโหมดสร้างไอเทม) */}
                                 {creationMode && (
                                     <button
-                                        onClick={(e) => {
-                                            e.stopPropagation()
-                                            handleCreateAndGive(player.id)
-                                        }}
-                                        className="bg-emerald-600 hover:bg-emerald-500 text-black text-[9px] px-3 py-1 rounded font-bold"
+                                        onClick={() => handleCreateAndGive(player.id)}
+                                        className="bg-emerald-600 hover:bg-emerald-500 text-black text-[9px] px-3 py-1.5 rounded font-bold transition-colors"
                                     >
                                         GIVE
                                     </button>
                                 )}
-                                <span className="text-slate-500 text-xs">{isExpanded ? '▼' : '▶'}</span>
+
+                                {/* ⚙️ 1. ปุ่ม Manage Player (Toggle View) */}
+                                <button
+                                    onClick={() => setExpandedPlayer(isExpanded ? null : player.id)}
+                                    className={`
+                                        flex items-center gap-1 px-3 py-1.5 rounded text-[10px] font-bold border transition-colors
+                                        ${isExpanded
+                                            ? 'bg-amber-900/30 text-amber-400 border-amber-700 hover:bg-amber-900/50'
+                                            : 'bg-slate-800 text-slate-300 border-slate-600 hover:bg-slate-700 hover:text-white'}
+                                    `}
+                                >
+                                    <span>{isExpanded ? '▼' : '⚙️'}</span>
+                                    <span>MANAGE</span>
+                                </button>
+
+                                {/* 🚫 2. ปุ่ม Kick Player (แยกออกมา) */}
+                                {!isGM && onKickPlayer && (
+                                    <button
+                                        onClick={() => onKickPlayer(player.id, player.name || 'Player')}
+                                        className="bg-red-900/20 hover:bg-red-600 text-red-500 hover:text-white border border-red-900/50 hover:border-red-500 px-3 py-1.5 rounded text-[10px] font-bold transition-all"
+                                        title="Kick Player"
+                                    >
+                                        KICK
+                                    </button>
+                                )}
                             </div>
                         </div>
 
-                        {/* Expanded Controls */}
+                        {/* Expanded Controls (เนื้อหาข้างในเหมือนเดิม) */}
                         {isExpanded && (
-                            <div className="p-3 pt-0 space-y-2 border-t border-slate-800">
-                                {/* Stats (if available) */}
+                            <div className="p-3 pt-0 space-y-3 border-t border-slate-800 bg-slate-900/30">
+
+                                {/* Stats Display */}
                                 {player.stats && (
-                                    <div className="grid grid-cols-3 gap-2 mb-2">
+                                    <div className="grid grid-cols-3 gap-2 mt-2">
                                         {Object.entries(player.stats).map(([key, val]) => (
-                                            <div key={key} className="bg-slate-800/50 rounded flex flex-col items-center p-1">
+                                            <div key={key} className="bg-slate-800 rounded flex flex-col items-center p-1 border border-slate-700">
                                                 <span className="text-[8px] text-slate-500 font-bold uppercase">{key}</span>
                                                 <span className="text-[10px] text-amber-100 font-mono font-bold">{val as number}</span>
                                             </div>
@@ -176,92 +175,95 @@ export function EnhancedPartyStatus({
                                     </div>
                                 )}
 
-                                {/* Private Scene */}
-                                <div className="flex gap-1 items-center">
-                                    <select
-                                        className="flex-1 bg-slate-900 text-slate-300 text-[10px] p-1 rounded border border-slate-700 outline-none"
-                                        value={selectedScenes[player.id] || ''}
-                                        onChange={(e) => handleSceneSelect(player.id, e.target.value)}
-                                    >
-                                        <option value="">Default Scene</option>
-                                        {scenes.map(s => (
-                                            <option key={s.id} value={s.id}>{s.name}</option>
-                                        ))}
-                                    </select>
-                                    <button
-                                        onClick={() => onSetPrivateScene(player.id, selectedScenes[player.id] || null)}
-                                        className="px-2 py-1 bg-amber-900/40 hover:bg-amber-800 text-amber-200 text-[9px] font-bold rounded border border-amber-800/50"
-                                    >
-                                        SET
-                                    </button>
-                                </div>
+                                {/* Action Buttons Group */}
+                                <div className="space-y-2">
 
-                                {/* Whisper */}
-                                <div className="flex gap-1 items-center">
-                                    <input
-                                        type="text"
-                                        placeholder="Whisper..."
-                                        className="flex-1 bg-slate-900 text-slate-300 text-[10px] p-1 rounded border border-slate-700 outline-none placeholder:text-slate-600"
-                                        value={whisperInputs[player.id] || ''}
-                                        onChange={(e) => handleWhisperChange(player.id, e.target.value)}
-                                        onKeyDown={(e) => e.key === 'Enter' && sendWhisper(player.id)}
-                                    />
-                                    <button
-                                        onClick={() => sendWhisper(player.id)}
-                                        className="px-2 py-1 bg-indigo-900/40 hover:bg-indigo-800 text-indigo-200 text-[9px] font-bold rounded border border-indigo-800/50"
-                                    >
-                                        SEND
-                                    </button>
-                                </div>
-
-                                {/* Dice Roll Request */}
-                                {onRequestRoll && (
-                                    <div className="flex gap-1 items-center">
+                                    {/* Row 1: Scene & Move */}
+                                    <div className="flex gap-2 items-center">
+                                        <div className="w-6 text-[10px] text-slate-500 font-bold text-right">LOC</div>
                                         <select
-                                            className="flex-1 bg-slate-900 text-slate-300 text-[10px] p-1 rounded border border-slate-700 outline-none"
-                                            value={selectedChecks[player.id] || 'STR'}
-                                            onChange={(e) => handleCheckSelect(player.id, e.target.value)}
+                                            className="flex-1 bg-slate-950 text-slate-300 text-[10px] p-1.5 rounded border border-slate-700 outline-none"
+                                            value={selectedScenes[player.id] || ''}
+                                            onChange={(e) => handleSceneSelect(player.id, e.target.value)}
                                         >
-                                            <option value="STR">STR Check</option>
-                                            <option value="DEX">DEX Check</option>
-                                            <option value="INT">INT Check</option>
-                                            <option value="WIS">WIS Check</option>
-                                            <option value="CHA">CHA Check</option>
-                                            <option value="CON">CON Check</option>
+                                            <option value="">Default Scene</option>
+                                            {scenes.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                                         </select>
-                                        <input
-                                            type="number"
-                                            min="1"
-                                            max="30"
-                                            placeholder="DC"
-                                            className="w-12 bg-slate-900 text-slate-300 text-[10px] p-1 rounded border border-slate-700 outline-none text-center"
-                                            value={dcs[player.id] || 15}
-                                            onChange={(e) => handleDcChange(player.id, parseInt(e.target.value) || 15)}
-                                        />
                                         <button
-                                            onClick={() => onRequestRoll(player.id, selectedChecks[player.id] || 'STR', dcs[player.id] || 15)}
-                                            className="px-2 py-1 bg-purple-900/40 hover:bg-purple-800 text-purple-200 text-[9px] font-bold rounded border border-purple-800/50"
+                                            onClick={() => onSetPrivateScene(player.id, selectedScenes[player.id] || null)}
+                                            className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-[9px] font-bold rounded"
                                         >
-                                            🎲 ROLL
+                                            MOVE
                                         </button>
                                     </div>
-                                )}
 
-                                {/* Player Inventory */}
+                                    {/* Row 2: Whisper */}
+                                    <div className="flex gap-2 items-center">
+                                        <div className="w-6 text-[10px] text-slate-500 font-bold text-right">MSG</div>
+                                        <input
+                                            type="text"
+                                            placeholder="Private message..."
+                                            className="flex-1 bg-slate-950 text-slate-300 text-[10px] p-1.5 rounded border border-slate-700 outline-none"
+                                            value={whisperInputs[player.id] || ''}
+                                            onChange={(e) => handleWhisperChange(player.id, e.target.value)}
+                                            onKeyDown={(e) => e.key === 'Enter' && sendWhisper(player.id)}
+                                        />
+                                        <button
+                                            onClick={() => sendWhisper(player.id)}
+                                            className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white text-[9px] font-bold rounded"
+                                        >
+                                            SEND
+                                        </button>
+                                    </div>
+
+                                    {/* Row 3: Roll Request */}
+                                    {onRequestRoll && (
+                                        <div className="flex gap-2 items-center">
+                                            <div className="w-6 text-[10px] text-slate-500 font-bold text-right">REQ</div>
+                                            <select
+                                                className="flex-1 bg-slate-950 text-slate-300 text-[10px] p-1.5 rounded border border-slate-700 outline-none"
+                                                value={selectedChecks[player.id] || 'STR'}
+                                                onChange={(e) => handleCheckSelect(player.id, e.target.value)}
+                                            >
+                                                {['STR', 'DEX', 'INT', 'WIS', 'CHA', 'CON'].map(stat => (
+                                                    <option key={stat} value={stat}>{stat} Check</option>
+                                                ))}
+                                            </select>
+                                            <input
+                                                type="number"
+                                                placeholder="DC"
+                                                className="w-10 bg-slate-950 text-slate-300 text-[10px] p-1.5 rounded border border-slate-700 outline-none text-center"
+                                                value={dcs[player.id] || 15}
+                                                onChange={(e) => handleDcChange(player.id, parseInt(e.target.value) || 15)}
+                                            />
+                                            <button
+                                                onClick={() => onRequestRoll(player.id, selectedChecks[player.id] || 'STR', dcs[player.id] || 15)}
+                                                className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-black text-[9px] font-bold rounded"
+                                            >
+                                                ROLL
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Inventory Section */}
                                 <div className="mt-2 pt-2 border-t border-slate-800">
-                                    <div className="text-[9px] text-slate-500 font-bold uppercase mb-1">Inventory</div>
-                                    <div className="space-y-1 max-h-32 overflow-y-auto custom-scrollbar">
+                                    <div className="text-[9px] text-slate-500 font-bold uppercase mb-2 ml-1">🎒 Inventory</div>
+                                    <div className="space-y-1 max-h-32 overflow-y-auto custom-scrollbar bg-slate-950/50 rounded p-1">
                                         {(playerInventories[player.id] || []).length === 0 ? (
-                                            <div className="text-[10px] text-slate-600 italic text-center py-2">No items</div>
+                                            <div className="text-[10px] text-slate-600 italic text-center py-2">Empty Pockets</div>
                                         ) : (
                                             (playerInventories[player.id] || []).map((item: any) => (
-                                                <div key={item.id} className="flex items-center justify-between bg-slate-900/50 p-1 rounded">
-                                                    <span className="text-[10px] text-slate-300 flex-1 truncate">{item.icon || '📦'} {item.name}</span>
+                                                <div key={item.id} className="flex items-center justify-between bg-slate-900 p-1.5 rounded border border-slate-800">
+                                                    <span className="text-[10px] text-slate-300 flex-1 truncate flex items-center gap-2">
+                                                        <span>{item.icon || '📦'}</span>
+                                                        {item.name}
+                                                    </span>
                                                     <button
                                                         onClick={() => onGiveItem(player.id, item, 'REMOVE')}
-                                                        className="px-1.5 py-0.5 bg-red-900/40 hover:bg-red-800 text-red-200 text-[8px] font-bold rounded"
+                                                        className="px-2 py-0.5 bg-red-900/30 hover:bg-red-800 text-red-400 hover:text-white text-[8px] font-bold rounded transition-colors"
                                                     >
-                                                        REMOVE
+                                                        DEL
                                                     </button>
                                                 </div>
                                             ))
@@ -275,7 +277,9 @@ export function EnhancedPartyStatus({
             })}
 
             {players.length === 0 && (
-                <div className="text-center text-slate-600 text-xs py-8 italic">No heroes yet...</div>
+                <div className="text-center text-slate-600 text-xs py-8 italic border-2 border-dashed border-slate-800 rounded">
+                    Waiting for players to join...
+                </div>
             )}
         </div>
     )

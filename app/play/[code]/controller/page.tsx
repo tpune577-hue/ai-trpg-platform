@@ -1,22 +1,21 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { useParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import { useGameSocket } from '@/hooks/useGameSocket'
-// หมายเหตุ: ฟังก์ชัน generateCharacter อาจจะต้อง mock หรือ import ให้ถูก
-// ถ้าไม่มีไฟล์นี้ ให้ใช้ mock data หรือลบออกชั่วคราว
-import { generateCharacter } from '@/lib/character-utils'
-
+import { getLobbyInfo, submitReview } from '@/app/actions/game'
 import { SceneDisplay } from '@/components/board/SceneDisplay'
 import { GameLog } from '@/components/board/GameLog'
-// import { SCENES } from '@/lib/game-data' // ใช้ข้อมูลจาก Socket/DB แทน หรือถ้ามีไฟล์นี้อยู่ก็ uncomment ได้
+
+// Mock Character Generator (ถ้าไม่มีไฟล์นี้ ให้ใช้ fallback ใน useEffect)
+// import { generateCharacter } from '@/lib/character-utils' 
 
 export default function PlayerControllerPage() {
     const params = useParams()
-    // ✅ FIX: เปลี่ยนจาก campaignId เป็น code ให้ตรงกับ folder [code]
+    const router = useRouter()
     const joinCode = params.code as string
 
-    // Generate stable player ID (ในอนาคตควรรับมาจาก Lobby ผ่าน localStorage หรือ Query)
+    // --- PLAYER STATE ---
     const [playerId] = useState(() => {
         if (typeof window !== 'undefined') {
             return localStorage.getItem('trpg_player_id') || `player-${Math.floor(Math.random() * 10000)}`
@@ -24,29 +23,40 @@ export default function PlayerControllerPage() {
         return `player-${Math.floor(Math.random() * 10000)}`
     })
 
-    // Game State
     const [character, setCharacter] = useState<any>(null)
-    const [gameState, setGameState] = useState<any>(null)
+    const hasJoined = useRef(false)
 
-    // UI & Logs
+    // --- GAME STATE ---
+    const [gameState, setGameState] = useState<any>({
+        currentScene: null,
+        sceneImageUrl: '',
+        activeNpcs: []
+    })
+
+    // --- UI STATE ---
     const [logs, setLogs] = useState<any[]>([])
     const [customAction, setCustomAction] = useState('')
     const [activeTab, setActiveTab] = useState<'ACTIONS' | 'INVENTORY'>('ACTIONS')
     const [gmNarration, setGmNarration] = useState<string>('')
-
-    // Inventory State
     const [inventory, setInventory] = useState<any[]>([])
-    const [selectedItemDetail, setSelectedItemDetail] = useState<any>(null)
 
-    // Overlays / Popups
+    // --- OVERLAYS ---
+    const [selectedItemDetail, setSelectedItemDetail] = useState<any>(null)
     const [rollRequest, setRollRequest] = useState<any>(null)
     const [lastWhisper, setLastWhisper] = useState<{ sender: string, message: string } | null>(null)
     const [privateSceneId, setPrivateSceneId] = useState<string | null>(null)
+
+    // --- REVIEW MODAL ---
+    const [showReviewModal, setShowReviewModal] = useState(false)
+    const [rating, setRating] = useState(5)
+    const [reviewComment, setReviewComment] = useState('')
+    const [isSubmittingReview, setIsSubmittingReview] = useState(false)
 
     // Refs
     const logContainerRef = useRef<HTMLDivElement>(null)
     const inputRef = useRef<HTMLInputElement>(null)
 
+    // --- SOCKET CONNECTION ---
     const {
         sendPlayerAction,
         onGameStateUpdate,
@@ -56,73 +66,78 @@ export default function PlayerControllerPage() {
         onDiceResult,
         onPrivateSceneUpdate,
         onWhisperReceived
-    } = useGameSocket(joinCode, { // ✅ ใช้ joinCode แทน campaignId
+    } = useGameSocket(joinCode, {
         sessionToken: 'DEMO_PLAYER_TOKEN',
         userId: playerId,
         autoConnect: true
     })
 
-    // ✅ Helper: Scroll Log to Bottom
-    const scrollToBottom = (smooth = true) => {
-        if (logContainerRef.current) {
-            logContainerRef.current.scrollTo({
-                top: logContainerRef.current.scrollHeight,
-                behavior: smooth ? 'smooth' : 'auto'
-            })
-        }
-    }
-
-    // ✅ Effect: Handle Virtual Keyboard
+    // --- 1. INITIAL SYNC & JOIN ---
     useEffect(() => {
-        if (!window.visualViewport) return
+        const initGame = async () => {
+            // A. Fetch Initial State
+            try {
+                const session = await getLobbyInfo(joinCode)
+                if (!session) return
 
-        const handleResize = () => {
-            setTimeout(() => scrollToBottom(false), 100)
-            if (document.activeElement === inputRef.current) {
+                if (session.status === 'ENDED') {
+                    setShowReviewModal(true)
+                    return
+                }
+
+                // Sync Scene & NPCs
+                let targetSceneId = session.currentSceneId
+                let targetSceneUrl = ''
+                let targetNpcs = []
+
+                try { targetNpcs = session.activeNpcs ? JSON.parse(session.activeNpcs) : [] } catch (e) { }
+
+                if (targetSceneId) {
+                    const s = session.campaign?.scenes.find((s: any) => s.id === targetSceneId)
+                    targetSceneUrl = s?.imageUrl || ''
+                } else if (session.campaign?.scenes?.length > 0) {
+                    targetSceneId = session.campaign.scenes[0].id
+                    targetSceneUrl = session.campaign.scenes[0].imageUrl
+                }
+
+                setGameState((prev: any) => ({
+                    ...prev,
+                    currentScene: targetSceneId,
+                    sceneImageUrl: targetSceneUrl,
+                    activeNpcs: targetNpcs
+                }))
+
+            } catch (error) { console.error("Sync Error:", error) }
+
+            // B. Join as Character
+            if (!hasJoined.current) {
+                const myChar = {
+                    name: 'Adventurer',
+                    hp: 20, maxHp: 20, mp: 10, maxMp: 10,
+                    avatarUrl: 'https://placehold.co/100x100/333/FFF?text=Hero'
+                }
+                setCharacter(myChar)
+                hasJoined.current = true
+
+                // Delay slightly to ensure socket is ready
                 setTimeout(() => {
-                    inputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-                }, 300)
+                    sendPlayerAction({
+                        actionType: 'JOIN_GAME',
+                        actorId: playerId,
+                        actorName: myChar.name,
+                        characterData: { ...myChar, id: playerId },
+                        description: 'has joined the party.'
+                    } as any)
+                }, 1000)
             }
         }
+        initGame()
+    }, [joinCode, playerId, sendPlayerAction])
 
-        window.visualViewport.addEventListener('resize', handleResize)
-        return () => window.visualViewport?.removeEventListener('resize', handleResize)
-    }, [])
-
-    // ✅ Effect: Initialize Character & Join
-    const hasJoined = useRef(false)
-    useEffect(() => {
-        if (hasJoined.current) return
-
-        // ⚠️ NOTE: ตรงนี้เป็นการสุ่มตัวละคร ถ้าอยากให้ตรงกับที่เลือกใน Lobby 
-        // ต้องดึงข้อมูลจาก Server หรือ LocalStorage มาใช้แทน generateCharacter
-        // แต่ตอนนี้ใช้แบบเดิมไปก่อนตาม Request
-        const myChar = generateCharacter ? generateCharacter(playerId) : {
-            name: 'Adventurer',
-            hp: 20, maxHp: 20, mp: 10, maxMp: 10,
-            avatarUrl: 'https://placehold.co/100x100/333/FFF?text=Hero'
-        }
-
-        setCharacter(myChar)
-        hasJoined.current = true
-
-        const timer = setTimeout(() => {
-            sendPlayerAction({
-                actionType: 'JOIN_GAME',
-                actorId: playerId,
-                actorName: myChar.name,
-                characterData: { ...myChar, id: playerId },
-                description: 'has joined the party.'
-            } as any)
-        }, 1500)
-
-        return () => clearTimeout(timer)
-    }, [sendPlayerAction, playerId])
-
-    // ✅ Effect: Handle Socket Events
+    // --- 2. SOCKET LISTENERS ---
     useEffect(() => {
         if (onRollRequested) onRollRequested((req) => setRollRequest(req))
-        if (onGameStateUpdate) onGameStateUpdate((s) => setGameState(s))
+        if (onGameStateUpdate) onGameStateUpdate((s) => setGameState(s)) // Fallback sync
         if (onPrivateSceneUpdate) onPrivateSceneUpdate((data) => setPrivateSceneId(data.sceneId))
 
         const handleLog = (msg: any) => {
@@ -139,65 +154,49 @@ export default function PlayerControllerPage() {
             onWhisperReceived((data) => {
                 setLastWhisper(data)
                 setTimeout(() => setLastWhisper(null), 8000)
-                handleLog({
-                    id: Date.now().toString(),
-                    content: `🤫 Whisper from ${data.sender}: "${data.message}"`,
-                    type: 'WHISPER',
-                    senderName: data.sender,
-                    timestamp: new Date()
-                })
+                handleLog({ id: Date.now().toString(), content: `🤫 Whisper from ${data.sender}: "${data.message}"`, type: 'WHISPER', senderName: data.sender, timestamp: new Date() })
             })
         }
 
         if (onPlayerAction) {
             onPlayerAction((action) => {
-                // Inventory Logic
-                if (action.actionType === 'GM_MANAGE_INVENTORY' && action.targetPlayerId === playerId) {
-                    const { itemData, action: mode } = action.payload || {};
+                console.log("📥 Action Received:", action.actionType, action)
 
-                    if (mode === 'GIVE_CUSTOM' || mode === 'ADD') {
-                        setInventory(prev => {
-                            const exists = prev.some(item => item.id === itemData.id)
-                            if (exists) return prev
-                            return [...prev, itemData]
-                        })
-
-                        handleLog({
-                            id: `item-received-${itemData.id}`,
-                            content: `🎁 You received: ${itemData.name}`,
-                            type: 'NARRATION',
-                            senderName: 'System',
-                            timestamp: new Date()
-                        })
-                        return;
-                    }
-
-                    if (mode === 'REMOVE') {
-                        setInventory(prev => prev.filter(item => item.id !== itemData.id))
-                        handleLog({
-                            id: Date.now().toString(),
-                            content: `❌ GM removed: ${itemData.name}`,
-                            type: 'SYSTEM',
-                            senderName: 'System',
-                            timestamp: new Date()
-                        })
-                        return;
-                    }
-                    return;
+                // ✅ CASE: GM Updates Scene (Real-time Sync)
+                if (action.actionType === 'GM_UPDATE_SCENE') {
+                    setGameState((prev: any) => ({ ...prev, ...action.payload }))
+                    // ไม่ต้อง return เพื่อให้ Log ทำงานข้างล่าง (ถ้าอยากให้โชว์ว่า GM เปลี่ยนฉาก)
                 }
 
-                // Normal Log
-                const skipGenericLog = ['GM_MANAGE_INVENTORY', 'dice_roll', 'use_item', 'JOIN_GAME', 'join', 'PLAYER_INVENTORY_UPDATE']
-                if (skipGenericLog.includes(action.actionType)) {
-                    if (action.actionType === 'JOIN_GAME' || action.actionType === 'join') {
-                        handleLog({
-                            id: `join-${action.actorId || action.actorName}`,
-                            content: `${action.actorName} joined the party!`,
-                            type: 'SYSTEM',
-                            senderName: 'System',
-                            timestamp: new Date()
-                        })
+                // ✅ CASE: Session Ended
+                if (action.actionType === 'SESSION_ENDED') {
+                    setShowReviewModal(true)
+                    return
+                }
+
+                // ✅ CASE: Kicked
+                if (action.actionType === 'PLAYER_KICKED' && action.targetPlayerId === playerId) {
+                    alert("You have been kicked by the GM.")
+                    router.push('/')
+                    return
+                }
+
+                // ✅ CASE: Inventory Management
+                if (action.actionType === 'GM_MANAGE_INVENTORY' && action.targetPlayerId === playerId) {
+                    const { itemData, action: mode } = action.payload || {};
+                    if (mode === 'GIVE_CUSTOM' || mode === 'ADD') {
+                        setInventory(prev => { if (prev.some(i => i.id === itemData.id)) return prev; return [...prev, itemData] })
+                        handleLog({ id: `item-${Date.now()}`, content: `🎁 Received: ${itemData.name}`, type: 'NARRATION', senderName: 'System', timestamp: new Date() })
+                    } else if (mode === 'REMOVE') {
+                        setInventory(prev => prev.filter(i => i.id !== itemData.id))
+                        handleLog({ id: `rm-${Date.now()}`, content: `❌ Removed: ${itemData.name}`, type: 'SYSTEM', senderName: 'System', timestamp: new Date() })
                     }
+                    return
+                }
+
+                // General Logging
+                if (['GM_MANAGE_INVENTORY', 'dice_roll', 'use_item', 'JOIN_GAME', 'join', 'PLAYER_INVENTORY_UPDATE'].includes(action.actionType)) {
+                    if (action.actionType === 'JOIN_GAME') handleLog({ id: `join-${Date.now()}`, content: `${action.actorName} joined!`, type: 'SYSTEM', senderName: 'System', timestamp: new Date() })
                     return
                 }
 
@@ -217,138 +216,105 @@ export default function PlayerControllerPage() {
 
         if (onDiceResult) {
             onDiceResult((result) => {
-                handleLog({
-                    id: Date.now().toString(),
-                    content: `🎲 ${result.actorName || 'Player'} rolled ${result.roll} + ${result.mod} = ${result.total} ${result.total >= result.dc ? '✅ Success!' : '❌ Failed'}`,
-                    type: 'DICE',
-                    senderName: 'System',
-                    timestamp: new Date()
-                })
+                handleLog({ id: Date.now().toString(), content: `🎲 ${result.actorName} rolled ${result.total} (${result.roll}+${result.mod})`, type: 'DICE', senderName: 'System', timestamp: new Date() })
             })
         }
 
-    }, [onRollRequested, onGameStateUpdate, onChatMessage, onPrivateSceneUpdate, onWhisperReceived, onPlayerAction, onDiceResult, playerId])
+    }, [onRollRequested, onGameStateUpdate, onChatMessage, onPrivateSceneUpdate, onWhisperReceived, onPlayerAction, onDiceResult, playerId, router])
 
-    // Handlers
-    const handleAction = async (actionType: string) => {
-        await sendPlayerAction({
-            actionType,
-            actorId: character?.id,
-            actorName: character?.name,
-            description: `performed ${actionType}`
-        } as any)
+    // --- UTILS & HANDLERS ---
+    const scrollToBottom = (smooth = true) => {
+        if (logContainerRef.current) {
+            logContainerRef.current.scrollTo({ top: logContainerRef.current.scrollHeight, behavior: smooth ? 'smooth' : 'auto' })
+        }
     }
+
+    const handleAction = async (actionType: string) => { await sendPlayerAction({ actionType, actorId: character?.id, actorName: character?.name, description: `performed ${actionType}` } as any) }
 
     const handleRollResponse = async () => {
         if (!rollRequest) return
         const roll = Math.floor(Math.random() * 20) + 1
-        const statKey = rollRequest.checkType.split(' ')[0]
-        const statVal = character?.stats?.[statKey] || 10
-        const mod = Math.floor((statVal - 10) / 2)
-
-        await sendPlayerAction({
-            actionType: 'dice_roll',
-            checkType: rollRequest.checkType,
-            dc: rollRequest.dc,
-            roll: roll,
-            mod: mod,
-            total: roll + mod,
-            actorName: character?.name
-        } as any)
+        const mod = 0 // Calculate stats mod if needed
+        await sendPlayerAction({ actionType: 'dice_roll', checkType: rollRequest.checkType, dc: rollRequest.dc, roll, mod, total: roll + mod, actorName: character?.name } as any)
         setRollRequest(null)
     }
 
     const sendCustomAction = async () => {
         if (!customAction.trim()) return
-        await sendPlayerAction({
-            actionType: 'custom',
-            actorId: character?.id,
-            actorName: character?.name,
-            description: customAction
-        } as any)
+        await sendPlayerAction({ actionType: 'custom', actorId: character?.id, actorName: character?.name, description: customAction } as any)
         setCustomAction('')
-        setTimeout(() => {
-            scrollToBottom()
-            inputRef.current?.focus()
-        }, 100)
+        setTimeout(() => { scrollToBottom(); inputRef.current?.focus() }, 100)
     }
 
-    // Scene Logic
-    // หมายเหตุ: ถ้าไม่มีตัวแปร SCENES ให้ใช้ Fallback image
-    // const activeSceneData = SCENES.find(s => s.id === (privateSceneId || gameState?.currentScene)) || null
+    const handleSubmitReview = async () => {
+        setIsSubmittingReview(true)
+        try {
+            await submitReview(joinCode, rating, reviewComment, character?.name || 'Player')
+            alert("Thank you for your feedback!")
+            router.push('/')
+        } catch (error) {
+            console.error(error)
+            alert("Failed to submit review")
+            setIsSubmittingReview(false)
+        }
+    }
+
+    // Virtual Keyboard Fix
+    useEffect(() => {
+        if (!window.visualViewport) return
+        const handleResize = () => {
+            setTimeout(() => scrollToBottom(false), 100)
+            if (document.activeElement === inputRef.current) setTimeout(() => inputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 300)
+        }
+        window.visualViewport.addEventListener('resize', handleResize)
+        return () => window.visualViewport?.removeEventListener('resize', handleResize)
+    }, [])
+
     const activeImageUrl = gameState?.sceneImageUrl || "https://img.freepik.com/premium-photo/majestic-misty-redwood-forest-with-lush-green-ferns-sunlight-filtering-through-fog_996993-7424.jpg"
     const activeDescription = gmNarration || gameState?.currentScene || "Connecting..."
 
     return (
         <div className="h-[100dvh] bg-slate-950 text-white flex flex-col font-sans overflow-hidden">
 
-            {/* 1. HEADER: Status Bar */}
+            {/* 1. HEADER */}
             <div className="bg-slate-900 border-b border-amber-500/30 flex flex-col gap-2 p-2 shrink-0 z-30 shadow-lg relative">
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                        <div className="w-10 h-10 md:w-12 md:h-12 rounded-full border-2 border-amber-500 bg-slate-800 overflow-hidden shadow-inner shrink-0">
-                            {character ? <img src={character.avatarUrl} alt="Avatar" className="w-full h-full object-cover" /> : <div className="w-full h-full animate-pulse bg-slate-700" />}
+                        <div className="w-10 h-10 rounded-full border-2 border-amber-500 bg-slate-800 overflow-hidden">
+                            {character && <img src={character.avatarUrl} className="w-full h-full object-cover" />}
                         </div>
-                        <div className="min-w-0">
-                            <div className="font-bold text-amber-500 text-sm truncate max-w-[120px]">{character?.name || 'Loading...'}</div>
-                            <div className="text-[10px] text-slate-400 uppercase tracking-wide bg-slate-800 px-1.5 py-0.5 rounded inline-block">{character?.role || 'Adventurer'}</div>
+                        <div>
+                            <div className="font-bold text-amber-500 text-sm">{character?.name || 'Loading...'}</div>
+                            <div className="text-[10px] text-slate-400 bg-slate-800 px-1.5 py-0.5 rounded inline-block">Adventurer</div>
                         </div>
                     </div>
-                    <div className="w-24 md:w-32 flex flex-col gap-1 shrink-0">
-                        <div className="flex justify-between text-[10px] font-bold text-green-400"><span>HP</span><span>{character?.hp || 0}/{character?.maxHp || 0}</span></div>
-                        <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden"><div className="bg-green-500 h-full transition-all duration-300" style={{ width: character ? `${(character.hp / character.maxHp) * 100}%` : '0%' }} /></div>
-                        <div className="flex justify-between text-[10px] font-bold text-blue-400 mt-0.5"><span>MP</span><span>{character?.mp || 0}/{character?.maxMp || 0}</span></div>
-                        <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden"><div className="bg-blue-500 h-full transition-all duration-300" style={{ width: character ? `${(character.mp / character.maxMp) * 100}%` : '0%' }} /></div>
+                    <div className="w-24 flex flex-col gap-1">
+                        <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden"><div className="bg-green-500 h-full w-full" /></div>
+                        <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden"><div className="bg-blue-500 h-full w-3/4" /></div>
                     </div>
                 </div>
             </div>
 
-            {/* 2. SCENE AREA */}
-            <div className="h-[25vh] md:h-[35vh] relative bg-black shrink-0 shadow-md z-10 transition-all duration-300">
-                <SceneDisplay
-                    sceneDescription={activeDescription}
-                    imageUrl={activeImageUrl}
-                    npcs={gameState?.activeNpcs || []}
-                />
-                {privateSceneId && (
-                    <div className="absolute top-2 right-2 bg-indigo-900/80 text-indigo-100 text-[10px] font-bold px-2 py-1 rounded-full border border-indigo-500/50 flex items-center gap-1 shadow-lg backdrop-blur-sm animate-pulse-slow">
-                        <span>🔒</span> Private Vision
-                    </div>
-                )}
+            {/* 2. SCENE */}
+            <div className="h-[30vh] relative bg-black shrink-0 shadow-md z-10 transition-all duration-300">
+                <SceneDisplay sceneDescription={activeDescription} imageUrl={activeImageUrl} npcs={gameState?.activeNpcs || []} />
             </div>
 
-            {/* 3. LOG (Middle Flexible) */}
+            {/* 3. LOG */}
             <div className="flex-1 bg-slate-950 flex flex-col min-h-0 relative">
-                <div className="px-3 py-1 bg-slate-900/80 border-b border-slate-800 text-[10px] font-bold text-slate-500 uppercase flex justify-between shrink-0 backdrop-blur-sm absolute top-0 left-0 right-0 z-10">
-                    <span>📜 Adventure Log</span><span className="text-amber-500">{logs.length}</span>
-                </div>
-                <div ref={logContainerRef} className="flex-1 p-3 pt-8 overflow-y-auto custom-scrollbar scroll-smooth">
+                <div ref={logContainerRef} className="flex-1 p-3 overflow-y-auto custom-scrollbar scroll-smooth">
                     <GameLog logs={logs} />
                 </div>
             </div>
 
-            {/* 4. TABS & CONTROLS (Bottom) */}
-            <div className="bg-slate-900 border-t border-slate-800 shrink-0 z-20 shadow-[0_-4px_15px_rgba(0,0,0,0.5)] pb-safe flex flex-col">
-
-                {/* Tabs */}
+            {/* 4. CONTROLS */}
+            <div className="bg-slate-900 border-t border-slate-800 shrink-0 z-20 pb-safe">
                 <div className="flex border-b border-slate-800">
-                    <button
-                        onClick={() => setActiveTab('ACTIONS')}
-                        className={`flex-1 py-2 text-xs font-bold uppercase tracking-wider ${activeTab === 'ACTIONS' ? 'bg-slate-800 text-amber-500 border-b-2 border-amber-500' : 'text-slate-500 hover:text-slate-400'}`}
-                    >
-                        Actions
-                    </button>
-                    <button
-                        onClick={() => setActiveTab('INVENTORY')}
-                        className={`flex-1 py-2 text-xs font-bold uppercase tracking-wider ${activeTab === 'INVENTORY' ? 'bg-slate-800 text-amber-500 border-b-2 border-amber-500' : 'text-slate-500 hover:text-slate-400'}`}
-                    >
-                        Inventory ({inventory.length})
-                    </button>
+                    <button onClick={() => setActiveTab('ACTIONS')} className={`flex-1 py-2 text-xs font-bold uppercase ${activeTab === 'ACTIONS' ? 'bg-slate-800 text-amber-500 border-b-2 border-amber-500' : 'text-slate-500'}`}>Actions</button>
+                    <button onClick={() => setActiveTab('INVENTORY')} className={`flex-1 py-2 text-xs font-bold uppercase ${activeTab === 'INVENTORY' ? 'bg-slate-800 text-amber-500 border-b-2 border-amber-500' : 'text-slate-500'}`}>Inventory ({inventory.length})</button>
                 </div>
 
-                {/* Content Area */}
-                <div className="p-3 md:p-4 min-h-[160px]">
-
+                <div className="p-3">
                     {activeTab === 'ACTIONS' ? (
                         <>
                             <div className="grid grid-cols-2 gap-3 mb-3">
@@ -357,46 +323,17 @@ export default function PlayerControllerPage() {
                                 <ActionButton icon="🔍" label="Inspect" color="gray" onClick={() => handleAction('inspect')} />
                                 <ActionButton icon="💬" label="Talk" color="purple" onClick={() => handleAction('talk')} />
                             </div>
-
-                            <div className="bg-slate-800/50 p-2 rounded-xl border border-slate-700 shadow-inner">
-                                <div className="flex gap-2">
-                                    <input
-                                        ref={inputRef}
-                                        type="text"
-                                        value={customAction}
-                                        onChange={(e) => setCustomAction(e.target.value)}
-                                        onKeyDown={(e) => { if (e.key === 'Enter') sendCustomAction() }}
-                                        onFocus={() => {
-                                            setTimeout(() => {
-                                                scrollToBottom()
-                                                inputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-                                            }, 300)
-                                        }}
-                                        placeholder="Type custom action..."
-                                        className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-amber-500 outline-none placeholder-slate-600 transition-colors"
-                                    />
-                                    <button onClick={sendCustomAction} className="bg-amber-600 px-4 rounded-lg font-bold text-sm hover:bg-amber-500 text-black transition-colors whitespace-nowrap">GO</button>
-                                </div>
+                            <div className="flex gap-2">
+                                <input ref={inputRef} value={customAction} onChange={e => setCustomAction(e.target.value)} placeholder="Type action..." className="flex-1 bg-slate-950 border border-slate-700 rounded px-3 py-2 text-sm text-white" />
+                                <button onClick={sendCustomAction} className="bg-amber-600 px-4 rounded text-black font-bold">GO</button>
                             </div>
                         </>
                     ) : (
-                        /* INVENTORY GRID */
-                        <div className="grid grid-cols-4 gap-2 max-h-[150px] overflow-y-auto pr-1 custom-scrollbar">
+                        <div className="grid grid-cols-4 gap-2">
                             {inventory.map((item, idx) => (
-                                <button
-                                    key={`${item.id || idx}-${idx}`}
-                                    onClick={() => setSelectedItemDetail(item)}
-                                    className="aspect-square bg-slate-800/80 rounded-lg border border-slate-700 flex flex-col items-center justify-center hover:bg-slate-700 hover:border-amber-500/50 active:scale-95 transition-all"
-                                >
-                                    <span className="text-2xl filter drop-shadow-md">{item.icon || '📦'}</span>
-                                </button>
+                                <button key={idx} onClick={() => setSelectedItemDetail(item)} className="aspect-square bg-slate-800 border border-slate-700 rounded flex items-center justify-center text-2xl">{item.icon || '📦'}</button>
                             ))}
-                            {inventory.length === 0 && (
-                                <div className="col-span-4 flex flex-col items-center justify-center text-slate-600 py-4 gap-2">
-                                    <span className="text-3xl opacity-50">📦</span>
-                                    <span className="text-xs italic">No items yet</span>
-                                </div>
-                            )}
+                            {inventory.length === 0 && <div className="col-span-4 text-center text-slate-600 text-xs py-4">Empty Inventory</div>}
                         </div>
                     )}
                 </div>
@@ -404,66 +341,44 @@ export default function PlayerControllerPage() {
 
             {/* --- MODALS --- */}
 
-            {/* 1. Item Detail Modal */}
-            {selectedItemDetail && (
-                <div className="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-6 backdrop-blur-sm animate-in fade-in" onClick={() => setSelectedItemDetail(null)}>
-                    <div className="bg-slate-900 p-6 rounded-xl border border-slate-600 max-w-xs w-full text-center relative shadow-2xl" onClick={e => e.stopPropagation()}>
-                        <div className="text-6xl mb-4 filter drop-shadow-lg">{selectedItemDetail.icon || '📦'}</div>
-                        <h3 className="text-xl font-bold text-amber-500 mb-2">{selectedItemDetail.name}</h3>
-                        <div className="text-[10px] uppercase tracking-wider bg-slate-800 text-slate-400 px-2 py-1 rounded inline-block mb-4 border border-slate-700">
-                            {selectedItemDetail.type || 'ITEM'}
+            {/* REVIEW MODAL */}
+            {showReviewModal && (
+                <div className="fixed inset-0 bg-black/95 z-[100] flex items-center justify-center p-6 animate-in fade-in zoom-in duration-300 backdrop-blur-md">
+                    <div className="bg-slate-900 w-full max-w-sm p-8 rounded-2xl border-2 border-amber-500 shadow-[0_0_50px_rgba(245,158,11,0.3)] text-center relative">
+                        <div className="text-5xl mb-4">🏆</div>
+                        <h2 className="text-2xl font-bold text-white mb-2">Session Ended</h2>
+                        <p className="text-slate-400 mb-6">How was your adventure?</p>
+                        <div className="flex justify-center gap-2 mb-6">
+                            {[1, 2, 3, 4, 5].map((star) => (
+                                <button key={star} onClick={() => setRating(star)} className={`text-4xl transition-transform hover:scale-125 ${rating >= star ? 'text-amber-400' : 'text-slate-700'}`}>★</button>
+                            ))}
                         </div>
-                        <p className="text-sm text-slate-300 mb-6 font-light leading-relaxed">"{selectedItemDetail.description}"</p>
-                        <button
-                            onClick={() => {
-                                sendPlayerAction({
-                                    actorName: character?.name || 'Player',
-                                    actionType: 'use_item',
-                                    description: `used ${selectedItemDetail.name}`,
-                                    payload: { itemId: selectedItemDetail.id, itemName: selectedItemDetail.name }
-                                } as any)
-
-                                setLogs((prev) => [...prev, {
-                                    id: Date.now().toString(),
-                                    content: `You used ${selectedItemDetail.name}`,
-                                    type: 'ACTION',
-                                    senderName: character?.name || 'You',
-                                    timestamp: new Date()
-                                }])
-
-                                setSelectedItemDetail(null)
-                            }}
-                            className="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded-lg font-bold transition-colors shadow-lg"
-                        >
-                            USE ITEM
+                        <textarea value={reviewComment} onChange={(e) => setReviewComment(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-sm text-white mb-6 h-24 focus:border-amber-500 outline-none resize-none" placeholder="Leave a comment (Optional)" />
+                        <button onClick={handleSubmitReview} disabled={isSubmittingReview} className="w-full bg-amber-500 hover:bg-amber-400 text-black font-bold py-3 rounded-xl shadow-lg transition-all active:scale-95 disabled:opacity-50">
+                            {isSubmittingReview ? 'Sending...' : 'SUBMIT REVIEW'}
                         </button>
                     </div>
                 </div>
             )}
 
-            {/* 2. Whisper Toast */}
-            {lastWhisper && (
-                <div className="fixed top-20 left-1/2 -translate-x-1/2 w-[90%] max-w-sm z-50 animate-in slide-in-from-top-5 fade-in duration-300 pointer-events-none">
-                    <div className="bg-indigo-950/90 border-l-4 border-indigo-500 text-indigo-100 p-4 rounded shadow-2xl backdrop-blur-md flex items-start gap-3 pointer-events-auto">
-                        <div className="text-2xl">🤫</div>
-                        <div className="flex-1">
-                            <div className="font-bold text-xs uppercase text-indigo-400 mb-1">Whisper from {lastWhisper.sender}</div>
-                            <p className="text-sm font-medium italic">"{lastWhisper.message}"</p>
-                        </div>
-                        <button onClick={() => setLastWhisper(null)} className="text-indigo-400 hover:text-white">✕</button>
+            {/* Item Detail & Roll Request Modals */}
+            {selectedItemDetail && (
+                <div className="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-6" onClick={() => setSelectedItemDetail(null)}>
+                    <div className="bg-slate-900 p-6 rounded-xl border border-slate-600 w-full max-w-xs text-center">
+                        <div className="text-4xl mb-2">{selectedItemDetail.icon || '📦'}</div>
+                        <h3 className="font-bold text-amber-500">{selectedItemDetail.name}</h3>
+                        <p className="text-sm text-slate-400 my-2">{selectedItemDetail.description}</p>
+                        <button className="bg-blue-600 px-4 py-2 rounded text-white text-sm" onClick={() => { sendPlayerAction({ actionType: 'use_item', payload: { itemId: selectedItemDetail.id, itemName: selectedItemDetail.name }, actorName: character.name } as any); setSelectedItemDetail(null); }}>USE ITEM</button>
                     </div>
                 </div>
             )}
 
-            {/* 3. Dice Roll Request */}
             {rollRequest && (
-                <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-6 animate-in fade-in zoom-in duration-200 backdrop-blur-sm">
-                    <div className="bg-slate-900 p-6 rounded-2xl border-2 border-amber-500 shadow-[0_0_50px_rgba(245,158,11,0.3)] w-full max-w-xs text-center transform scale-110">
-                        <div className="text-5xl mb-4 animate-bounce">🎲</div>
-                        <h2 className="text-xl font-bold text-white mb-1">GM Orders Roll!</h2>
-                        <div className="text-amber-500 text-2xl font-black mb-6 uppercase tracking-wider">{rollRequest.checkType}</div>
-                        <p className="text-slate-400 text-xs mb-6 italic">"Destiny is in your hands..."</p>
-                        <button onClick={handleRollResponse} className="w-full py-3 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-black font-bold text-lg rounded-xl shadow-lg transform active:scale-95 transition-all">ROLL D20</button>
+                <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-6">
+                    <div className="bg-slate-900 p-6 rounded-2xl border-2 border-amber-500 w-full max-w-xs text-center">
+                        <h2 className="text-xl font-bold text-white">GM Orders Roll!</h2>
+                        <div className="text-amber-500 text-2xl font-black my-4">{rollRequest.checkType}</div>
+                        <button onClick={handleRollResponse} className="w-full py-3 bg-amber-500 hover:bg-amber-400 text-black font-bold rounded-xl">ROLL D20</button>
                     </div>
                 </div>
             )}
@@ -472,20 +387,11 @@ export default function PlayerControllerPage() {
 }
 
 const ActionButton = ({ icon, label, color, onClick }: any) => {
-    const colorStyles: any = {
-        red: "bg-red-950/30 border-red-500/30 active:bg-red-500/20 text-red-400",
-        yellow: "bg-amber-950/30 border-amber-500/30 active:bg-amber-500/20 text-amber-400",
-        purple: "bg-fuchsia-950/30 border-fuchsia-500/30 active:bg-fuchsia-500/20 text-fuchsia-400",
-        gray: "bg-slate-800/30 border-slate-500/30 active:bg-slate-500/20 text-slate-400",
-    }
-
+    const colors: any = { red: "bg-red-900/30 text-red-400", yellow: "bg-amber-900/30 text-amber-400", purple: "bg-purple-900/30 text-purple-400", gray: "bg-slate-800 text-slate-400" }
     return (
-        <button
-            onClick={onClick}
-            className={`${colorStyles[color]} border p-3 rounded-xl flex items-center justify-center gap-2 transition-all active:scale-95 active:border-white/50 min-h-[50px] md:min-h-[60px]`}
-        >
-            <span className="text-xl filter drop-shadow-lg">{icon}</span>
-            <span className="font-bold text-xs uppercase tracking-wide">{label}</span>
+        <button onClick={onClick} className={`${colors[color]} border border-white/10 p-3 rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-all`}>
+            <span className="text-xl">{icon}</span>
+            <span className="font-bold text-xs uppercase">{label}</span>
         </button>
     )
 }

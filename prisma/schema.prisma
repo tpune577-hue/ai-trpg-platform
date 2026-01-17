@@ -1,4 +1,5 @@
-// prisma/schema.prisma
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
 
 generator client {
   provider = "prisma-client-js"
@@ -11,14 +12,18 @@ datasource db {
 
 // --- USER & AUTH ---
 model User {
-  id               String     @id @default(cuid())
-  email            String     @unique
-  name             String?
+  id             String     @id @default(cuid())
+  email          String     @unique
+  name           String?
   
-  // Relation: เกมที่สร้างเอง
+  // Relation: เกมที่สร้างเอง (ในฐานะ Creator/GM)
   createdCampaigns Campaign[] 
+  
   // Relation: เกมที่ซื้อมา
   ownedCampaigns   Purchase[] 
+  
+  // Relation: รีวิวที่ได้รับ (ในฐานะ GM)
+  receivedReviews  Review[]
 }
 
 // --- CAMPAIGN TEMPLATE (สินค้า/ต้นฉบับ) ---
@@ -51,9 +56,10 @@ model Campaign {
   sessions    GameSession[]
 
   createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  updatedAt   DateTime @default(now()) @updatedAt
 }
 
+// --- ASSETS ---
 model Scene {
   id          String   @id @default(cuid())
   name        String
@@ -67,8 +73,8 @@ model Npc {
   id          String   @id @default(cuid())
   name        String
   avatarUrl   String
-  type        String   
-  stats       String?  
+  type        String    // FRIENDLY, ENEMY, NEUTRAL
+  stats       String?   // JSON string { hp: 10, str: 10 ... }
   campaignId  String
   campaign    Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
 }
@@ -77,7 +83,7 @@ model Item {
   id          String   @id @default(cuid())
   name        String
   description String?
-  type        String   
+  type        String    // WEAPON, POTION, KEY_ITEM
   icon        String?
   campaignId  String
   campaign    Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
@@ -88,7 +94,11 @@ model PreGenCharacter {
   name        String
   bio         String?
   avatarUrl   String?
-  stats       String?  
+  
+  // ✅ เพิ่ม sheetType: เพื่อรองรับการสร้าง Pre-Gen แบบ Role & Roll
+  sheetType   String   @default("STANDARD") // "STANDARD", "ROLE_AND_ROLL"
+  
+  stats       String?   // JSON string (Character Sheet Data)
   
   campaignId  String
   campaign    Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
@@ -111,11 +121,11 @@ model Purchase {
 model GameSession {
   id             String   @id @default(cuid())
   joinCode       String   @unique 
-  status         String   @default("WAITING") 
+  status         String   @default("WAITING") // WAITING, ACTIVE, PAUSED, ENDED
   
   // Current State
   currentSceneId String?
-  activeNpcs     String?  
+  activeNpcs     String?  // JSON Array String
   
   // Lobby Settings
   isAiGm         Boolean  @default(false)
@@ -127,20 +137,40 @@ model GameSession {
   players        Player[]
   
   createdAt      DateTime @default(now())
+  updatedAt      DateTime @default(now()) @updatedAt
 }
 
 model Player {
   id            String      @id @default(cuid())
   name          String
-  role          String      @default("PLAYER") 
+  role          String      @default("PLAYER") // GM, PLAYER
   isReady       Boolean     @default(false)
   
-  characterData String?     
+  // ✅ เพิ่ม sheetType: เพื่อบอกว่า Player คนนี้ใช้หน้าจอแบบไหน
+  sheetType     String      @default("STANDARD") // "STANDARD", "ROLE_AND_ROLL"
+  
+  characterData String?     // JSON String (HP, Stats, Inventory)
   preGenId      String?
   
   sessionId     String
   session       GameSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
-  // ✅ เพิ่ม field นี้เพื่อให้เรียงลำดับคนเข้าห้องได้
   createdAt     DateTime    @default(now()) 
+}
+
+// --- REVIEWS & FEEDBACK ---
+model Review {
+  id           String   @id @default(cuid())
+  rating       Int      // 0-5
+  comment      String?
+  reviewerName String   // ชื่อ Player ที่รีวิว
+  
+  // เชื่อมกับ GM (User)
+  targetUserId String
+  targetUser   User     @relation(fields: [targetUserId], references: [id])
+
+  // เก็บว่ามาจาก Session ไหน (Optional)
+  sessionCode  String?
+
+  createdAt    DateTime @default(now())
 }

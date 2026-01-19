@@ -50,7 +50,7 @@ export async function POST(req: Request) {
                 // Skip database update for demo (would need proper campaignPlayer records)
                 // Just broadcast the event
                 await pusher.trigger(channelName, 'game-event', {
-                    type: 'PRIVATE_SCENE_UPDATE',
+                    actionType: 'PRIVATE_SCENE_UPDATE',
                     targetPlayerId,
                     payload: { sceneId }
                 })
@@ -64,7 +64,7 @@ export async function POST(req: Request) {
 
                 // Broadcast whisper (client will filter)
                 await pusher.trigger(channelName, 'game-event', {
-                    type: 'WHISPER',
+                    actionType: 'WHISPER',
                     targetPlayerId,
                     sender: sender || 'Game Master',
                     message

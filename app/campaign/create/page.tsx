@@ -20,6 +20,9 @@ export default function CreateCampaignPage() {
     const [price, setPrice] = useState(0)
     const [coverImage, setCoverImage] = useState('')
 
+    // ✅ เพิ่ม State สำหรับ System (Default: STANDARD)
+    const [system, setSystem] = useState<'STANDARD' | 'ROLE_AND_ROLL'>('STANDARD')
+
     const [storyIntro, setStoryIntro] = useState('')
     const [storyMid, setStoryMid] = useState('')
     const [storyEnd, setStoryEnd] = useState('')
@@ -44,6 +47,10 @@ export default function CreateCampaignPage() {
                 setDescription(data.description || '')
                 setPrice(data.price)
                 setCoverImage(data.coverImage || '')
+
+                // ✅ โหลดค่า System เดิมมาแสดง
+                setSystem(data.system as 'STANDARD' | 'ROLE_AND_ROLL' || 'STANDARD')
+
                 setStoryIntro(data.storyIntro || '')
                 setStoryMid(data.storyMid || '')
                 setStoryEnd(data.storyEnd || '')
@@ -99,6 +106,7 @@ export default function CreateCampaignPage() {
 
         const payload = {
             title, description, price, coverImage,
+            system, // ✅ ส่งค่า System ไปบันทึกด้วย
             storyIntro, storyMid, storyEnd,
             scenes, npcs, preGens,
             isPublished: !isDraft
@@ -182,6 +190,27 @@ export default function CreateCampaignPage() {
                                     <input type="number" value={price} onChange={e => setPrice(Number(e.target.value))} className={inputClass} placeholder="0 for Free" />
                                 </InputGroup>
                             </div>
+
+                            {/* ✅ เพิ่ม Dropdown เลือก System */}
+                            <InputGroup label="Game System (Dice Rules)">
+                                <div className="relative">
+                                    <select
+                                        value={system}
+                                        onChange={(e) => setSystem(e.target.value as any)}
+                                        className={`${inputClass} appearance-none cursor-pointer bg-slate-900`}
+                                    >
+                                        <option value="STANDARD">🌟 Standard RPG (D20 + Modifiers)</option>
+                                        <option value="ROLE_AND_ROLL">🎲 Role & Roll (5D4 Exploding Dice)</option>
+                                    </select>
+                                    <div className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">▼</div>
+                                </div>
+                                <p className="text-xs text-slate-500 mt-2 ml-1">
+                                    {system === 'STANDARD'
+                                        ? "Classic system using a 20-sided die. Roll + Stats vs Difficulty Class (DC)."
+                                        : "Unique system using a pool of 5D4. 'R' face triggers re-rolls and chains combos."}
+                                </p>
+                            </InputGroup>
+
                             <InputGroup label="Cover Image URL">
                                 <div className="flex gap-6 items-start">
                                     <input value={coverImage} onChange={e => setCoverImage(e.target.value)} className={inputClass} placeholder="https://..." />
@@ -319,7 +348,6 @@ export default function CreateCampaignPage() {
 
                                             <div className="space-y-1">
                                                 <div className="font-bold text-white text-lg truncate">{char.name || char.bio?.name}</div>
-                                                {/* ✅ แก้ไขจุดนี้: ดึง Description จาก data property */}
                                                 <div className="text-xs text-slate-400 line-clamp-2 h-8">
                                                     {char.data?.description || char.data?.bio?.description || 'No description provided.'}
                                                 </div>

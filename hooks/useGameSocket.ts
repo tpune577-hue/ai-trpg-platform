@@ -23,6 +23,7 @@ export const useGameSocket = (campaignId: string | null, options: any = {}) => {
         onWhisperReceived: (data: { sender: string, message: string }) => { },
         onPrivateSceneUpdate: (data: { sceneId: string | null }) => { },
         onPlayerJoined: (profile: UserProfile) => { },
+        onAnnounce: (data: { message: string }) => { },
     })
 
     useEffect(() => {
@@ -66,13 +67,15 @@ export const useGameSocket = (campaignId: string | null, options: any = {}) => {
                 }
             }
 
-            // 3. Dice Result
-            if (data.actionType === 'dice_roll') {
+            // 3. Dice Result (D20 & RnR)
+            if (data.actionType === 'dice_roll' || data.actionType === 'rnr_roll') {
+                console.log('🎲 useGameSocket: Calling onDiceResult with:', data)
                 eventCallbacksRef.current.onDiceResult(data)
             }
 
             // 4. Player Actions & Inventory
             // ✅ เพิ่ม 'GM_MANAGE_INVENTORY' เข้าไปเพื่อให้ Client รับรู้ว่ามีการแจกของ
+            // ❌ ลบ 'rnr_roll' และ 'RNR_LIVE_UPDATE' ออก - ให้ไปที่ general handler แทน
             if (['move', 'attack', 'talk', 'inspect', 'custom', 'JOIN_GAME', 'GM_MANAGE_INVENTORY'].includes(data.actionType)) {
 
                 eventCallbacksRef.current.onPlayerAction(data)
@@ -120,25 +123,44 @@ export const useGameSocket = (campaignId: string | null, options: any = {}) => {
                 }
             }
 
-            // 6. Generic Player Actions (Catch-all for unknown actions)
-            // Skip actions already handled above in block #4
-            const handledActions = ['move', 'attack', 'talk', 'inspect', 'custom', 'JOIN_GAME', 'GM_MANAGE_INVENTORY', 'dice_roll']
-            if (data.actionType &&
-                data.actionType !== 'GM_UPDATE_SCENE' &&
-                data.actionType !== 'GM_REQUEST_ROLL' &&
-                !handledActions.includes(data.actionType)) {
+
+            // 7. Announce (GM broadcasts message to all players)
+            if (data.type === 'ANNOUNCE' || data.actionType === 'ANNOUNCE') {
+                console.log('📢 Socket Received ANNOUNCE:', data)
+                eventCallbacksRef.current.onAnnounce({
+                    message: data.message || data.payload?.message || ''
+                })
+            }
+
+            // 8. Player Actions (Catch-all for unknown actions)
+            // Skip actions already handled above in block #4, and other specific types
+            // General Player Action Handler
+            // ✅ ส่งทุก action ที่ไม่ได้ถูก handle แล้ว
+            const handledActions = ['GM_UPDATE_SCENE', 'GM_REQUEST_ROLL', 'dice_roll', 'chat', 'whisper', 'WHISPER', 'PRIVATE_SCENE_UPDATE', 'ANNOUNCE', 'GM_MANAGE_INVENTORY', 'JOIN_GAME']
+
+            if (!handledActions.includes(data.actionType)) {
+
+
                 console.log('📨 useGameSocket processing player action:', {
                     actionType: data.actionType,
                     actorName: data.actorName,
-                    description: data.description
+                    hasDetails: !!data.details,
+                    details: data.details
                 })
 
                 eventCallbacksRef.current.onPlayerAction({
+                    actorId: data.actorId, // ✅ Pass actorId
                     actorName: data.actorName || 'Unknown',
                     actionType: data.actionType,
                     description: data.description || '',
                     payload: data.payload,
-                    targetPlayerId: data.targetPlayerId
+                    targetPlayerId: data.targetPlayerId,
+                    // ✅ เพิ่ม fields สำหรับ RnR
+                    details: data.details,
+                    total: data.total,
+                    willBoost: data.willBoost,
+                    isRequested: data.isRequested,
+                    isPrivate: data.isPrivate // ✅ Pass isPrivate flag
                 })
             }
         })
@@ -169,15 +191,15 @@ export const useGameSocket = (campaignId: string | null, options: any = {}) => {
         [campaignId])
 
     const requestRoll = useCallback((checkType: string, dc: number = 10, targetPlayerId?: string) =>
-        callApi({ action: { type: 'GM_REQUEST_ROLL', targetPlayerId, payload: { checkType, dc } } }),
+        callApi({ action: { actionType: 'GM_REQUEST_ROLL', targetPlayerId, payload: { checkType, dc } } }),
         [campaignId])
 
     const setPrivateScene = useCallback((playerId: string, sceneId: string | null) =>
-        callApi({ action: { type: 'PRIVATE_SCENE_UPDATE', targetPlayerId: playerId, payload: { sceneId } } }),
+        callApi({ action: { actionType: 'PRIVATE_SCENE_UPDATE', targetPlayerId: playerId, payload: { sceneId } } }),
         [campaignId])
 
     const sendWhisper = useCallback((targetPlayerId: string, message: string) =>
-        callApi({ action: { type: 'WHISPER', targetPlayerId, message, sender: 'GM' } }),
+        callApi({ action: { actionType: 'WHISPER', targetPlayerId, message, sender: 'GM' } }),
         [campaignId])
 
     const setGlobalScene = useCallback((sceneId: string) =>
@@ -209,6 +231,7 @@ export const useGameSocket = (campaignId: string | null, options: any = {}) => {
     const onWhisperReceived = (cb: any) => { eventCallbacksRef.current.onWhisperReceived = cb }
     const onPrivateSceneUpdate = (cb: any) => { eventCallbacksRef.current.onPrivateSceneUpdate = cb }
     const onPlayerJoined = (cb: any) => { eventCallbacksRef.current.onPlayerJoined = cb }
+    const onAnnounce = (cb: any) => { eventCallbacksRef.current.onAnnounce = cb }
 
     // Stubs (สำหรับความเข้ากันได้กับโค้ดเก่า)
     const measureLatency = () => { }
@@ -234,6 +257,7 @@ export const useGameSocket = (campaignId: string | null, options: any = {}) => {
         onWhisperReceived,
         onPrivateSceneUpdate,
         onPlayerJoined,
+        onAnnounce,
 
         measureLatency,
         sendChatMessage,

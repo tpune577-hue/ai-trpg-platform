@@ -10,30 +10,78 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// --- USER & AUTH ---
+// --- USER & AUTH (Modified for NextAuth) ---
 model User {
-  id             String     @id @default(cuid())
-  email          String     @unique
-  name           String?
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?   // รูป Profile จาก Google
   
-  // Relation: เกมที่สร้างเอง (ในฐานะ Creator/GM)
+  // NextAuth Relations
+  accounts      Account[]
+  sessions      Session[]
+
+  // App Specific Relations
   createdCampaigns Campaign[] 
-  
-  // Relation: เกมที่ซื้อมา
   ownedCampaigns   Purchase[] 
-  
-  // Relation: รีวิวที่ได้รับ (ในฐานะ GM)
   receivedReviews  Review[]
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ✅ Model มาตรฐานสำหรับ NextAuth (Account)
+model Account {
+  id                 String  @id @default(cuid())
+  userId             String
+  type               String
+  provider           String
+  providerAccountId  String
+  refresh_token      String? 
+  access_token       String? 
+  expires_at         Int?
+  token_type         String?
+  scope              String?
+  id_token           String? 
+  session_state      String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+// ✅ Model มาตรฐานสำหรับ NextAuth (Session)
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ✅ Model มาตรฐานสำหรับ NextAuth (VerificationToken)
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
 }
 
 // --- CAMPAIGN TEMPLATE (สินค้า/ต้นฉบับ) ---
 model Campaign {
   id          String   @id @default(cuid())
+  
+  // Basic Info
   title       String
   description String? 
   coverImage  String?
   tags        String? 
   
+  // ✅ Game System
+  system      String   @default("STANDARD") 
+
   // Story Details
   storyIntro  String? 
   storyMid    String? 
@@ -51,7 +99,7 @@ model Campaign {
   
   // Relations
   creatorId   String
-  creator     User     @relation(fields: [creatorId], references: [id])
+  creator     User      @relation(fields: [creatorId], references: [id])
   purchases   Purchase[]
   sessions    GameSession[]
 
@@ -94,12 +142,8 @@ model PreGenCharacter {
   name        String
   bio         String?
   avatarUrl   String?
-  
-  // ✅ เพิ่ม sheetType: เพื่อรองรับการสร้าง Pre-Gen แบบ Role & Roll
-  sheetType   String   @default("STANDARD") // "STANDARD", "ROLE_AND_ROLL"
-  
-  stats       String?   // JSON string (Character Sheet Data)
-  
+  sheetType   String   @default("STANDARD")
+  stats       String?   // JSON string
   campaignId  String
   campaign    Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
 }
@@ -119,37 +163,35 @@ model Purchase {
 
 // --- GAME SESSION (ห้องเล่นจริง) ---
 model GameSession {
-  id             String   @id @default(cuid())
-  joinCode       String   @unique 
-  status         String   @default("WAITING") // WAITING, ACTIVE, PAUSED, ENDED
+  id              String   @id @default(cuid())
+  joinCode        String   @unique 
+  status          String   @default("WAITING") 
   
   // Current State
-  currentSceneId String?
-  activeNpcs     String?  // JSON Array String
+  currentSceneId  String?
+  activeNpcs      String?  // JSON Array String
   
   // Lobby Settings
-  isAiGm         Boolean  @default(false)
+  isAiGm          Boolean  @default(false)
 
   // Campaign 
-  campaignId     String?
-  campaign       Campaign? @relation(fields: [campaignId], references: [id])
+  campaignId      String?
+  campaign        Campaign? @relation(fields: [campaignId], references: [id])
   
-  players        Player[]
+  players         Player[]
   
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @default(now()) @updatedAt
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @default(now()) @updatedAt
 }
 
 model Player {
   id            String      @id @default(cuid())
   name          String
-  role          String      @default("PLAYER") // GM, PLAYER
+  role          String      @default("PLAYER")
   isReady       Boolean     @default(false)
+  sheetType     String      @default("STANDARD")
   
-  // ✅ เพิ่ม sheetType: เพื่อบอกว่า Player คนนี้ใช้หน้าจอแบบไหน
-  sheetType     String      @default("STANDARD") // "STANDARD", "ROLE_AND_ROLL"
-  
-  characterData String?     // JSON String (HP, Stats, Inventory)
+  characterData String?     
   preGenId      String?
   
   sessionId     String
@@ -160,17 +202,16 @@ model Player {
 
 // --- REVIEWS & FEEDBACK ---
 model Review {
-  id           String   @id @default(cuid())
-  rating       Int      // 0-5
-  comment      String?
-  reviewerName String   // ชื่อ Player ที่รีวิว
+  id             String   @id @default(cuid())
+  rating         Int      // 0-5
+  comment        String?
+  reviewerName   String   // ชื่อ Player ที่รีวิว
   
   // เชื่อมกับ GM (User)
-  targetUserId String
-  targetUser   User     @relation(fields: [targetUserId], references: [id])
+  targetUserId   String
+  targetUser     User     @relation(fields: [targetUserId], references: [id])
 
-  // เก็บว่ามาจาก Session ไหน (Optional)
-  sessionCode  String?
+  sessionCode    String?
 
-  createdAt    DateTime @default(now())
+  createdAt      DateTime @default(now())
 }

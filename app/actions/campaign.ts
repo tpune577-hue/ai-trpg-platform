@@ -18,6 +18,9 @@ export async function createCampaignAction(data: any) {
                 coverImage: data.coverImage,
                 isPublished: data.isPublished ?? false, // ✅ รองรับ Draft
 
+                // ✅ เพิ่ม System Field (รับค่าจากหน้า Create Campaign)
+                system: data.system || 'STANDARD',
+
                 // Story Details
                 storyIntro: data.storyIntro,
                 storyMid: data.storyMid,
@@ -123,7 +126,6 @@ export async function getCampaignById(id: string) {
         return null
     }
 }
-// ... (code เดิม)
 
 // --- 4. GET MY CAMPAIGNS (ดึงเฉพาะของฉัน) ---
 export async function getMyCampaigns() {
@@ -163,9 +165,7 @@ export async function deleteCampaign(id: string) {
         throw new Error("Failed to delete campaign")
     }
 }
-// ... (Imports และ createCampaignAction เดิม) ...
 
-// ✅ เพิ่มฟังก์ชันนี้ต่อท้ายไฟล์ครับ
 // --- 6. UPDATE CAMPAIGN ---
 export async function updateCampaignAction(campaignId: string, data: any) {
     try {
@@ -180,6 +180,10 @@ export async function updateCampaignAction(campaignId: string, data: any) {
                 price: data.price || 0,
                 coverImage: data.coverImage,
                 isPublished: data.isPublished,
+
+                // ✅ อัปเดต System
+                system: data.system || 'STANDARD',
+
                 storyIntro: data.storyIntro,
                 storyMid: data.storyMid,
                 storyEnd: data.storyEnd,

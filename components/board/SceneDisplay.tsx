@@ -31,6 +31,9 @@ export const SceneDisplay = ({ sceneDescription, imageUrl, npcs = [] }: SceneDis
             }, 30000)
 
             return () => clearTimeout(timer) // ล้าง Timer เดิมถ้าข้อความเปลี่ยนก่อนหมดเวลา
+        } else {
+            // ถ้าไม่มีข้อความ ซ่อนทันที
+            setShowText(false)
         }
     }, [sceneDescription])
 
@@ -94,7 +97,7 @@ export const SceneDisplay = ({ sceneDescription, imageUrl, npcs = [] }: SceneDis
                         Current Scene
                     </h2>
                     <p className="text-slate-200 text-sm md:text-base font-serif italic leading-relaxed line-clamp-3 drop-shadow-md">
-                        {sceneDescription || "The adventure awaits..."}
+                        {sceneDescription}
                     </p>
                 </div>
             </div>

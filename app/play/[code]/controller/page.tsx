@@ -6,6 +6,7 @@ import { useGameSocket } from '@/hooks/useGameSocket'
 import { getLobbyInfo, submitReview, updateCharacterStats } from '@/app/actions/game'
 import { SceneDisplay } from '@/components/board/SceneDisplay'
 import { GameLog } from '@/components/board/GameLog'
+import RnRRoller from '@/components/game/RnRRoller'
 
 export default function PlayerControllerPage() {
     const params = useParams()
@@ -39,17 +40,28 @@ export default function PlayerControllerPage() {
     })
     const [campaignScenes, setCampaignScenes] = useState<any[]>([])
 
+    // ✅ เพิ่ม State สำหรับ Game System
+    const [campaignSystem, setCampaignSystem] = useState<'STANDARD' | 'ROLE_AND_ROLL'>('STANDARD')
+
     // --- UI STATE ---
     const [logs, setLogs] = useState<any[]>([])
     const [customAction, setCustomAction] = useState('')
-    const [activeTab, setActiveTab] = useState<'ACTIONS' | 'INVENTORY'>('ACTIONS')
+    const [activeTab, setActiveTab] = useState<'ACTIONS' | 'INVENTORY' | 'CHARACTER'>('ACTIONS')
     const [gmNarration, setGmNarration] = useState<string>('')
+    const [sceneNotification, setSceneNotification] = useState<string>('')
+    const [announcement, setAnnouncement] = useState<string>('')
     const [inventory, setInventory] = useState<any[]>([])
 
     // --- OVERLAYS ---
     const [selectedItemDetail, setSelectedItemDetail] = useState<any>(null)
-    const [rollRequest, setRollRequest] = useState<any>(null)
-    const [willBoost, setWillBoost] = useState(0)
+    const [isPrivateAction, setIsPrivateAction] = useState(false) // ✅ Private Action State
+
+    // ✅ แยก Roll State
+    const [rollRequest, setRollRequest] = useState<any>(null) // D20
+    const [isRnRRolling, setIsRnRRolling] = useState(false)   // RnR
+    const [isRequestedRoll, setIsRequestedRoll] = useState(false) // Flag: Is this a requested roll?
+
+    const [willBoost, setWillBoost] = useState(0) // ✅ Fixed: Added setWillBoost
     const [lastWhisper, setLastWhisper] = useState<{ sender: string, message: string } | null>(null)
     const [privateSceneId, setPrivateSceneId] = useState<string | null>(null)
 
@@ -77,7 +89,8 @@ export default function PlayerControllerPage() {
         onPlayerAction,
         onDiceResult,
         onPrivateSceneUpdate,
-        onWhisperReceived
+        onWhisperReceived,
+        onAnnounce
     } = useGameSocket(joinCode, {
         sessionToken: 'DEMO_PLAYER_TOKEN',
         userId: playerId,
@@ -108,6 +121,11 @@ export default function PlayerControllerPage() {
                 if (session.status === 'ENDED') {
                     setShowReviewModal(true)
                     return
+                }
+
+                // ✅ Sync Game System
+                if (session.campaign?.system) {
+                    setCampaignSystem(session.campaign.system as any)
                 }
 
                 // Sync Scene & NPCs
@@ -184,7 +202,17 @@ export default function PlayerControllerPage() {
 
     // --- 2. SOCKET LISTENERS ---
     useEffect(() => {
-        if (onRollRequested) onRollRequested((req) => setRollRequest(req))
+        // ✅ Handle Roll Request (D20 vs RnR)
+        if (onRollRequested) {
+            onRollRequested((req) => {
+                if (campaignSystem === 'ROLE_AND_ROLL') {
+                    setIsRequestedRoll(true)
+                    setIsRnRRolling(true)
+                } else {
+                    setRollRequest(req)
+                }
+            })
+        }
 
         // ✅ FIX: Handle Game State Update safely
         if (onGameStateUpdate) {
@@ -243,11 +271,34 @@ export default function PlayerControllerPage() {
             })
         }
 
+
+        if (onAnnounce) {
+            onAnnounce((data) => {
+                console.log('📢 Controller Received Announcement:', data.message)
+                setAnnouncement(data.message)
+                // Auto-clear after 15 seconds
+                setTimeout(() => setAnnouncement(''), 15000)
+            })
+        }
+
         if (onPlayerAction) {
             onPlayerAction((action) => {
                 console.log("📥 Action Received:", action.actionType, action)
 
 
+
+
+                if (action.actionType === 'GM_UPDATE_SCENE') {
+                    const payload = action.payload || {}
+                    let newNpcs = payload.activeNpcs || []
+                    if (typeof newNpcs === 'string') { try { newNpcs = JSON.parse(newNpcs) } catch (e) { newNpcs = [] } }
+                    setGameState((prev: any) => ({
+                        ...prev,
+                        currentScene: payload.currentScene || prev.currentScene,
+                        sceneImageUrl: payload.sceneImageUrl || prev.sceneImageUrl,
+                        activeNpcs: Array.isArray(newNpcs) ? newNpcs : []
+                    }))
+                }
 
                 if (action.actionType === 'SESSION_ENDED') {
                     setShowReviewModal(true)
@@ -273,11 +324,16 @@ export default function PlayerControllerPage() {
                     return
                 }
 
-                // General Logs
-                if (!['GM_MANAGE_INVENTORY', 'GM_UPDATE_SCENE'].includes(action.actionType)) {
+                // General Logs (✅ Filter dice rolls - handled by onDiceResult, WHISPER handled by onWhisperReceived)
+                if (!['GM_MANAGE_INVENTORY', 'GM_UPDATE_SCENE', 'RNR_LIVE_UPDATE', 'rnr_roll', 'dice_roll', 'WHISPER'].includes(action.actionType)) {
+                    // ✅ Private Action Filtering: Hide from others
+                    const isPrivate = action.isPrivate || action.payload?.isPrivate // ✅ Fallback
+
+                    if (isPrivate && action.actorId !== playerId) return
+
                     handleLog({
                         id: `${Date.now()}-${action.actionType}`,
-                        content: action.description || `${action.actorName} used ${action.actionType}`,
+                        content: isPrivate ? `🔒 (Private) ${action.description}` : (action.description || `${action.actorName} used ${action.actionType}`),
                         type: 'ACTION',
                         senderName: action.actorName,
                         timestamp: new Date()
@@ -286,17 +342,40 @@ export default function PlayerControllerPage() {
 
                 if (action.actorName === 'Game Master' && action.actionType === 'custom') {
                     setGmNarration(action.description)
+                    // Auto-clear GM narration after 15 seconds
+                    setTimeout(() => setGmNarration(''), 15000)
                 }
             })
         }
 
         if (onDiceResult) {
             onDiceResult((result) => {
-                handleLog({ id: Date.now().toString(), content: `🎲 ${result.actorName} rolled ${result.total} (${result.roll}+${result.mod})`, type: 'DICE', senderName: 'System', timestamp: new Date() })
+                // ✅ รองรับทั้ง D20 และ RnR
+                let logMessage = ''
+                if (result.details && Array.isArray(result.details)) {
+                    // RnR Roll
+                    logMessage = `🎲 ${result.actorName} rolled Role & Roll: ${result.total}`
+                } else {
+                    // D20 Roll
+                    logMessage = `🎲 ${result.actorName} rolled ${result.total} (${result.roll}+${result.mod})`
+                }
+                handleLog({ id: Date.now().toString(), content: logMessage, type: 'DICE', senderName: 'System', timestamp: new Date() })
             })
         }
 
-    }, [onRollRequested, onGameStateUpdate, onChatMessage, onPrivateSceneUpdate, onWhisperReceived, onPlayerAction, onDiceResult, playerId, router])
+    }, [onRollRequested, onGameStateUpdate, onChatMessage, onPrivateSceneUpdate, onWhisperReceived, onPlayerAction, onDiceResult, playerId, router, campaignSystem])
+
+    // Auto-clear scene notification when scene changes
+    useEffect(() => {
+        if (gameState?.currentScene) {
+            const sceneName = campaignScenes.find(s => s.id === gameState.currentScene)?.name
+            if (sceneName) {
+                setSceneNotification(sceneName)
+                // Auto-clear scene notification after 10 seconds
+                setTimeout(() => setSceneNotification(''), 10000)
+            }
+        }
+    }, [gameState?.currentScene, campaignScenes])
 
     // --- UTILS ---
     const scrollToBottom = (smooth = true) => {
@@ -306,7 +385,15 @@ export default function PlayerControllerPage() {
     }
 
 
-    const handleAction = async (actionType: string) => { await sendPlayerAction({ actionType, actorId: playerId, actorName: character?.name, description: `performed ${actionType}` } as any) }
+    const handleAction = async (actionType: string) => {
+        // ✅ Check System for Attack
+        if (actionType === 'attack' && campaignSystem === 'ROLE_AND_ROLL') {
+            setIsRequestedRoll(false)
+            setIsRnRRolling(true)
+        } else {
+            await sendPlayerAction({ actionType, actorId: playerId, actorName: character?.name, description: `performed ${actionType}` } as any)
+        }
+    }
 
     // Helper: Get stat modifier based on check type
     const getStatModifier = (checkType: string): number => {
@@ -332,11 +419,16 @@ export default function PlayerControllerPage() {
         return Number(stat) || 0
     }
 
+    // --- ROLL HANDLERS ---
+
+    // 1. D20 Roll Handler
     const handleRollResponse = async () => {
         if (!rollRequest) return
+        console.log('🎲 Rolling D20 with WILL Boost:', willBoost)
         const roll = Math.floor(Math.random() * 20) + 1
         const mod = getStatModifier(rollRequest.checkType)
         const total = roll + mod + willBoost
+        console.log('🎲 Roll:', roll, '+ Mod:', mod, '+ WILL:', willBoost, '= Total:', total)
 
         await sendPlayerAction({
             actionType: 'dice_roll',
@@ -351,7 +443,9 @@ export default function PlayerControllerPage() {
 
         // Deduct WILL Power if used
         if (willBoost > 0 && character?.stats) {
-            const newWillPower = (character.stats.willPower || 0) - willBoost
+            const currentWill = character.stats.willPower || 0
+            const newWillPower = currentWill - willBoost
+            console.log('💪 WILL Power:', currentWill, '- Used:', willBoost, '= New:', newWillPower)
 
             setCharacter(prev => ({
                 ...prev,
@@ -363,14 +457,74 @@ export default function PlayerControllerPage() {
 
             // Save WILL Power to database
             try {
+                console.log('💾 Saving WILL Power to database:', newWillPower)
                 await updateCharacterStats(playerId, { willPower: newWillPower })
+                console.log('✅ WILL Power saved successfully')
             } catch (error) {
-                console.error('Failed to update WILL Power:', error)
+                console.error('❌ Failed to update WILL Power:', error)
             }
+        } else {
+            console.log('ℹ️ No WILL Power used (willBoost:', willBoost, ', hasStats:', !!character?.stats, ')')
         }
 
         setRollRequest(null)
         setWillBoost(0)
+    }
+
+    // 2. RnR Roll Handlers (New)
+    const handleRnRStepUpdate = async (currentTotal: number, steps: any[]) => {
+        console.log('📡 Sending RNR Live Update:', { currentTotal, steps, isRequested: isRequestedRoll })
+        await sendPlayerAction({
+            actionType: 'RNR_LIVE_UPDATE',
+            actorName: character.name,
+            total: currentTotal,        // ✅ เพิ่ม total
+            details: steps,             // ✅ เพิ่ม details
+            isRequested: isRequestedRoll
+        } as any)
+    }
+
+    const handleRnRComplete = async (totalScore: number, steps: any[], willUsed: number) => {
+        setIsRnRRolling(false)
+        console.log('🎲 RnR Complete - Total:', totalScore, ', WILL Used:', willUsed)
+
+        // Deduct WILL Power if used
+        if (willUsed > 0 && character?.stats) {
+            const currentWill = character.stats.willPower || 0
+            const newWillPower = currentWill - willUsed
+            console.log('💪 WILL Power:', currentWill, '- Used:', willUsed, '= New:', newWillPower)
+
+            setCharacter(prev => ({
+                ...prev,
+                stats: {
+                    ...prev.stats,
+                    willPower: newWillPower
+                }
+            }))
+
+
+            // Save WILL Power to database
+            try {
+                console.log('💾 Saving WILL Power to database:', newWillPower)
+                await updateCharacterStats(playerId, { willPower: newWillPower })
+                console.log('✅ WILL Power saved successfully')
+            } catch (error) {
+                console.error('❌ Failed to update WILL Power:', error)
+            }
+        }
+
+
+        console.log('📤 Sending rnr_roll to Pusher...') // Debug: verify single call
+        await sendPlayerAction({
+            actionType: 'rnr_roll',
+            actorName: character.name,
+            total: totalScore,
+            details: steps,
+            willBoost: willUsed,
+            description: `rolled Role & Roll check: ${totalScore} `,
+            isRequested: isRequestedRoll
+        } as any)
+
+        setIsRequestedRoll(false)
     }
 
 
@@ -414,7 +568,7 @@ export default function PlayerControllerPage() {
         // Priority 2: Global Scene
         return gameState?.sceneImageUrl || "https://img.freepik.com/premium-photo/majestic-misty-redwood-forest-with-lush-green-ferns-sunlight-filtering-through-fog_996993-7424.jpg"
     })()
-    const activeDescription = gmNarration || gameState?.currentScene || "Connecting..."
+    const activeDescription = announcement || gmNarration || sceneNotification || undefined
 
     return (
         <div className="h-[100dvh] bg-slate-950 text-white flex flex-col font-sans overflow-hidden">
@@ -455,23 +609,58 @@ export default function PlayerControllerPage() {
             <div className="bg-slate-900 border-t border-slate-800 shrink-0 z-20 pb-safe">
                 <div className="flex border-b border-slate-800">
                     <button onClick={() => setActiveTab('ACTIONS')} className={`flex-1 py-2 text-xs font-bold uppercase ${activeTab === 'ACTIONS' ? 'bg-slate-800 text-amber-500 border-b-2 border-amber-500' : 'text-slate-500'}`}>Actions</button>
+                    <button onClick={() => setActiveTab('CHARACTER')} className={`flex-1 py-2 text-xs font-bold uppercase ${activeTab === 'CHARACTER' ? 'bg-slate-800 text-amber-500 border-b-2 border-amber-500' : 'text-slate-500'}`}>Character</button>
                     <button onClick={() => setActiveTab('INVENTORY')} className={`flex-1 py-2 text-xs font-bold uppercase ${activeTab === 'INVENTORY' ? 'bg-slate-800 text-amber-500 border-b-2 border-amber-500' : 'text-slate-500'}`}>Inventory ({inventory.length})</button>
                 </div>
 
-                <div className="p-3">
+                <div className="h-[200px] p-3 overflow-y-auto custom-scrollbar">
                     {activeTab === 'ACTIONS' ? (
                         <>
-                            <div className="grid grid-cols-2 gap-3 mb-3">
-                                <ActionButton icon="⚔️" label="Attack" color="red" onClick={() => handleAction('attack')} />
-                                <ActionButton icon="🦶" label="Move" color="yellow" onClick={() => handleAction('move')} />
-                                <ActionButton icon="🔍" label="Inspect" color="gray" onClick={() => handleAction('inspect')} />
-                                <ActionButton icon="💬" label="Talk" color="purple" onClick={() => handleAction('talk')} />
+                            {/* Push to Talk Button - Large Circular (LINE Style) */}
+                            <div className="flex flex-col items-center mb-3">
+                                <button
+                                    className="w-32 h-32 bg-gradient-to-br from-purple-600 to-purple-500 hover:from-purple-500 hover:to-purple-400 text-white font-bold rounded-full shadow-2xl active:scale-90 transition-all flex flex-col items-center justify-center gap-1"
+                                    onMouseDown={() => console.log('🎤 Push to Talk - Start')}
+                                    onMouseUp={() => console.log('🎤 Push to Talk - End')}
+                                    onTouchStart={() => console.log('🎤 Push to Talk - Start')}
+                                    onTouchEnd={() => console.log('🎤 Push to Talk - End')}
+                                >
+                                    <span className="text-5xl">🎤</span>
+                                    <span className="text-[10px] font-bold uppercase tracking-wider">PUSH TO TALK</span>
+                                </button>
                             </div>
+
+                            {/* Custom Action Input */}
                             <div className="flex gap-2">
-                                <input ref={inputRef} value={customAction} onChange={e => setCustomAction(e.target.value)} placeholder="Type action..." className="flex-1 bg-slate-950 border border-slate-700 rounded px-3 py-2 text-sm text-white" />
+                                <input ref={inputRef} value={customAction} onChange={e => setCustomAction(e.target.value)} onKeyDown={e => e.key === 'Enter' && sendCustomAction()} placeholder="Type action..." className="flex-1 bg-slate-950 border border-slate-700 rounded px-3 py-2 text-sm text-white" />
                                 <button onClick={sendCustomAction} className="bg-amber-600 px-4 rounded text-black font-bold">GO</button>
                             </div>
                         </>
+                    ) : activeTab === 'CHARACTER' ? (
+                        <div className="space-y-3">
+                            {/* Character Stats */}
+                            <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
+                                <h3 className="text-amber-500 font-bold mb-3 text-sm uppercase">Stats</h3>
+                                <div className="grid grid-cols-3 gap-3">
+                                    <StatDisplay label="STR" value={character?.stats?.STR || character?.stats?.str || 0} />
+                                    <StatDisplay label="DEX" value={character?.stats?.DEX || character?.stats?.dex || 0} />
+                                    <StatDisplay label="CON" value={character?.stats?.CON || character?.stats?.con || 0} />
+                                    <StatDisplay label="INT" value={character?.stats?.INT || character?.stats?.int || 0} />
+                                    <StatDisplay label="WIS" value={character?.stats?.WIS || character?.stats?.wis || 0} />
+                                    <StatDisplay label="CHA" value={character?.stats?.CHA || character?.stats?.cha || 0} />
+                                </div>
+                            </div>
+
+                            {/* WILL Power */}
+                            <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
+                                <h3 className="text-purple-400 font-bold mb-2 text-sm uppercase flex items-center gap-2">
+                                    <span>⚡</span> WILL Power
+                                </h3>
+                                <div className="text-3xl font-black text-white text-center">
+                                    {character?.stats?.willPower || 0}
+                                </div>
+                            </div>
+                        </div>
                     ) : (
                         <div className="grid grid-cols-4 gap-2">
                             {inventory.map((item, idx) => (
@@ -505,15 +694,51 @@ export default function PlayerControllerPage() {
 
             {selectedItemDetail && (
                 <div className="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-6" onClick={() => setSelectedItemDetail(null)}>
-                    <div className="bg-slate-900 p-6 rounded-xl border border-slate-600 w-full max-w-xs text-center">
+                    <div className="bg-slate-900 p-6 rounded-xl border border-slate-600 w-full max-w-xs text-center" onClick={(e) => e.stopPropagation()}>
                         <div className="text-4xl mb-2">{selectedItemDetail.icon || '📦'}</div>
                         <h3 className="font-bold text-amber-500">{selectedItemDetail.name}</h3>
                         <p className="text-sm text-slate-400 my-2">{selectedItemDetail.description}</p>
-                        <button className="bg-blue-600 px-4 py-2 rounded text-white text-sm" onClick={() => { sendPlayerAction({ actionType: 'use_item', actorId: playerId, payload: { itemId: selectedItemDetail.id, itemName: selectedItemDetail.name }, actorName: character.name, description: `used ${selectedItemDetail.name}` } as any); setSelectedItemDetail(null); }}>USE ITEM</button>
+
+                        {/* ✅ Private Checkbox */}
+                        <div className="flex items-center justify-center gap-2 mb-4 cursor-pointer hover:opacity-80 transition-opacity" onClick={() => setIsPrivateAction(!isPrivateAction)}>
+                            <div className={`w-5 h-5 border rounded flex items-center justify-center transition-colors ${isPrivateAction ? 'bg-indigo-500 border-indigo-500 text-white' : 'border-slate-500 text-transparent bg-slate-800'}`}>✓</div>
+                            <span className="text-sm text-slate-300 select-none">Private Action (GM Only)</span>
+                        </div>
+
+                        <button
+                            className={`px-4 py-3 rounded text-white text-sm w-full font-bold shadow-lg transition-all active:scale-95 ${isPrivateAction ? 'bg-indigo-600 hover:bg-indigo-500' : 'bg-blue-600 hover:bg-blue-500'}`}
+                            onClick={() => {
+                                sendPlayerAction({
+                                    actionType: 'use_item',
+                                    actorId: playerId,
+                                    payload: { itemId: selectedItemDetail.id, itemName: selectedItemDetail.name, isPrivate: isPrivateAction },
+                                    actorName: character.name,
+                                    description: `used ${selectedItemDetail.name}`, // Base description
+                                    isPrivate: isPrivateAction // ✅ Flag for Log Filtering
+                                } as any);
+                                setSelectedItemDetail(null);
+                                setIsPrivateAction(false);
+                            }}
+                        >
+                            {isPrivateAction ? 'USE PRIVATELY' : 'USE ITEM'}
+                        </button>
                     </div>
                 </div>
             )}
 
+            {/* ✅ RnR Roller (แทนที่ D20 ถ้าเป็นโหมด RnR) */}
+            {isRnRRolling && (
+                <RnRRoller
+                    baseStats={(character?.stats?.str || 0)}
+                    characterName={character?.name}
+                    availableWillPower={character?.stats?.willPower || 0}
+                    onComplete={handleRnRComplete}
+                    onStepUpdate={handleRnRStepUpdate}
+                    onCancel={() => { setIsRnRRolling(false); setIsRequestedRoll(false); }}
+                />
+            )}
+
+            {/* D20 Modal (ถ้าไม่ใช้ RnR) */}
             {rollRequest && (
                 <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-6">
                     <div className="bg-slate-900 p-6 rounded-2xl border-2 border-amber-500 w-full max-w-xs text-center">
@@ -547,6 +772,7 @@ export default function PlayerControllerPage() {
                     </div>
                 </div>
             )}
+
             {/* DEBUG TOGGLE */}
             <button onClick={() => setShowDebug(!showDebug)} className="fixed top-14 right-2 text-[10px] bg-red-900/50 text-red-300 px-2 py-1 rounded z-50 border border-red-800 opacity-50 hover:opacity-100">
                 debug
@@ -559,23 +785,25 @@ export default function PlayerControllerPage() {
                     <div className="mb-2 text-slate-400">
                         Code: {joinCode}<br />
                         Socket: {playerId ? 'Ready' : '...'}<br />
-                        Scene: {gameState.currentScene}
+                        Scene: {gameState.currentScene}<br />
+                        System: {campaignSystem}
                     </div>
                     {debugLogs.map((log, i) => (
                         <div key={i} className="mb-1 border-b border-white/10 pb-1">{log}</div>
                     ))}
                 </div>
             )}
+
         </div>
     )
 }
 
-const ActionButton = ({ icon, label, color, onClick }: any) => {
-    const colors: any = { red: "bg-red-900/30 text-red-400", yellow: "bg-amber-900/30 text-amber-400", purple: "bg-purple-900/30 text-purple-400", gray: "bg-slate-800 text-slate-400" }
+
+const StatDisplay = ({ label, value }: { label: string, value: number }) => {
     return (
-        <button onClick={onClick} className={`${colors[color]} border border-white/10 p-3 rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-all`}>
-            <span className="text-xl">{icon}</span>
-            <span className="font-bold text-xs uppercase">{label}</span>
-        </button>
+        <div className="bg-slate-950 rounded-lg p-2 text-center border border-slate-600">
+            <div className="text-[10px] text-slate-400 font-bold uppercase">{label}</div>
+            <div className="text-xl font-black text-white">{value}</div>
+        </div>
     )
 }

@@ -15,6 +15,10 @@ const RR_ABILITIES = {
     Physical: ['Climb', 'Stealth', 'Brawl', 'Weapons', 'Sword Play', 'Throwing', 'Reflex', 'Athlete']
 }
 
+// Limits
+const MAX_RR_ATTR_POINTS = 9
+const MAX_RR_ABIL_POINTS = 18
+
 interface CharacterCreatorProps {
     playerId: string
     initialName?: string
@@ -26,40 +30,64 @@ export default function CharacterCreator({ playerId, initialName, onSave, onCanc
     const [sheetType, setSheetType] = useState<'STANDARD' | 'ROLE_AND_ROLL'>('STANDARD')
     const [isSaving, setIsSaving] = useState(false)
 
-    // State รวมสำหรับเก็บค่าทุกอย่าง
+    // State รวม
     const [formData, setFormData] = useState<any>({
         name: initialName || 'Adventurer',
         imageUrl: '',
         description: '',
-        // Standard Values (Default 0 for Point Buy system)
+        // Standard
         hp: 20, mp: 10, wp: 5,
-        str: 0, dex: 0, int: 0, wis: 0, cha: 0, // ✅ ปรับ Default เป็น 0 และเพิ่ม wis, cha
-        // Role & Roll Values (Vitals)
-        rr_willPower: 3, rr_health: 10, rr_mental: 5
+        str: 0, dex: 0, int: 0, wis: 0, cha: 0,
+        // Role & Roll (Manual Input)
+        rr_willPower: 3, rr_health: 10, rr_mental: 5,
     })
 
     const handleChange = (key: string, value: any) => {
         setFormData((prev: any) => ({ ...prev, [key]: value }))
     }
 
-    // ✅ Logic ควบคุม Point Buy ของ Standard (Total <= 9)
-    const MAX_STANDARD_POINTS = 9
-    const currentStandardTotal = (formData.str || 0) + (formData.dex || 0) + (formData.int || 0) + (formData.wis || 0) + (formData.cha || 0)
+    // --- HELPERS: Calculate Totals ---
+    // ✅ นับแต้มที่ใช้ไป (Cost) - ตอนนี้ Attributes คิดเต็มจำนวน (เริ่ม 0)
+    const getRRSpentPoints = (type: 'ATTRIBUTE' | 'ABILITY') => {
+        let spent = 0
+        if (type === 'ATTRIBUTE') {
+            Object.values(RR_ATTRIBUTES).flat().forEach(attr => {
+                const val = formData[`rr_attr_${attr}`] || 0 // ✅ เริ่มที่ 0
+                spent += val
+            })
+        } else {
+            Object.values(RR_ABILITIES).flat().forEach(abil => {
+                const val = formData[`rr_abil_${abil}`] || 0
+                spent += val
+            })
+        }
+        return spent
+    }
+
+    // --- HANDLERS: Limit Logic ---
+    const handleRRChange = (key: string, newValue: number, type: 'ATTRIBUTE' | 'ABILITY') => {
+        const currentVal = formData[key] || 0 // ✅ เริ่มที่ 0 ทั้งคู่
+        const diff = newValue - currentVal
+        const currentSpent = getRRSpentPoints(type)
+        const max = type === 'ATTRIBUTE' ? MAX_RR_ATTR_POINTS : MAX_RR_ABIL_POINTS
+
+        if (diff > 0 && currentSpent + diff > max) return
+
+        handleChange(key, newValue)
+    }
 
     const handleStandardStatChange = (key: string, newValue: number) => {
         if (newValue < 0) return
-
-        // คำนวณผลรวมถ้าเปลี่ยนค่านี้ (ผลรวมเดิม - ค่าเดิม + ค่าใหม่)
+        const currentStandardTotal = (formData.str || 0) + (formData.dex || 0) + (formData.int || 0) + (formData.wis || 0) + (formData.cha || 0)
         const diff = newValue - (formData[key] || 0)
 
-        if (currentStandardTotal + diff <= MAX_STANDARD_POINTS) {
-            handleChange(key, newValue)
-        }
+        if (diff > 0 && currentStandardTotal + diff > 9) return
+
+        handleChange(key, newValue)
     }
 
     const handleSaveClick = async () => {
         setIsSaving(true)
-
         let payload: any = {
             name: formData.name,
             sheetType: sheetType,
@@ -76,7 +104,7 @@ export default function CharacterCreator({ playerId, initialName, onSave, onCanc
                     mp: formData.mp, maxMp: formData.mp,
                     willPower: formData.wp,
                     str: formData.str, dex: formData.dex, int: formData.int,
-                    wis: formData.wis, cha: formData.cha // ✅ บันทึก wis, cha
+                    wis: formData.wis, cha: formData.cha
                 }
             }
         } else {
@@ -84,34 +112,35 @@ export default function CharacterCreator({ playerId, initialName, onSave, onCanc
             const abilities: any = {}
 
             Object.values(RR_ATTRIBUTES).flat().forEach(attr => {
-                const key = `rr_attr_${attr}`
-                attributes[attr] = formData[key] || 1
+                attributes[attr] = formData[`rr_attr_${attr}`] || 0 // ✅ Default 0
             })
-
             Object.values(RR_ABILITIES).flat().forEach(abil => {
-                const key = `rr_abil_${abil}`
-                abilities[abil] = formData[key] || 0
+                abilities[abil] = formData[`rr_abil_${abil}`] || 0
             })
 
             payload.data = {
                 imageUrl: formData.imageUrl,
-                bio: {
-                    name: formData.name,
-                    description: formData.description
-                },
+                bio: { name: formData.name, description: formData.description },
                 vitals: {
                     willPower: formData.rr_willPower,
                     health: formData.rr_health,
-                    mental: formData.rr_mental
+                    mental: formData.rr_mental,
+                    maxHealth: formData.rr_health,
+                    maxMental: formData.rr_mental
                 },
                 attributes: attributes,
-                abilities: abilities
+                abilities: abilities,
+                baseDicePool: 5
             }
         }
-
         await onSave(payload)
         setIsSaving(false)
     }
+
+    // Calculated Values for UI
+    const rrAttrSpent = getRRSpentPoints('ATTRIBUTE')
+    const rrAbilSpent = getRRSpentPoints('ABILITY')
+    const stdTotal = (formData.str || 0) + (formData.dex || 0) + (formData.int || 0) + (formData.wis || 0) + (formData.cha || 0)
 
     return (
         <div className="fixed inset-0 bg-slate-950/95 z-[100] overflow-y-auto custom-scrollbar flex justify-center p-4 md:p-6">
@@ -123,23 +152,14 @@ export default function CharacterCreator({ playerId, initialName, onSave, onCanc
                         <h2 className="text-3xl font-bold text-amber-500 tracking-tight">Create Character</h2>
                         <p className="text-slate-400 text-sm mt-1">Setup your stats and abilities</p>
                     </div>
-                    <button
-                        onClick={onCancel}
-                        className="self-end md:self-auto text-slate-500 hover:text-white text-3xl transition-transform hover:rotate-90"
-                    >
-                        &times;
-                    </button>
+                    <button onClick={onCancel} className="self-end md:self-auto text-slate-500 hover:text-white text-3xl transition-transform hover:rotate-90">&times;</button>
                 </div>
 
                 {/* Template Selector */}
                 <div className="mb-8 bg-slate-800 p-4 rounded-xl border border-slate-600 shadow-inner">
                     <label className="block text-xs font-bold text-amber-500 uppercase tracking-widest mb-2">System Template</label>
                     <div className="relative">
-                        <select
-                            value={sheetType}
-                            onChange={(e) => setSheetType(e.target.value as any)}
-                            className="w-full bg-slate-950 border-2 border-slate-700 rounded-lg p-3 text-white focus:border-amber-500 outline-none text-base font-bold appearance-none cursor-pointer hover:border-slate-500"
-                        >
+                        <select value={sheetType} onChange={(e) => setSheetType(e.target.value as any)} className="w-full bg-slate-950 border-2 border-slate-700 rounded-lg p-3 text-white focus:border-amber-500 outline-none text-base font-bold appearance-none cursor-pointer hover:border-slate-500">
                             <option value="STANDARD">🌟 Standard RPG (Simple Stats)</option>
                             <option value="ROLE_AND_ROLL">🎲 Role & Roll (Dice Pool System)</option>
                         </select>
@@ -152,39 +172,21 @@ export default function CharacterCreator({ playerId, initialName, onSave, onCanc
                     <div className="md:col-span-5 space-y-4">
                         <div>
                             <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1 block">Character Name</label>
-                            <input
-                                type="text"
-                                value={formData.name}
-                                onChange={e => handleChange('name', e.target.value)}
-                                className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-white focus:border-emerald-500 outline-none placeholder-slate-600"
-                                placeholder="Enter Name..."
-                            />
+                            <input type="text" value={formData.name} onChange={e => handleChange('name', e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-white focus:border-emerald-500 outline-none placeholder-slate-600" placeholder="Enter Name..." />
                         </div>
                         <div>
                             <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1 block">Avatar URL</label>
                             <div className="flex gap-3">
-                                <input
-                                    type="text"
-                                    value={formData.imageUrl}
-                                    onChange={e => handleChange('imageUrl', e.target.value)}
-                                    placeholder="https://..."
-                                    className="flex-1 bg-slate-950 border border-slate-700 rounded-lg p-3 text-white focus:border-emerald-500 outline-none placeholder-slate-600 text-sm"
-                                />
+                                <input type="text" value={formData.imageUrl} onChange={e => handleChange('imageUrl', e.target.value)} placeholder="https://..." className="flex-1 bg-slate-950 border border-slate-700 rounded-lg p-3 text-white focus:border-emerald-500 outline-none placeholder-slate-600 text-sm" />
                                 <div className="w-12 h-12 bg-black rounded border border-slate-700 overflow-hidden shrink-0">
                                     {formData.imageUrl ? <img src={formData.imageUrl} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-[10px] text-slate-600">No Img</div>}
                                 </div>
                             </div>
                         </div>
                     </div>
-
                     <div className="md:col-span-7">
                         <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1 block">Description</label>
-                        <textarea
-                            value={formData.description}
-                            onChange={e => handleChange('description', e.target.value)}
-                            className="w-full h-[126px] bg-slate-950 border border-slate-700 rounded-lg p-3 text-white focus:border-emerald-500 outline-none resize-none leading-relaxed placeholder-slate-600 text-sm"
-                            placeholder="Character backstory..."
-                        />
+                        <textarea value={formData.description} onChange={e => handleChange('description', e.target.value)} className="w-full h-[126px] bg-slate-950 border border-slate-700 rounded-lg p-3 text-white focus:border-emerald-500 outline-none resize-none leading-relaxed placeholder-slate-600 text-sm" placeholder="Character backstory..." />
                     </div>
                 </div>
 
@@ -195,30 +197,21 @@ export default function CharacterCreator({ playerId, initialName, onSave, onCanc
                     <div className="bg-slate-800/30 p-6 rounded-xl border border-slate-700 animate-in fade-in slide-in-from-bottom-4">
                         <div className="flex justify-between items-center mb-4">
                             <h3 className="text-xl font-bold text-emerald-400">📊 Base Status</h3>
-
-                            {/* ✅ Display Points Remaining */}
                             <div className="text-xs bg-slate-900 border border-slate-700 px-3 py-1.5 rounded-lg flex gap-2 items-center">
-                                <span className="text-slate-400 uppercase font-bold">Points Remaining:</span>
-                                <span className={`font-mono text-lg font-bold ${MAX_STANDARD_POINTS - currentStandardTotal === 0 ? 'text-red-500' : 'text-emerald-400'}`}>
-                                    {MAX_STANDARD_POINTS - currentStandardTotal}
-                                </span>
-                                <span className="text-slate-600">/ {MAX_STANDARD_POINTS}</span>
+                                <span className="text-slate-400 uppercase font-bold">Points:</span>
+                                <span className={`font-mono text-lg font-bold ${9 - stdTotal === 0 ? 'text-red-500' : 'text-emerald-400'}`}>{9 - stdTotal}</span>
+                                <span className="text-slate-600">/ 9</span>
                             </div>
                         </div>
-
-                        {/* ✅ เพิ่ม WIS, CHA และใช้ handleStandardStatChange */}
                         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4">
-                            {/* Vitals (ใช้ค่าปกติ ไม่รวมใน Point Buy) */}
-                            <StatBox label="HP" val={formData.hp} onChange={v => handleChange('hp', v)} color="red" size="large" />
-                            <StatBox label="MP" val={formData.mp} onChange={v => handleChange('mp', v)} color="blue" size="large" />
-                            <StatBox label="Will Power" val={formData.wp} onChange={v => handleChange('wp', v)} color="purple" size="large" />
-
-                            {/* Attributes (รวมใน Point Buy) */}
-                            <StatBox label="STR" val={formData.str} onChange={v => handleStandardStatChange('str', v)} />
-                            <StatBox label="DEX" val={formData.dex} onChange={v => handleStandardStatChange('dex', v)} />
-                            <StatBox label="INT" val={formData.int} onChange={v => handleStandardStatChange('int', v)} />
-                            <StatBox label="WIS" val={formData.wis} onChange={v => handleStandardStatChange('wis', v)} />
-                            <StatBox label="CHA" val={formData.cha} onChange={v => handleStandardStatChange('cha', v)} />
+                            <StatBox label="HP" val={formData.hp} onChange={(v: number) => handleChange('hp', v)} color="red" size="large" />
+                            <StatBox label="MP" val={formData.mp} onChange={(v: number) => handleChange('mp', v)} color="blue" size="large" />
+                            <StatBox label="Will Power" val={formData.wp} onChange={(v: number) => handleChange('wp', v)} color="purple" size="large" />
+                            <StatBox label="STR" val={formData.str} onChange={(v: number) => handleStandardStatChange('str', v)} />
+                            <StatBox label="DEX" val={formData.dex} onChange={(v: number) => handleStandardStatChange('dex', v)} />
+                            <StatBox label="INT" val={formData.int} onChange={(v: number) => handleStandardStatChange('int', v)} />
+                            <StatBox label="WIS" val={formData.wis} onChange={(v: number) => handleStandardStatChange('wis', v)} />
+                            <StatBox label="CHA" val={formData.cha} onChange={(v: number) => handleStandardStatChange('cha', v)} />
                         </div>
                     </div>
                 )}
@@ -227,22 +220,34 @@ export default function CharacterCreator({ playerId, initialName, onSave, onCanc
                 {sheetType === 'ROLE_AND_ROLL' && (
                     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
 
-                        {/* Vitals (Single Line Layout) */}
+                        {/* Vitals (Manual Input) */}
                         <div className="bg-slate-800/50 p-6 rounded-xl border border-slate-700">
-                            <h3 className="text-lg font-bold text-emerald-400 mb-4 flex items-center gap-2">❤️ Vitals</h3>
+                            <div className="flex justify-between items-center mb-4">
+                                <h3 className="text-lg font-bold text-emerald-400 flex items-center gap-2">❤️ Vitals (Manual Input)</h3>
+                                <div className="text-xs text-slate-500">Filled by GM/Player</div>
+                            </div>
                             <div className="grid grid-cols-3 gap-4 md:gap-8">
-                                <StatBox label="Health" val={formData.rr_health} onChange={v => handleChange('rr_health', v)} color="red" size="compact" />
-                                <StatBox label="Mental" val={formData.rr_mental} onChange={v => handleChange('rr_mental', v)} color="blue" size="compact" />
-                                <StatBox label="Will Power" val={formData.rr_willPower} onChange={v => handleChange('rr_willPower', v)} color="purple" size="compact" />
+                                <StatBox label="Health" val={formData.rr_health} onChange={(v: number) => handleChange('rr_health', v)} color="red" size="compact" />
+                                <StatBox label="Mental" val={formData.rr_mental} onChange={(v: number) => handleChange('rr_mental', v)} color="blue" size="compact" />
+                                <StatBox label="Will Power" val={formData.rr_willPower} onChange={(v: number) => handleChange('rr_willPower', v)} color="purple" size="compact" />
                             </div>
                         </div>
 
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                            {/* Attributes */}
+                            {/* Attributes (Now Modifier) */}
                             <div className="bg-slate-800/30 p-6 rounded-xl border border-slate-700">
                                 <div className="flex justify-between items-center mb-4 border-b border-slate-700 pb-2">
-                                    <h3 className="text-lg font-bold text-amber-400">Attributes</h3>
-                                    <span className="text-[10px] bg-slate-900 text-slate-300 px-2 py-1 rounded border border-slate-600 font-mono">Points: 9</span>
+                                    <div>
+                                        <h3 className="text-lg font-bold text-amber-400">Attributes</h3>
+                                        <p className="text-[10px] text-amber-500/70 uppercase tracking-widest font-bold">Base Modifier (+Stats)</p>
+                                    </div>
+                                    <div className="text-xs bg-slate-900 border border-slate-700 px-3 py-1.5 rounded-lg flex gap-2 items-center">
+                                        <span className="text-slate-400 uppercase font-bold">Points Remaining:</span>
+                                        <span className={`font-mono text-lg font-bold ${MAX_RR_ATTR_POINTS - rrAttrSpent <= 0 ? 'text-red-500' : 'text-amber-400'}`}>
+                                            {MAX_RR_ATTR_POINTS - rrAttrSpent}
+                                        </span>
+                                        <span className="text-slate-600">/ {MAX_RR_ATTR_POINTS}</span>
+                                    </div>
                                 </div>
                                 <div className="space-y-6">
                                     {Object.entries(RR_ATTRIBUTES).map(([cat, attrs]) => (
@@ -250,7 +255,13 @@ export default function CharacterCreator({ playerId, initialName, onSave, onCanc
                                             <h4 className="text-[10px] font-black text-slate-500 uppercase mb-2">{cat}</h4>
                                             <div className="space-y-2">
                                                 {attrs.map(attr => (
-                                                    <DiceSlider key={attr} label={attr} value={formData[`rr_attr_${attr}`] || 1} onChange={v => handleChange(`rr_attr_${attr}`, v)} />
+                                                    <DiceSlider
+                                                        key={attr}
+                                                        label={attr}
+                                                        value={formData[`rr_attr_${attr}`] || 0} // ✅ เริ่มที่ 0
+                                                        onChange={(v: number) => handleRRChange(`rr_attr_${attr}`, v, 'ATTRIBUTE')}
+                                                        type="ATTRIBUTE"
+                                                    />
                                                 ))}
                                             </div>
                                         </div>
@@ -258,11 +269,20 @@ export default function CharacterCreator({ playerId, initialName, onSave, onCanc
                                 </div>
                             </div>
 
-                            {/* Abilities */}
+                            {/* Abilities (Result Modifier) */}
                             <div className="bg-slate-800/30 p-6 rounded-xl border border-slate-700">
                                 <div className="flex justify-between items-center mb-4 border-b border-slate-700 pb-2">
-                                    <h3 className="text-lg font-bold text-cyan-400">General Abilities</h3>
-                                    <span className="text-[10px] bg-slate-900 text-slate-300 px-2 py-1 rounded border border-slate-600 font-mono">Points: 18</span>
+                                    <div>
+                                        <h3 className="text-lg font-bold text-cyan-400">Abilities</h3>
+                                        <p className="text-[10px] text-cyan-500/70 uppercase tracking-widest font-bold">Skill Bonus (+Mod)</p>
+                                    </div>
+                                    <div className="text-xs bg-slate-900 border border-slate-700 px-3 py-1.5 rounded-lg flex gap-2 items-center">
+                                        <span className="text-slate-400 uppercase font-bold">Points Remaining:</span>
+                                        <span className={`font-mono text-lg font-bold ${MAX_RR_ABIL_POINTS - rrAbilSpent <= 0 ? 'text-red-500' : 'text-cyan-400'}`}>
+                                            {MAX_RR_ABIL_POINTS - rrAbilSpent}
+                                        </span>
+                                        <span className="text-slate-600">/ {MAX_RR_ABIL_POINTS}</span>
+                                    </div>
                                 </div>
                                 <div className="space-y-6">
                                     {Object.entries(RR_ABILITIES).map(([cat, abils]) => (
@@ -270,7 +290,13 @@ export default function CharacterCreator({ playerId, initialName, onSave, onCanc
                                             <h4 className="text-[10px] font-black text-slate-500 uppercase mb-2">{cat}</h4>
                                             <div className="space-y-2">
                                                 {abils.map(abil => (
-                                                    <DiceSlider key={abil} label={abil} value={formData[`rr_abil_${abil}`] || 0} onChange={v => handleChange(`rr_abil_${abil}`, v)} />
+                                                    <DiceSlider
+                                                        key={abil}
+                                                        label={abil}
+                                                        value={formData[`rr_abil_${abil}`] || 0}
+                                                        onChange={(v: number) => handleRRChange(`rr_abil_${abil}`, v, 'ABILITY')}
+                                                        type="ABILITY"
+                                                    />
                                                 ))}
                                             </div>
                                         </div>
@@ -283,17 +309,8 @@ export default function CharacterCreator({ playerId, initialName, onSave, onCanc
 
                 {/* Footer Buttons */}
                 <div className="mt-8 pt-6 border-t border-slate-700 flex justify-end gap-3 sticky bottom-0 bg-slate-900/95 backdrop-blur py-4 -mb-4">
-                    <button
-                        onClick={onCancel}
-                        className="px-6 py-3 rounded-lg text-slate-400 hover:text-white font-bold transition-colors hover:bg-slate-800 text-sm"
-                    >
-                        Cancel
-                    </button>
-                    <button
-                        onClick={handleSaveClick}
-                        disabled={isSaving}
-                        className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-8 py-3 rounded-lg shadow-lg hover:shadow-emerald-500/30 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed text-sm flex items-center gap-2"
-                    >
+                    <button onClick={onCancel} className="px-6 py-3 rounded-lg text-slate-400 hover:text-white font-bold transition-colors hover:bg-slate-800 text-sm">Cancel</button>
+                    <button onClick={handleSaveClick} disabled={isSaving} className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-8 py-3 rounded-lg shadow-lg hover:shadow-emerald-500/30 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed text-sm flex items-center gap-2">
                         {isSaving ? 'Saving...' : 'SAVE CHARACTER'}
                     </button>
                 </div>
@@ -304,37 +321,49 @@ export default function CharacterCreator({ playerId, initialName, onSave, onCanc
 }
 
 // --- Helper Components ---
-
 const StatBox = ({ label, val, onChange, color = "white", size = "normal" }: any) => {
     const colors: any = { red: 'text-red-400', blue: 'text-blue-400', purple: 'text-purple-400', white: 'text-slate-200' }
-
-    // Logic ปรับขนาด Compact
     const isCompact = size === 'compact'
     const isLarge = size === 'large'
-
     return (
         <div className={`w-full bg-slate-950 rounded-lg border border-slate-700 flex flex-col items-center justify-center transition-all hover:border-${color === 'white' ? 'slate-500' : color.split('-')[1] + '-500'} ${isCompact ? 'p-3' : isLarge ? 'p-4' : 'p-2'}`}>
             <label className={`font-bold uppercase mb-1 ${colors[color] || colors.white} ${isCompact ? 'text-[10px]' : 'text-xs'}`}>{label}</label>
-            <input
-                type="number" value={val} onChange={e => onChange(Number(e.target.value))}
-                className={`w-full bg-transparent text-center font-mono font-black text-white outline-none focus:text-amber-500 ${isCompact ? 'text-2xl' : isLarge ? 'text-3xl' : 'text-xl'}`}
-            />
+            <input type="number" value={val} onChange={e => onChange(Number(e.target.value))} className={`w-full bg-transparent text-center font-mono font-black text-white outline-none focus:text-amber-500 ${isCompact ? 'text-2xl' : isLarge ? 'text-3xl' : 'text-xl'}`} />
         </div>
     )
 }
 
-const DiceSlider = ({ label, value, onChange }: any) => (
-    <div className="flex items-center justify-between group py-0.5">
-        <label className="text-xs text-slate-400 group-hover:text-white transition-colors">{label}</label>
-        <div className="flex items-center gap-3">
-            <input
-                type="range" min="0" max="6" step="1"
-                value={value} onChange={e => onChange(Number(e.target.value))}
-                className="w-20 h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-amber-500 hover:accent-amber-400 transition-all"
-            />
-            <div className={`w-6 h-6 rounded flex items-center justify-center text-[10px] font-bold border transition-all ${value > 0 ? 'bg-amber-500 text-black border-amber-400 shadow-amber-500/20 shadow scale-110' : 'bg-slate-900 border-slate-700 text-slate-600'}`}>
-                {value}
+// ✅ แก้ DiceSlider ให้เริ่มที่ 0
+const DiceSlider = ({ label, value, onChange, type }: any) => {
+    // Attribute: 0-6, Ability: 0-3
+    const isAttribute = type === 'ATTRIBUTE'
+    const maxVal = isAttribute ? 6 : 3
+    const minVal = 0 // ✅ เริ่มที่ 0 เสมอ
+
+    return (
+        <div className="flex items-center justify-between group py-0.5">
+            <label className="text-xs text-slate-400 group-hover:text-white transition-colors flex-1 truncate pr-2">{label}</label>
+            <div className="flex items-center gap-3">
+                <input
+                    type="range"
+                    min={minVal}
+                    max={maxVal}
+                    step="1"
+                    value={value}
+                    onChange={e => onChange(Number(e.target.value))}
+                    className={`w-20 h-1.5 rounded-lg appearance-none cursor-pointer transition-all ${isAttribute ? 'bg-slate-700 accent-amber-500 hover:accent-amber-400' : 'bg-slate-700 accent-cyan-500 hover:accent-cyan-400'}`}
+                />
+                <div className={`w-12 h-6 rounded flex items-center justify-center text-[10px] font-bold border transition-all 
+                    ${value > 0
+                        ? (isAttribute
+                            ? 'bg-amber-500 text-black border-amber-400 shadow-amber-500/20 shadow'
+                            : 'bg-cyan-600 text-white border-cyan-400 shadow-cyan-500/20 shadow')
+                        : 'bg-slate-900 border-slate-700 text-slate-600'
+                    }`}>
+                    {/* ✅ โชว์ +X เสมอ แม้แต่ +0 */}
+                    +{value}
+                </div>
             </div>
         </div>
-    </div>
-)
+    )
+}

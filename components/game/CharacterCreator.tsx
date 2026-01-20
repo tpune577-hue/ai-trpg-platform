@@ -22,11 +22,12 @@ const MAX_RR_ABIL_POINTS = 18
 interface CharacterCreatorProps {
     playerId: string
     initialName?: string
+    campaignSystem: 'STANDARD' | 'ROLE_AND_ROLL' // ✅ Campaign system determines available options
     onSave: (data: any) => void
     onCancel: () => void
 }
 
-export default function CharacterCreator({ playerId, initialName, onSave, onCancel }: CharacterCreatorProps) {
+export default function CharacterCreator({ playerId, initialName, campaignSystem, onSave, onCancel }: CharacterCreatorProps) {
     const [sheetType, setSheetType] = useState<'STANDARD' | 'ROLE_AND_ROLL'>('STANDARD')
     const [isSaving, setIsSaving] = useState(false)
 
@@ -97,6 +98,7 @@ export default function CharacterCreator({ playerId, initialName, onSave, onCanc
 
         if (sheetType === 'STANDARD') {
             payload.data = {
+                sheetType: 'STANDARD', // ✅ Store sheet type in data
                 description: formData.description,
                 imageUrl: formData.imageUrl,
                 stats: {
@@ -119,6 +121,7 @@ export default function CharacterCreator({ playerId, initialName, onSave, onCanc
             })
 
             payload.data = {
+                sheetType: 'ROLE_AND_ROLL', // ✅ Store sheet type in data
                 imageUrl: formData.imageUrl,
                 bio: { name: formData.name, description: formData.description },
                 vitals: {
@@ -161,7 +164,9 @@ export default function CharacterCreator({ playerId, initialName, onSave, onCanc
                     <div className="relative">
                         <select value={sheetType} onChange={(e) => setSheetType(e.target.value as any)} className="w-full bg-slate-950 border-2 border-slate-700 rounded-lg p-3 text-white focus:border-amber-500 outline-none text-base font-bold appearance-none cursor-pointer hover:border-slate-500">
                             <option value="STANDARD">🌟 Standard RPG (Simple Stats)</option>
-                            <option value="ROLE_AND_ROLL">🎲 Role & Roll (Dice Pool System)</option>
+                            <option value="ROLE_AND_ROLL" disabled={campaignSystem === 'STANDARD'}>
+                                🎲 Role & Roll {campaignSystem === 'STANDARD' ? '(Campaign uses Standard dice)' : '(Dice Pool System)'}
+                            </option>
                         </select>
                         <div className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">▼</div>
                     </div>

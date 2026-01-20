@@ -367,6 +367,7 @@ export default function CreateCampaignPage() {
                 <CharacterCreator
                     playerId="GM_DRAFT"
                     initialName="New Hero"
+                    campaignSystem={system}
                     onSave={handleSavePreGen}
                     onCancel={() => setIsAddingPreGen(false)}
                 />

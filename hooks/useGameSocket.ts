@@ -136,7 +136,7 @@ export const useGameSocket = (campaignId: string | null, options: any = {}) => {
             // Skip actions already handled above in block #4, and other specific types
             // General Player Action Handler
             // ✅ ส่งทุก action ที่ไม่ได้ถูก handle แล้ว
-            const handledActions = ['GM_UPDATE_SCENE', 'GM_REQUEST_ROLL', 'dice_roll', 'chat', 'whisper', 'WHISPER', 'PRIVATE_SCENE_UPDATE', 'ANNOUNCE', 'GM_MANAGE_INVENTORY', 'JOIN_GAME']
+            const handledActions = ['GM_UPDATE_SCENE', 'GM_REQUEST_ROLL', 'dice_roll', 'rnr_roll', 'chat', 'whisper', 'WHISPER', 'PRIVATE_SCENE_UPDATE', 'ANNOUNCE', 'GM_MANAGE_INVENTORY', 'JOIN_GAME']
 
             if (!handledActions.includes(data.actionType)) {
 

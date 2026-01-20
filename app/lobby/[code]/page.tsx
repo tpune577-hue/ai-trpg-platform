@@ -350,6 +350,7 @@ export default function LobbyPage() {
                 <CharacterCreator
                     playerId={myPlayerId}
                     initialName={playerName}
+                    campaignSystem={session.campaign?.system || 'STANDARD'}
                     onSave={handleSaveCharacter}
                     onCancel={() => setIsCreatingChar(false)}
                 />

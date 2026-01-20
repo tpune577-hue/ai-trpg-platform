@@ -7,6 +7,7 @@ import { getLobbyInfo, submitReview, updateCharacterStats } from '@/app/actions/
 import { SceneDisplay } from '@/components/board/SceneDisplay'
 import { GameLog } from '@/components/board/GameLog'
 import RnRRoller from '@/components/game/RnRRoller'
+import { getRnRModifiersForAction, getRnRModifiersForCheck, getRelevantAbilities } from '@/lib/rnr-character-utils'
 
 export default function PlayerControllerPage() {
     const params = useParams()
@@ -60,6 +61,7 @@ export default function PlayerControllerPage() {
     const [rollRequest, setRollRequest] = useState<any>(null) // D20
     const [isRnRRolling, setIsRnRRolling] = useState(false)   // RnR
     const [isRequestedRoll, setIsRequestedRoll] = useState(false) // Flag: Is this a requested roll?
+    const [currentRnRAction, setCurrentRnRAction] = useState<string>('') // ✅ Track check type from GM request
 
     const [willBoost, setWillBoost] = useState(0) // ✅ Fixed: Added setWillBoost
     const [lastWhisper, setLastWhisper] = useState<{ sender: string, message: string } | null>(null)
@@ -176,7 +178,8 @@ export default function PlayerControllerPage() {
                         mp: charData.mp || 10,
                         maxMp: charData.maxMp || 10,
                         avatarUrl: charData.avatarUrl || charData.imageUrl || 'https://placehold.co/100x100/333/FFF?text=Hero',
-                        stats: charData.stats || charData // If stats is nested, use it; otherwise use entire charData
+                        stats: charData.stats || charData, // If stats is nested, use it; otherwise use entire charData
+                        sheetType: charData.sheetType || 'STANDARD' // ✅ Store character type
                     })
                 }
 
@@ -202,10 +205,26 @@ export default function PlayerControllerPage() {
 
     // --- 2. SOCKET LISTENERS ---
     useEffect(() => {
-        // ✅ Handle Roll Request (D20 vs RnR)
+        // ✅ Handle Roll Request - Check both Campaign System AND Character Type
         if (onRollRequested) {
             onRollRequested((req) => {
-                if (campaignSystem === 'ROLE_AND_ROLL') {
+                const isRnRCampaign = campaignSystem === 'ROLE_AND_ROLL'
+                const isRnRCharacter = character?.sheetType === 'ROLE_AND_ROLL'
+
+                // 🐛 Debug logging
+                console.log('🎲 Roll Request Debug:', {
+                    campaignSystem,
+                    characterSheetType: character?.sheetType,
+                    isRnRCampaign,
+                    isRnRCharacter,
+                    willUseRnRDice: isRnRCampaign && isRnRCharacter
+                })
+
+                // ✅ Logic:
+                // - R&R Campaign + R&R Character → R&R Dice
+                // - All other combinations → D20
+                if (isRnRCampaign && isRnRCharacter) {
+                    setCurrentRnRAction(req.checkType) // ✅ Store check type
                     setIsRequestedRoll(true)
                     setIsRnRRolling(true)
                 } else {
@@ -384,16 +403,6 @@ export default function PlayerControllerPage() {
         }
     }
 
-
-    const handleAction = async (actionType: string) => {
-        // ✅ Check System for Attack
-        if (actionType === 'attack' && campaignSystem === 'ROLE_AND_ROLL') {
-            setIsRequestedRoll(false)
-            setIsRnRRolling(true)
-        } else {
-            await sendPlayerAction({ actionType, actorId: playerId, actorName: character?.name, description: `performed ${actionType}` } as any)
-        }
-    }
 
     // Helper: Get stat modifier based on check type
     const getStatModifier = (checkType: string): number => {
@@ -638,28 +647,97 @@ export default function PlayerControllerPage() {
                         </>
                     ) : activeTab === 'CHARACTER' ? (
                         <div className="space-y-3">
-                            {/* Character Stats */}
-                            <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
-                                <h3 className="text-amber-500 font-bold mb-3 text-sm uppercase">Stats</h3>
-                                <div className="grid grid-cols-3 gap-3">
-                                    <StatDisplay label="STR" value={character?.stats?.STR || character?.stats?.str || 0} />
-                                    <StatDisplay label="DEX" value={character?.stats?.DEX || character?.stats?.dex || 0} />
-                                    <StatDisplay label="CON" value={character?.stats?.CON || character?.stats?.con || 0} />
-                                    <StatDisplay label="INT" value={character?.stats?.INT || character?.stats?.int || 0} />
-                                    <StatDisplay label="WIS" value={character?.stats?.WIS || character?.stats?.wis || 0} />
-                                    <StatDisplay label="CHA" value={character?.stats?.CHA || character?.stats?.cha || 0} />
-                                </div>
-                            </div>
+                            {/* ✅ Dynamic Stats based on Character Type */}
+                            {character?.sheetType === 'ROLE_AND_ROLL' ? (
+                                <>
+                                    {/* R&R Character: Vitals (ด้านบนสุด) */}
+                                    <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
+                                        <h3 className="text-purple-400 font-bold mb-2 text-sm uppercase flex items-center gap-2">
+                                            <span>⚡</span> Vitals
+                                        </h3>
+                                        <div className="grid grid-cols-3 gap-2 text-center">
+                                            <div>
+                                                <div className="text-[10px] text-slate-400">HP</div>
+                                                <div className="text-xl font-bold text-green-400">{character?.stats?.vitals?.health || 0}/{character?.stats?.vitals?.maxHealth || 0}</div>
+                                            </div>
+                                            <div>
+                                                <div className="text-[10px] text-slate-400">MP</div>
+                                                <div className="text-xl font-bold text-blue-400">{character?.stats?.vitals?.mental || 0}/{character?.stats?.vitals?.maxMental || 0}</div>
+                                            </div>
+                                            <div>
+                                                <div className="text-[10px] text-slate-400">WP</div>
+                                                <div className="text-xl font-bold text-purple-400">{character?.stats?.vitals?.willPower || 0}</div>
+                                            </div>
+                                        </div>
+                                    </div>
 
-                            {/* WILL Power */}
-                            <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
-                                <h3 className="text-purple-400 font-bold mb-2 text-sm uppercase flex items-center gap-2">
-                                    <span>⚡</span> WILL Power
-                                </h3>
-                                <div className="text-3xl font-black text-white text-center">
-                                    {character?.stats?.willPower || 0}
-                                </div>
-                            </div>
+                                    {/* R&R Character: Attributes */}
+                                    <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
+                                        <h3 className="text-amber-500 font-bold mb-3 text-sm uppercase">Attributes</h3>
+                                        <div className="grid grid-cols-3 gap-2">
+                                            {/* Body */}
+                                            <StatDisplay label="STR" value={character?.stats?.attributes?.Strength || 0} />
+                                            <StatDisplay label="DEX" value={character?.stats?.attributes?.Dexterity || 0} />
+                                            <StatDisplay label="TGH" value={character?.stats?.attributes?.Toughness || 0} />
+                                            {/* Intelligence */}
+                                            <StatDisplay label="INT" value={character?.stats?.attributes?.Intellect || 0} />
+                                            <StatDisplay label="APT" value={character?.stats?.attributes?.Aptitude || 0} />
+                                            <StatDisplay label="SAN" value={character?.stats?.attributes?.Sanity || 0} />
+                                            {/* Personality */}
+                                            <StatDisplay label="CHR" value={character?.stats?.attributes?.Charm || 0} />
+                                            <StatDisplay label="RHE" value={character?.stats?.attributes?.Rhetoric || 0} />
+                                            <StatDisplay label="EGO" value={character?.stats?.attributes?.Ego || 0} />
+                                        </div>
+                                    </div>
+
+                                    {/* R&R Character: Abilities */}
+                                    <div className="bg-slate-800 rounded-xl p-4 border border-slate-700 max-h-[150px] overflow-y-auto custom-scrollbar">
+                                        <h3 className="text-cyan-400 font-bold mb-3 text-sm uppercase">
+                                            Abilities {character?.stats?.abilities && `(${Object.keys(character.stats.abilities).length})`}
+                                        </h3>
+                                        {(() => {
+                                            console.log('🔍 Abilities data:', character?.stats?.abilities)
+                                            return null
+                                        })()}
+                                        <div className="grid grid-cols-2 gap-2 text-xs">
+                                            {character?.stats?.abilities && Object.entries(character.stats.abilities).map(([name, value]: [string, any]) => (
+                                                <div key={name} className="flex justify-between items-center bg-slate-900 rounded px-2 py-1">
+                                                    <span className="text-slate-300">{name}</span>
+                                                    <span className="text-cyan-400 font-bold">+{value}</span>
+                                                </div>
+                                            ))}
+                                            {(!character?.stats?.abilities || Object.keys(character.stats.abilities).length === 0) && (
+                                                <div className="col-span-2 text-center text-slate-500 text-xs py-2">No abilities</div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </>
+                            ) : (
+                                <>
+                                    {/* Standard Character: D20 Stats */}
+                                    <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
+                                        <h3 className="text-amber-500 font-bold mb-3 text-sm uppercase">Stats</h3>
+                                        <div className="grid grid-cols-3 gap-3">
+                                            <StatDisplay label="STR" value={character?.stats?.STR || character?.stats?.str || 0} />
+                                            <StatDisplay label="DEX" value={character?.stats?.DEX || character?.stats?.dex || 0} />
+                                            <StatDisplay label="CON" value={character?.stats?.CON || character?.stats?.con || 0} />
+                                            <StatDisplay label="INT" value={character?.stats?.INT || character?.stats?.int || 0} />
+                                            <StatDisplay label="WIS" value={character?.stats?.WIS || character?.stats?.wis || 0} />
+                                            <StatDisplay label="CHA" value={character?.stats?.CHA || character?.stats?.cha || 0} />
+                                        </div>
+                                    </div>
+
+                                    {/* Standard Character: WILL Power */}
+                                    <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
+                                        <h3 className="text-purple-400 font-bold mb-2 text-sm uppercase flex items-center gap-2">
+                                            <span>⚡</span> WILL Power
+                                        </h3>
+                                        <div className="text-3xl font-black text-white text-center">
+                                            {character?.stats?.willPower || 0}
+                                        </div>
+                                    </div>
+                                </>
+                            )}
                         </div>
                     ) : (
                         <div className="grid grid-cols-4 gap-2">
@@ -727,16 +805,28 @@ export default function PlayerControllerPage() {
             )}
 
             {/* ✅ RnR Roller (แทนที่ D20 ถ้าเป็นโหมด RnR) */}
-            {isRnRRolling && (
-                <RnRRoller
-                    baseStats={(character?.stats?.str || 0)}
-                    characterName={character?.name}
-                    availableWillPower={character?.stats?.willPower || 0}
-                    onComplete={handleRnRComplete}
-                    onStepUpdate={handleRnRStepUpdate}
-                    onCancel={() => { setIsRnRRolling(false); setIsRequestedRoll(false); }}
-                />
-            )}
+            {isRnRRolling && (() => {
+                // ✅ Determine which stats to use based on action context
+                const modifiers = currentRnRAction.includes('Check')
+                    ? getRnRModifiersForCheck(character?.stats, currentRnRAction)
+                    : getRnRModifiersForAction(character?.stats, currentRnRAction)
+
+                // ✅ Get available abilities for player to choose from
+                const availableAbilities = getRelevantAbilities(character?.stats, modifiers.attributeName)
+
+                return (
+                    <RnRRoller
+                        attributeValue={modifiers.attributeValue}
+                        attributeName={modifiers.attributeName}
+                        availableAbilities={availableAbilities}
+                        characterName={character?.name}
+                        availableWillPower={character?.stats?.vitals?.willPower || character?.stats?.willPower || 0}
+                        onComplete={handleRnRComplete}
+                        onStepUpdate={handleRnRStepUpdate}
+                        onCancel={() => { setIsRnRRolling(false); setIsRequestedRoll(false); }}
+                    />
+                )
+            })()}
 
             {/* D20 Modal (ถ้าไม่ใช้ RnR) */}
             {rollRequest && (

@@ -6,11 +6,13 @@ import { UserProfile } from '@/types/socket'
 interface EnhancedPartyStatusProps {
     players: UserProfile[]
     scenes: { id: string; name: string; url: string }[]
+    system: 'STANDARD' | 'ROLE_AND_ROLL' // ✅ รับค่า System มาเพื่อเปลี่ยน Dropdown
     onSetPrivateScene: (playerId: string, sceneId: string | null) => void
     onWhisper: (targetPlayerId: string, message: string) => void
     onGiveItem: (targetPlayerId: string, itemData: any, action: string) => void
     onRequestRoll?: (playerId: string, checkType: string, dc: number) => void
     onKickPlayer?: (playerId: string, playerName: string) => void
+    onUpdateVitals?: (playerId: string, type: 'hp' | 'mp', delta: number) => void // ✅ New prop
     playerInventories?: Record<string, any[]>
 }
 
@@ -28,11 +30,13 @@ const getItemIcon = (type: string) => {
 export function EnhancedPartyStatus({
     players,
     scenes,
+    system, // ✅ ใช้ตัวแปรนี้กำหนด List Check
     onSetPrivateScene,
     onWhisper,
     onGiveItem,
     onRequestRoll,
     onKickPlayer,
+    onUpdateVitals, // ✅ New prop
     playerInventories = {}
 }: EnhancedPartyStatusProps) {
     const [expandedPlayer, setExpandedPlayer] = useState<string | null>(null)
@@ -45,6 +49,20 @@ export function EnhancedPartyStatus({
     const [creationMode, setCreationMode] = useState(false)
     const [newItem, setNewItem] = useState({ name: '', description: '', type: 'MISC' })
     const [expandedStats, setExpandedStats] = useState<string | null>(null)
+
+    // ✅ CHECK LIST CONFIGURATION
+    const STANDARD_CHECKS = ['STR', 'DEX', 'INT', 'WIS', 'CHA', 'CON']
+    const RNR_CHECKS = [
+        // Attributes
+        'Strength', 'Dexterity', 'Toughness',
+        'Intellect', 'Aptitude', 'Sanity',
+        'Charm', 'Rhetoric', 'Ego',
+        // Abilities (Optional - GM might want to check skills directly)
+        'Brawl', 'Weapons', 'Search', 'Perception', 'Stealth'
+    ]
+
+    // ✅ เลือก List ตาม System
+    const checkOptions = system === 'ROLE_AND_ROLL' ? RNR_CHECKS : STANDARD_CHECKS
 
     const handleWhisperChange = (playerId: string, value: string) => setWhisperInputs(prev => ({ ...prev, [playerId]: value }))
     const handleSceneSelect = (playerId: string, sceneId: string) => setSelectedScenes(prev => ({ ...prev, [playerId]: sceneId }))
@@ -72,7 +90,7 @@ export function EnhancedPartyStatus({
 
     return (
         <div className="space-y-3">
-            {/* Item Creator (คงเดิม) */}
+            {/* Item Creator */}
             <div className="bg-slate-800 rounded border border-slate-700 overflow-hidden flex-shrink-0">
                 <div
                     className="p-2 bg-slate-800 flex justify-between items-center cursor-pointer hover:bg-slate-700 transition-colors"
@@ -106,9 +124,8 @@ export function EnhancedPartyStatus({
                 return (
                     <div key={player.id} className={`bg-slate-950 rounded border transition-all ${isExpanded ? 'border-amber-500/50' : 'border-slate-800'}`}>
 
-                        {/* ✅ Player Header: ปรับใหม่ตาม Requirement */}
+                        {/* Player Header */}
                         <div className="p-3 flex items-center justify-between">
-
                             {/* Info Left */}
                             <div className="flex items-center gap-3">
                                 <div className="w-10 h-10 rounded-full bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center text-white font-bold text-sm">
@@ -120,10 +137,9 @@ export function EnhancedPartyStatus({
                                 </div>
                             </div>
 
-                            {/* Actions Right (ปุ่มแยกกันชัดเจน) */}
+                            {/* Actions Right */}
                             <div className="flex items-center gap-2">
-
-                                {/* 🎁 ปุ่ม Give (ถ้าเปิดโหมดสร้างไอเทม) */}
+                                {/* Give Button (In Creation Mode) */}
                                 {creationMode && (
                                     <button
                                         onClick={() => handleCreateAndGive(player.id)}
@@ -133,7 +149,7 @@ export function EnhancedPartyStatus({
                                     </button>
                                 )}
 
-                                {/* ⚙️ 1. ปุ่ม Manage Player (Toggle View) */}
+                                {/* Manage Toggle */}
                                 <button
                                     onClick={() => setExpandedPlayer(isExpanded ? null : player.id)}
                                     className={`
@@ -147,7 +163,7 @@ export function EnhancedPartyStatus({
                                     <span>MANAGE</span>
                                 </button>
 
-                                {/* 🚫 2. ปุ่ม Kick Player (แยกออกมา) */}
+                                {/* Kick Button */}
                                 {!isGM && onKickPlayer && (
                                     <button
                                         onClick={() => onKickPlayer(player.id, player.name || 'Player')}
@@ -160,64 +176,80 @@ export function EnhancedPartyStatus({
                             </div>
                         </div>
 
-                        {/* Expanded Controls (เนื้อหาข้างในเหมือนเดิม) */}
+                        {/* Expanded Controls */}
                         {isExpanded && (
                             <div className="p-3 pt-0 space-y-3 border-t border-slate-800 bg-slate-900/30">
 
                                 {/* Stats Display */}
-                                {player.stats && (
-                                    <div className="space-y-2 mt-2">
-                                        {/* HP, MP, WILL Power - Always Visible */}
-                                        <div className="bg-slate-800 rounded p-2 border border-slate-700 space-y-1">
-                                            <div className="flex justify-between items-center">
-                                                <span className="text-[10px] text-slate-400 font-bold">HP</span>
-                                                <span className="text-[11px] text-green-400 font-mono font-bold">
-                                                    {player.stats.hp || 0} / {player.stats.maxHp || 0}
-                                                </span>
-                                            </div>
-                                            <div className="flex justify-between items-center">
-                                                <span className="text-[10px] text-slate-400 font-bold">MP</span>
-                                                <span className="text-[11px] text-blue-400 font-mono font-bold">
-                                                    {player.stats.mp || 0} / {player.stats.maxMp || 0}
-                                                </span>
-                                            </div>
-                                            <div className="flex justify-between items-center">
-                                                <span className="text-[10px] text-slate-400 font-bold">WILL Power</span>
-                                                <span className="text-[11px] text-amber-400 font-mono font-bold">
-                                                    {player.stats.willPower || player.stats.will || 0}
-                                                </span>
+                                {player.stats && (() => {
+                                    // ✅ Detect character type and get correct values
+                                    const isRnR = player.character?.sheetType === 'ROLE_AND_ROLL'
+                                    const hp = isRnR ? (player.stats.vitals?.health || 0) : (player.stats.hp || 0)
+                                    const maxHp = isRnR ? (player.stats.vitals?.maxHealth || 0) : (player.stats.maxHp || 0)
+                                    const mp = isRnR ? (player.stats.vitals?.mental || 0) : (player.stats.mp || 0)
+                                    const maxMp = isRnR ? (player.stats.vitals?.maxMental || 0) : (player.stats.maxMp || 0)
+                                    const willPower = isRnR ? (player.stats.vitals?.willPower || 0) : (player.stats.willPower || player.stats.will || 0)
+
+                                    return (
+                                        <div className="space-y-2 mt-2">
+                                            <div className="bg-slate-800 rounded p-2 border border-slate-700 space-y-1">
+                                                {/* HP */}
+                                                <div className="flex justify-between items-center gap-2">
+                                                    <span className="text-[10px] text-slate-400 font-bold">HP</span>
+                                                    <div className="flex items-center gap-1">
+                                                        <button
+                                                            onClick={() => onUpdateVitals?.(player.id, 'hp', -5)}
+                                                            className="w-5 h-5 bg-red-900/50 hover:bg-red-800 text-red-200 rounded text-xs font-bold flex items-center justify-center"
+                                                            title="Decrease HP by 5"
+                                                        >
+                                                            −
+                                                        </button>
+                                                        <span className="text-[11px] text-green-400 font-mono font-bold min-w-[50px] text-center">
+                                                            {hp} / {maxHp}
+                                                        </span>
+                                                        <button
+                                                            onClick={() => onUpdateVitals?.(player.id, 'hp', 5)}
+                                                            className="w-5 h-5 bg-green-900/50 hover:bg-green-800 text-green-200 rounded text-xs font-bold flex items-center justify-center"
+                                                            title="Increase HP by 5"
+                                                        >
+                                                            +
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                                {/* MP */}
+                                                <div className="flex justify-between items-center gap-2">
+                                                    <span className="text-[10px] text-slate-400 font-bold">MP</span>
+                                                    <div className="flex items-center gap-1">
+                                                        <button
+                                                            onClick={() => onUpdateVitals?.(player.id, 'mp', -5)}
+                                                            className="w-5 h-5 bg-red-900/50 hover:bg-red-800 text-red-200 rounded text-xs font-bold flex items-center justify-center"
+                                                            title="Decrease MP by 5"
+                                                        >
+                                                            −
+                                                        </button>
+                                                        <span className="text-[11px] text-blue-400 font-mono font-bold min-w-[50px] text-center">
+                                                            {mp} / {maxMp}
+                                                        </span>
+                                                        <button
+                                                            onClick={() => onUpdateVitals?.(player.id, 'mp', 5)}
+                                                            className="w-5 h-5 bg-blue-900/50 hover:bg-blue-800 text-blue-200 rounded text-xs font-bold flex items-center justify-center"
+                                                            title="Increase MP by 5"
+                                                        >
+                                                            +
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                                {/* WILL POWER */}
+                                                <div className="flex justify-between items-center">
+                                                    <span className="text-[10px] text-slate-400 font-bold">WILL Power</span>
+                                                    <span className="text-[11px] text-amber-400 font-mono font-bold">
+                                                        {willPower}
+                                                    </span>
+                                                </div>
                                             </div>
                                         </div>
-
-                                        {/* Other Stats - Toggleable */}
-                                        {Object.keys(player.stats).filter(key =>
-                                            !['hp', 'maxHp', 'mp', 'maxMp', 'willPower', 'will'].includes(key)
-                                        ).length > 0 && (
-                                                <>
-                                                    <button
-                                                        onClick={() => setExpandedStats(expandedStats === player.id ? null : player.id)}
-                                                        className="w-full bg-slate-800 hover:bg-slate-700 text-slate-300 text-[9px] font-bold py-1 rounded border border-slate-700 transition-colors"
-                                                    >
-                                                        {expandedStats === player.id ? '▼ Hide Other Stats' : '▶ Show Other Stats'}
-                                                    </button>
-
-                                                    {expandedStats === player.id && (
-                                                        <div className="grid grid-cols-3 gap-2">
-                                                            {Object.entries(player.stats)
-                                                                .filter(([key]) => !['hp', 'maxHp', 'mp', 'maxMp', 'willPower', 'will'].includes(key))
-                                                                .map(([key, val]) => (
-                                                                    <div key={key} className="bg-slate-800 rounded flex flex-col items-center p-1 border border-slate-700">
-                                                                        <span className="text-[8px] text-slate-500 font-bold uppercase">{key}</span>
-                                                                        <span className="text-[10px] text-amber-100 font-mono font-bold">{val as number}</span>
-                                                                    </div>
-                                                                ))
-                                                            }
-                                                        </div>
-                                                    )}
-                                                </>
-                                            )}
-                                    </div>
-                                )}
+                                    )
+                                })()}
 
                                 {/* Action Buttons Group */}
                                 <div className="space-y-2">
@@ -260,34 +292,54 @@ export function EnhancedPartyStatus({
                                         </button>
                                     </div>
 
-                                    {/* Row 3: Roll Request */}
-                                    {onRequestRoll && (
-                                        <div className="flex gap-2 items-center">
-                                            <div className="w-6 text-[10px] text-slate-500 font-bold text-right">REQ</div>
-                                            <select
-                                                className="flex-1 bg-slate-950 text-slate-300 text-[10px] p-1.5 rounded border border-slate-700 outline-none"
-                                                value={selectedChecks[player.id] || 'STR'}
-                                                onChange={(e) => handleCheckSelect(player.id, e.target.value)}
-                                            >
-                                                {['STR', 'DEX', 'INT', 'WIS', 'CHA', 'CON'].map(stat => (
-                                                    <option key={stat} value={stat}>{stat} Check</option>
-                                                ))}
-                                            </select>
-                                            <input
-                                                type="number"
-                                                placeholder="DC"
-                                                className="w-10 bg-slate-950 text-slate-300 text-[10px] p-1.5 rounded border border-slate-700 outline-none text-center"
-                                                value={dcs[player.id] || 15}
-                                                onChange={(e) => handleDcChange(player.id, parseInt(e.target.value) || 15)}
-                                            />
-                                            <button
-                                                onClick={() => onRequestRoll(player.id, selectedChecks[player.id] || 'STR', dcs[player.id] || 15)}
-                                                className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-black text-[9px] font-bold rounded"
-                                            >
-                                                ROLL
-                                            </button>
-                                        </div>
-                                    )}
+                                    {/* Row 3: Roll Request (✅ Dynamic List based on Character Type) */}
+                                    {onRequestRoll && (() => {
+                                        try {
+                                            // ✅ เช็ค Character Type ของแต่ละ Player
+                                            const playerCharType = player.character?.sheetType || 'STANDARD'
+                                            const playerCheckOptions = playerCharType === 'ROLE_AND_ROLL' ? RNR_CHECKS : STANDARD_CHECKS
+
+                                            return (
+                                                <div className="flex gap-2 items-center">
+                                                    <div className="w-6 text-[10px] text-slate-500 font-bold text-right">REQ</div>
+                                                    <select
+                                                        className="flex-1 bg-slate-950 text-slate-300 text-[10px] p-1.5 rounded border border-slate-700 outline-none"
+                                                        value={selectedChecks[player.id] || playerCheckOptions[0]}
+                                                        onChange={(e) => handleCheckSelect(player.id, e.target.value)}
+                                                    >
+                                                        {playerCheckOptions.map(stat => (
+                                                            <option key={stat} value={stat}>{stat} Check</option>
+                                                        ))}
+                                                    </select>
+                                                    <input
+                                                        type="number"
+                                                        placeholder="DC"
+                                                        className="w-10 bg-slate-950 text-slate-300 text-[10px] p-1.5 rounded border border-slate-700 outline-none text-center"
+                                                        value={dcs[player.id] || 15}
+                                                        onChange={(e) => handleDcChange(player.id, parseInt(e.target.value) || 15)}
+                                                    />
+                                                    <button
+                                                        onClick={() => {
+                                                            try {
+                                                                const selectedStat = selectedChecks[player.id] || playerCheckOptions[0]
+                                                                const checkType = `${selectedStat} Check`
+                                                                console.log('🎲 GM Roll Button Clicked:', { playerId: player.id, checkType, dc: dcs[player.id] || 15 })
+                                                                onRequestRoll(player.id, checkType, dcs[player.id] || 15)
+                                                            } catch (error) {
+                                                                console.error('❌ Roll button error:', error)
+                                                            }
+                                                        }}
+                                                        className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-black text-[9px] font-bold rounded"
+                                                    >
+                                                        ROLL
+                                                    </button>
+                                                </div>
+                                            )
+                                        } catch (error) {
+                                            console.error('❌ Roll UI render error:', error)
+                                            return <div className="text-red-500 text-xs">Error rendering roll UI</div>
+                                        }
+                                    })()}
                                 </div>
 
                                 {/* Inventory Section */}

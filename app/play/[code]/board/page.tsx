@@ -1,13 +1,13 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useGameSocket } from '@/hooks/useGameSocket'
 import { getLobbyInfo, updateGameSessionState, kickPlayer, pauseGameSession, endGameSession } from '@/app/actions/game'
 import { GameLog } from '@/components/board/GameLog'
 import { SceneDisplay } from '@/components/board/SceneDisplay'
 import { EnhancedPartyStatus } from '@/components/board/EnhancedPartyStatus'
-import { DiceResultOverlay } from '@/components/board/DiceResultOverlay' // ✅ Import Overlay
+import { DiceResultOverlay } from '@/components/board/DiceResultOverlay'
 import { rollD4RnR } from '@/lib/rnr-dice'
 
 export default function CampaignBoardPage() {
@@ -43,12 +43,15 @@ export default function CampaignBoardPage() {
     // สำหรับ D20 Result ธรรมดา (กรณีไม่ใช่ Overlay)
     const [diceResult, setDiceResult] = useState<any>(null)
 
+    // ✅ Ref สำหรับเก็บ timeout ID
+    const overlayTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+
     // --- NOTE & TASK STATE ---
     const [gmNotes, setGmNotes] = useState('')
     const [tasks, setTasks] = useState<{ id: number, text: string, done: boolean }[]>([])
     const [newTask, setNewTask] = useState('')
 
-    // ... (Task functions) ...
+    // --- HELPER FUNCTIONS ---
     const addTask = () => {
         if (!newTask.trim()) return
         setTasks(prev => [...prev, { id: Date.now(), text: newTask, done: false }])
@@ -90,7 +93,6 @@ export default function CampaignBoardPage() {
 
     // Announce handler
     const handleAnnounce = (log: any) => {
-        console.log('📢 GM Announcing:', log.content)
         sendPlayerAction({
             actionType: 'ANNOUNCE',
             actorId: 'GM',
@@ -156,6 +158,12 @@ export default function CampaignBoardPage() {
         // ✅ Handle Player Action (Main Logic)
         onPlayerAction((action) => {
             console.log('📥 Board Received Action:', action.actionType, action)
+            console.log('🔍 Action details:', {
+                actionType: action.actionType,
+                actorName: action.actorName,
+                hasDetails: !!action.details,
+                total: action.total
+            })
 
             // KICK PLAYER
             if (action.actionType === 'PLAYER_KICKED') {
@@ -172,12 +180,26 @@ export default function CampaignBoardPage() {
 
             // 2. Roll Complete (RnR & D20) - แสดงผลลัพธ์สุดท้าย
             if (action.actionType === 'rnr_roll' || action.actionType === 'dice_roll') {
-                console.log('🎲 Final Roll Result:', action)
+                console.log('🎲 Final Roll Result - Setting overlay:', action)
+
+                // ✅ Clear previous timeout if exists
+                if (overlayTimeoutRef.current) {
+                    clearTimeout(overlayTimeoutRef.current)
+                }
+
                 setShowingDiceResult(action)
-                setTimeout(() => { setShowingDiceResult(null) }, 5000)
+
+                // ✅ Set new timeout and store ID
+                overlayTimeoutRef.current = setTimeout(() => {
+                    console.log('⏰ Overlay timeout - closing overlay')
+                    setShowingDiceResult(null)
+                    overlayTimeoutRef.current = null
+                }, 5000) // ✅ Changed to 5 seconds
+            } else {
+                console.log('⚠️ Action type not matched for overlay:', action.actionType)
             }
 
-            // SCENE UPDATE
+            // SCENE UPDATE & LOGGING
             if (action.actionType !== 'GM_UPDATE_SCENE') {
                 let content = ''
                 if (action.actorName === 'Game Master' && action.actionType === 'custom') {
@@ -188,7 +210,7 @@ export default function CampaignBoardPage() {
                     const player = dbPlayers.find(p => p.id === action.actorId)
                     if (player) {
                         const charName = player.character?.name || action.actorName
-                        const isPrivate = action.isPrivate || action.payload?.isPrivate // ✅ Fallback
+                        const isPrivate = action.isPrivate || action.payload?.isPrivate
                         const prefix = isPrivate ? '🔒 (Private) ' : ''
                         if (action.actionType === 'use_item') {
                             content = `${prefix}${player.name} (${charName}) : ${action.description || ''}`
@@ -196,13 +218,13 @@ export default function CampaignBoardPage() {
                             content = `${prefix}${player.name} (${charName}) ${action.actionType} : ${action.description || ''}`
                         }
                     } else {
-                        const isPrivate = action.isPrivate || action.payload?.isPrivate // ✅ Fallback
+                        const isPrivate = action.isPrivate || action.payload?.isPrivate
                         const prefix = isPrivate ? '🔒 (Private) ' : ''
                         content = `${prefix}${action.actorName} ${action.actionType} : ${action.description || ''}`
                     }
                 }
 
-                // Add to Logs (ยกเว้น Live Update, rnr_roll, dice_roll ไม่ต้องลง Log ที่นี่)
+                // Add to Logs (ยกเว้น Live Update, rnr_roll, dice_roll ไม่ต้องลง Log ที่นี่ เพราะมี onDiceResult จัดการ)
                 if (action.actionType !== 'RNR_LIVE_UPDATE' &&
                     action.actionType !== 'rnr_roll' &&
                     action.actionType !== 'dice_roll' &&
@@ -234,7 +256,24 @@ export default function CampaignBoardPage() {
 
             const playerName = result.playerName || result.actorName || 'Unknown'
 
-            // ✅ รองรับทั้ง D20 และ RnR
+            // ✅ แสดง Overlay
+            console.log('🎲 Setting dice overlay from onDiceResult')
+
+            // Clear previous timeout
+            if (overlayTimeoutRef.current) {
+                clearTimeout(overlayTimeoutRef.current)
+            }
+
+            setShowingDiceResult(result)
+
+            // Set timeout to hide overlay
+            overlayTimeoutRef.current = setTimeout(() => {
+                console.log('⏰ Overlay timeout - closing overlay')
+                setShowingDiceResult(null)
+                overlayTimeoutRef.current = null
+            }, 3000)
+
+            // ✅ รองรับทั้ง D20 และ RnR ใน Log
             let logMessage = ''
             if (result.details && Array.isArray(result.details)) {
                 // RnR Roll
@@ -274,7 +313,7 @@ export default function CampaignBoardPage() {
                 }
             }
         })
-    }, [joinCode]) // ไม่ใส่ onDiceResult เพื่อป้องกัน loop
+    }, [joinCode])
 
 
     // --- GM Actions ---
@@ -283,6 +322,7 @@ export default function CampaignBoardPage() {
         sendPlayerAction({ actionType: 'custom', description: gmInput, actorName: 'Game Master' } as any)
         setGmInput('')
     }
+
     const handleGmRoll = () => {
         const system = session?.campaign?.system || 'STANDARD'
 
@@ -388,7 +428,88 @@ export default function CampaignBoardPage() {
         })
     }
 
+    // ✅ Handle HP/MP Updates
+    const handleUpdateVitals = async (playerId: string, type: 'hp' | 'mp', delta: number) => {
+        const player = dbPlayers.find(p => p.id === playerId)
+        if (!player || !player.stats) return
+
+        // Detect character type
+        const isRnR = player.character?.sheetType === 'ROLE_AND_ROLL'
+
+        let newValue: number
+        let maxValue: number
+        let statsUpdate: any = {}
+
+        if (isRnR) {
+            // R&R Character
+            if (type === 'hp') {
+                const current = player.stats.vitals?.health || 0
+                const max = player.stats.vitals?.maxHealth || 0
+                newValue = Math.max(0, Math.min(max, current + delta))
+                statsUpdate = {
+                    vitals: {
+                        ...player.stats.vitals,
+                        health: newValue
+                    }
+                }
+            } else {
+                const current = player.stats.vitals?.mental || 0
+                const max = player.stats.vitals?.maxMental || 0
+                newValue = Math.max(0, Math.min(max, current + delta))
+                statsUpdate = {
+                    vitals: {
+                        ...player.stats.vitals,
+                        mental: newValue
+                    }
+                }
+            }
+        } else {
+            // Standard Character
+            if (type === 'hp') {
+                const current = player.stats.hp || 0
+                const max = player.stats.maxHp || 0
+                newValue = Math.max(0, Math.min(max, current + delta))
+                statsUpdate = { hp: newValue }
+            } else {
+                const current = player.stats.mp || 0
+                const max = player.stats.maxMp || 0
+                newValue = Math.max(0, Math.min(max, current + delta))
+                statsUpdate = { mp: newValue }
+            }
+        }
+
+        // Update local state immediately
+        setDbPlayers(prev => prev.map(p => {
+            if (p.id === playerId) {
+                return {
+                    ...p,
+                    stats: {
+                        ...p.stats,
+                        ...statsUpdate
+                    }
+                }
+            }
+            return p
+        }))
+
+        // Persist to database
+        try {
+            await updateCharacterStats(playerId, statsUpdate)
+            console.log(`✅ Updated ${type.toUpperCase()} for player ${playerId}:`, newValue)
+        } catch (error) {
+            console.error('❌ Failed to update vitals:', error)
+        }
+    }
+
     const partyPlayers = dbPlayers.filter(p => p.role !== 'GM')
+
+    // ✅ Get System from session
+    const campaignSystem = session?.campaign?.system || 'STANDARD'
+
+    // ✅ Define Shortcut Stats based on System
+    const SHORTCUT_STATS = campaignSystem === 'ROLE_AND_ROLL'
+        ? ['Strength', 'Dexterity', 'Intellect', 'Charm'] // RnR Examples
+        : ['STR', 'DEX', 'INT', 'WIS', 'CHA']             // Standard D20
 
     if (isLoadingData) return <div className="h-screen bg-slate-950 flex items-center justify-center text-amber-500 animate-pulse">Loading...</div>
 
@@ -398,7 +519,7 @@ export default function CampaignBoardPage() {
         <div className="flex h-screen bg-[#0f172a] text-slate-200 overflow-hidden font-sans relative">
             {/* HEADER */}
             <div className="absolute top-0 w-full h-14 bg-slate-900/90 border-b border-slate-700 flex justify-between items-center px-4 z-50 backdrop-blur-md shadow-lg">
-                <h1 className="text-amber-500 font-bold tracking-widest text-sm md:text-lg uppercase">GM Dashboard (Code: {joinCode})</h1>
+                <h1 className="text-amber-500 font-bold tracking-widest text-sm md:text-lg uppercase">GM Dashboard ({campaignSystem})</h1>
                 <div className="flex items-center gap-2">
                     <button onClick={handlePauseGame} className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1 rounded text-xs border border-slate-600">⏸ Pause</button>
                     <button onClick={handleEndSession} className="bg-red-900/50 hover:bg-red-600 text-red-200 px-3 py-1 rounded text-xs border border-red-800">🛑 END</button>
@@ -415,13 +536,10 @@ export default function CampaignBoardPage() {
 
                         {/* ✅ DICE RESULT OVERLAY (แสดงทับ SceneDisplay) */}
                         {showingDiceResult && (
-                            <>
-                                {console.log('🎯 Passing to overlay:', showingDiceResult)}
-                                <DiceResultOverlay
-                                    result={showingDiceResult}
-                                    onClose={() => setShowingDiceResult(null)}
-                                />
-                            </>
+                            <DiceResultOverlay
+                                result={showingDiceResult}
+                                onClose={() => setShowingDiceResult(null)}
+                            />
                         )}
 
                         {/* Standard Dice Result Popup (Legacy) */}
@@ -443,27 +561,27 @@ export default function CampaignBoardPage() {
                 {/* RIGHT: Sidebar */}
                 <div className={`fixed inset-y-0 right-0 z-40 w-96 bg-slate-900 border-l border-slate-700 shadow-2xl transform transition-transform duration-300 pt-14 ${isSidebarOpen ? 'translate-x-0' : 'translate-x-full'} lg:relative lg:translate-x-0 lg:flex lg:pt-0 lg:w-96 lg:shadow-none flex flex-col h-full overflow-hidden`}>
                     <div className="flex border-b border-slate-800">
-                        <TabButton active={activeTab === 'PARTY'} onClick={() => setActiveTab('PARTY')} label={`Party (${partyPlayers.length})`} />
-                        <TabButton active={activeTab === 'SCENE'} onClick={() => setActiveTab('SCENE')} label="Scenes" />
-                        <TabButton active={activeTab === 'NPC'} onClick={() => setActiveTab('NPC')} label="NPCs" />
-                        <TabButton active={activeTab === 'NOTE'} onClick={() => setActiveTab('NOTE')} label="Note" />
-                        <TabButton active={activeTab === 'STORY'} onClick={() => setActiveTab('STORY')} label="Story" />
+                        {['PARTY', 'SCENE', 'NPC', 'NOTE', 'STORY'].map(tab => (
+                            <TabButton key={tab} active={activeTab === tab} onClick={() => setActiveTab(tab as any)} label={tab} />
+                        ))}
                     </div>
                     <div className="flex-1 min-h-0 p-3 overflow-y-auto custom-scrollbar pb-24">
-                        {/* TAB: PARTY */}
                         {activeTab === 'PARTY' && (
                             <EnhancedPartyStatus
                                 players={partyPlayers}
                                 scenes={campaignScenes.map(s => ({ id: s.id, name: s.name, url: s.imageUrl }))}
+                                system={campaignSystem as any} // ✅ ส่งค่า System ไปที่ EnhancedPartyStatus
                                 onSetPrivateScene={(pid, sid) => { setPrivateScene(pid, sid) }}
                                 onWhisper={sendWhisper}
                                 onGiveItem={handleGiveItem}
-                                onRequestRoll={(pid, type, dc) => requestRoll(type, dc, pid)}
+                                onRequestRoll={(pid, checkType, dc) => {
+                                    console.log('🎯 Board calling requestRoll:', { pid, checkType, dc })
+                                    requestRoll(checkType, dc, pid) // ✅ Correct order: (checkType, dc, playerId)
+                                }}
                                 onKickPlayer={handleKickPlayer}
                                 playerInventories={playerInventories}
                             />
                         )}
-                        {/* TAB: SCENE */}
                         {activeTab === 'SCENE' && (
                             <div className="grid grid-cols-2 gap-2">
                                 {campaignScenes.map(s => (
@@ -474,7 +592,6 @@ export default function CampaignBoardPage() {
                                 ))}
                             </div>
                         )}
-                        {/* TAB: NPC */}
                         {activeTab === 'NPC' && (
                             <div className="space-y-1">
                                 {campaignNpcs.map(npc => {
@@ -489,7 +606,6 @@ export default function CampaignBoardPage() {
                                 })}
                             </div>
                         )}
-                        {/* TAB: NOTE */}
                         {activeTab === 'NOTE' && (
                             <div className="space-y-4">
                                 <textarea value={gmNotes} onChange={e => setGmNotes(e.target.value)} className="w-full h-40 bg-slate-950 border-slate-700 rounded p-2 text-xs text-slate-300" placeholder="Notes..." />
@@ -511,7 +627,6 @@ export default function CampaignBoardPage() {
                                 </div>
                             </div>
                         )}
-                        {/* TAB: STORY */}
                         {activeTab === 'STORY' && (
                             <div className="space-y-4 text-xs text-slate-300">
                                 <div className="bg-slate-950 p-2 rounded border border-slate-800"><h4 className="font-bold text-amber-500 mb-1">Intro</h4><p className="whitespace-pre-wrap">{session?.campaign?.storyIntro || '-'}</p></div>
@@ -527,7 +642,6 @@ export default function CampaignBoardPage() {
             <div className="absolute bottom-0 w-full h-auto min-h-[80px] md:h-24 bg-slate-900 border-t border-slate-700 flex flex-col md:flex-row items-center px-4 py-2 gap-3 z-50">
                 <div className="flex gap-2 shrink-0">
                     <button onClick={handleGmRoll} className="bg-amber-600 hover:bg-amber-500 text-black px-4 py-2 rounded-lg font-black shadow-lg active:scale-95 transition-all flex items-center gap-2"><span className="text-xl">🎲</span><span className="hidden md:inline">GM Roll</span></button>
-
                     {/* Push to Talk Button */}
                     <button
                         className="bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-lg font-bold shadow-lg active:scale-95 transition-all flex items-center gap-2"
@@ -546,8 +660,13 @@ export default function CampaignBoardPage() {
                 </div>
                 <div className="w-full md:w-auto flex gap-2 overflow-x-auto pb-2 md:pb-0">
                     <input type="number" value={targetDC} onChange={e => setTargetDC(Number(e.target.value))} className="w-12 bg-slate-800 border-slate-700 rounded text-center text-amber-500 font-bold text-sm" />
-                    {['STR', 'DEX', 'INT', 'WIS', 'CHA'].map(stat => (
-                        <button key={stat} onClick={() => requestRoll(`${stat} Check`, targetDC)} className="w-10 h-10 bg-slate-800 border-slate-600 rounded flex flex-col items-center justify-center active:scale-95 hover:border-slate-400"><span className="text-[8px] text-slate-400">{stat}</span><span className="text-xs">🎲</span></button>
+
+                    {/* ✅ Dynamic Shortcuts based on System */}
+                    {SHORTCUT_STATS.map(stat => (
+                        <button key={stat} onClick={() => requestRoll(`${stat} Check`, targetDC)} className="w-10 h-10 bg-slate-800 border-slate-600 rounded flex flex-col items-center justify-center active:scale-95 hover:border-slate-400">
+                            <span className="text-[8px] text-slate-400">{stat.substring(0, 3)}</span>
+                            <span className="text-xs">🎲</span>
+                        </button>
                     ))}
                 </div>
             </div>

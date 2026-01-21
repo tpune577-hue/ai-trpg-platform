@@ -15,22 +15,23 @@ const REJECT_REASONS = [
 
 // Type สำหรับการรับ Params
 interface PageProps {
-    searchParams: {
+    searchParams: Promise<{
         status?: string
         query?: string
         sort?: string
         order?: 'asc' | 'desc'
         verifyId?: string // ID ของ Seller ที่กำลังถูกเปิดดูรายละเอียด
-    }
+    }>
 }
 
 export default async function SellerListPage({ searchParams }: PageProps) {
-    // 1. รับค่า Params
-    const status = (searchParams.status || 'PENDING').toUpperCase()
-    const query = searchParams.query || ''
-    const sort = searchParams.sort || 'createdAt'
-    const order = searchParams.order || 'desc'
-    const verifyId = searchParams.verifyId
+    // 1. รับค่า Params - Await searchParams for Next.js 15 compatibility
+    const params = await searchParams
+    const status = (params.status || 'PENDING').toUpperCase()
+    const query = params.query || ''
+    const sort = params.sort || 'createdAt'
+    const order = params.order || 'desc'
+    const verifyId = params.verifyId
 
     // 2. สร้างเงื่อนไขการค้นหา (Filter)
     const whereCondition: any = {

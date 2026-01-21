@@ -4,8 +4,8 @@ import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import { revalidatePath } from "next/cache"
 
-// ✅ ตัด REVIEWING ออก
-type SellerStatus = 'NEW' | 'PENDING' | 'APPROVED' | 'REJECTED' | 'TERMINATED'
+// ✅ Export type นี้เพื่อให้ Client Component เรียกใช้ได้
+export type SellerStatus = 'NEW' | 'PENDING' | 'APPROVED' | 'REJECTED' | 'TERMINATED'
 
 export async function verifySeller(sellerId: string, status: SellerStatus, reason?: string) {
     const session = await auth()
@@ -28,7 +28,7 @@ export async function verifySeller(sellerId: string, status: SellerStatus, reaso
             }
         })
 
-        revalidatePath('/admin/sellers')
+        revalidatePath('/admin') // ✅ รีเฟรชหน้า Admin (รวมถึงตัวเลข Stats)
         return { success: true }
     } catch (error) {
         console.error("Failed to update seller status:", error)

@@ -285,3 +285,42 @@ export async function updateCharacterStats(playerId: string, statsUpdate: any) {
         throw new Error("Failed to update character stats")
     }
 }
+// app/actions/game.ts
+
+// ... imports
+
+export async function createCampaign(data: any) { // หรือระบุ Type ให้ชัดเจน
+    const session = await auth()
+    if (!session?.user?.id) throw new Error("Unauthorized")
+
+    try {
+        const campaign = await prisma.campaign.create({
+            data: {
+                title: data.title,
+                description: data.description,
+                system: data.system || 'STANDARD',
+                coverImage: data.coverImage,
+
+                // ... field อื่นๆ ...
+                storyIntro: data.storyIntro,
+                storyMid: data.storyMid,
+                storyEnd: data.storyEnd,
+
+                // ✅ เพิ่มส่วน AI Config
+                aiEnabled: data.aiEnabled || false,
+                aiName: data.aiName || "The Narrator",
+                aiPersonality: data.aiPersonality, // เช่น "ดุดัน, เข้มงวด"
+                aiStyle: data.aiStyle,             // เช่น "Dark Fantasy"
+                aiCustomPrompt: data.aiCustomPrompt, // Advanced Prompt
+
+                creatorId: session.user.id,
+                isPublished: true // หรือ false ถ้าอยากให้ Draft ก่อน
+            }
+        })
+
+        return { success: true, campaignId: campaign.id }
+    } catch (error) {
+        console.error("Create Campaign Error:", error)
+        return { success: false, error: "Failed to create campaign" }
+    }
+}

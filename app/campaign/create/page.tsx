@@ -12,20 +12,26 @@ export default function CreateCampaignPage() {
 
     const [isLoading, setIsLoading] = useState(false)
     const [isFetching, setIsFetching] = useState(!!campaignId)
-    const [activeTab, setActiveTab] = useState<'GENERAL' | 'STORY' | 'SCENES' | 'NPCS' | 'PREGENS'>('GENERAL')
+    // ✅ เพิ่ม Tab 'AI' เข้าไป
+    const [activeTab, setActiveTab] = useState<'GENERAL' | 'STORY' | 'SCENES' | 'NPCS' | 'PREGENS' | 'AI'>('GENERAL')
 
     // --- FORM STATES ---
     const [title, setTitle] = useState('')
     const [description, setDescription] = useState('')
     const [price, setPrice] = useState(0)
     const [coverImage, setCoverImage] = useState('')
-
-    // ✅ เพิ่ม State สำหรับ System (Default: STANDARD)
     const [system, setSystem] = useState<'STANDARD' | 'ROLE_AND_ROLL'>('STANDARD')
 
     const [storyIntro, setStoryIntro] = useState('')
     const [storyMid, setStoryMid] = useState('')
     const [storyEnd, setStoryEnd] = useState('')
+
+    // ✅ AI Configuration States
+    const [aiEnabled, setAiEnabled] = useState(false)
+    const [aiName, setAiName] = useState('The Narrator')
+    const [aiPersonality, setAiPersonality] = useState('')
+    const [aiStyle, setAiStyle] = useState('Classic Adventure')
+    const [aiCustomPrompt, setAiCustomPrompt] = useState('')
 
     const [scenes, setScenes] = useState<{ id: string | number, name: string, imageUrl: string }[]>([])
     const [npcs, setNpcs] = useState<{ id: string | number, name: string, type: string, avatarUrl: string }[]>([])
@@ -33,6 +39,8 @@ export default function CreateCampaignPage() {
 
     // UI Helpers
     const [isAddingPreGen, setIsAddingPreGen] = useState(false)
+    const [editingPreGenIndex, setEditingPreGenIndex] = useState<number | null>(null)
+    const [editingPreGenData, setEditingPreGenData] = useState<any>(null)
 
     // ✅ LOAD DATA FOR EDITING
     useEffect(() => {
@@ -47,13 +55,18 @@ export default function CreateCampaignPage() {
                 setDescription(data.description || '')
                 setPrice(data.price)
                 setCoverImage(data.coverImage || '')
-
-                // ✅ โหลดค่า System เดิมมาแสดง
                 setSystem(data.system as 'STANDARD' | 'ROLE_AND_ROLL' || 'STANDARD')
 
                 setStoryIntro(data.storyIntro || '')
                 setStoryMid(data.storyMid || '')
                 setStoryEnd(data.storyEnd || '')
+
+                // ✅ Load AI Data
+                setAiEnabled(data.aiEnabled || false)
+                setAiName(data.aiName || 'The Narrator')
+                setAiPersonality(data.aiPersonality || '')
+                setAiStyle(data.aiStyle || 'Classic Adventure')
+                setAiCustomPrompt(data.aiCustomPrompt || '')
 
                 if (data.scenes) setScenes(data.scenes.map((s: any) => ({ id: s.id, name: s.name, imageUrl: s.imageUrl })))
                 if (data.npcs) setNpcs(data.npcs.map((n: any) => ({ id: n.id, name: n.name, type: n.type, avatarUrl: n.avatarUrl })))
@@ -79,7 +92,6 @@ export default function CreateCampaignPage() {
 
 
     // --- HANDLERS ---
-
     const addScene = () => setScenes([...scenes, { id: Date.now(), name: 'New Scene', imageUrl: '' }])
     const updateScene = (id: string | number, field: string, val: string) => {
         setScenes(scenes.map(s => s.id === id ? { ...s, [field]: val } : s))
@@ -97,6 +109,26 @@ export default function CreateCampaignPage() {
         setPreGens([...preGens, newChar])
         setIsAddingPreGen(false)
     }
+
+    const handleEditPreGen = (idx: number) => {
+        setEditingPreGenIndex(idx)
+        setEditingPreGenData(preGens[idx])
+    }
+
+    const handleUpdatePreGen = (charData: any) => {
+        if (editingPreGenIndex === null) return
+        const updated = [...preGens]
+        updated[editingPreGenIndex] = { ...charData, id: preGens[editingPreGenIndex].id }
+        setPreGens(updated)
+        setEditingPreGenIndex(null)
+        setEditingPreGenData(null)
+    }
+
+    const handleCancelEdit = () => {
+        setEditingPreGenIndex(null)
+        setEditingPreGenData(null)
+    }
+
     const removePreGen = (idx: number) => setPreGens(preGens.filter((_, i) => i !== idx))
 
     // ✅ SAVE / PUBLISH
@@ -105,10 +137,11 @@ export default function CreateCampaignPage() {
         setIsLoading(true)
 
         const payload = {
-            title, description, price, coverImage,
-            system, // ✅ ส่งค่า System ไปบันทึกด้วย
+            title, description, price, coverImage, system,
             storyIntro, storyMid, storyEnd,
             scenes, npcs, preGens,
+            // ✅ ส่งค่า AI ไปบันทึก
+            aiEnabled, aiName, aiPersonality, aiStyle, aiCustomPrompt,
             isPublished: !isDraft
         }
 
@@ -151,6 +184,12 @@ export default function CreateCampaignPage() {
                 <nav className="flex-1 p-4 space-y-3 overflow-y-auto custom-scrollbar">
                     <SidebarBtn label="📝 General Info" active={activeTab === 'GENERAL'} onClick={() => setActiveTab('GENERAL')} />
                     <SidebarBtn label="📖 Storyline" active={activeTab === 'STORY'} onClick={() => setActiveTab('STORY')} />
+
+                    {/* ✅ ปุ่ม AI Menu */}
+                    <SidebarBtn label="🤖 AI Game Master" active={activeTab === 'AI'} onClick={() => setActiveTab('AI')} special />
+
+                    <div className="h-px bg-slate-800 my-2"></div>
+
                     <SidebarBtn label="🌄 Scenes & Maps" active={activeTab === 'SCENES'} onClick={() => setActiveTab('SCENES')} />
                     <SidebarBtn label="👥 NPCs" active={activeTab === 'NPCS'} onClick={() => setActiveTab('NPCS')} />
                     <SidebarBtn label="🛡️ Pre-Gen Chars" active={activeTab === 'PREGENS'} onClick={() => setActiveTab('PREGENS')} />
@@ -191,7 +230,6 @@ export default function CreateCampaignPage() {
                                 </InputGroup>
                             </div>
 
-                            {/* ✅ เพิ่ม Dropdown เลือก System */}
                             <InputGroup label="Game System (Dice Rules)">
                                 <div className="relative">
                                     <select
@@ -230,14 +268,84 @@ export default function CreateCampaignPage() {
                         <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-300">
                             <SectionHeader title="Storyline Guide" subtitle="Write the plot details for the Game Master." />
                             <InputGroup label="Act 1: The Beginning (Intro)">
-                                <textarea value={storyIntro} onChange={e => setStoryIntro(e.target.value)} className={textareaClass} placeholder="Start here..." />
+                                <textarea value={storyIntro} onChange={e => setStoryIntro(e.target.value)} className={textareaClass} placeholder="How the adventure begins..." />
                             </InputGroup>
                             <InputGroup label="Act 2: The Conflict (Mid-Game)">
-                                <textarea value={storyMid} onChange={e => setStoryMid(e.target.value)} className={textareaClass} placeholder="Challenges..." />
+                                <textarea value={storyMid} onChange={e => setStoryMid(e.target.value)} className={textareaClass} placeholder="Challenges and key events..." />
                             </InputGroup>
                             <InputGroup label="Act 3: The Climax (Ending)">
-                                <textarea value={storyEnd} onChange={e => setStoryEnd(e.target.value)} className={textareaClass} placeholder="Ending..." />
+                                <textarea value={storyEnd} onChange={e => setStoryEnd(e.target.value)} className={textareaClass} placeholder="Possible endings and resolutions..." />
                             </InputGroup>
+                        </div>
+                    )}
+
+                    {/* ✅ --- TAB: AI GAME MASTER (NEW) --- */}
+                    {activeTab === 'AI' && (
+                        <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-300">
+                            <SectionHeader title="AI Game Master" subtitle="Configure the Artificial Intelligence that will run this game." />
+
+                            {/* Enable Switch */}
+                            <div className="bg-slate-900 border border-indigo-500/30 rounded-xl p-6 flex items-center justify-between">
+                                <div>
+                                    <h3 className="text-xl font-bold text-indigo-400 flex items-center gap-2">
+                                        <span>🤖</span> Enable AI Narrator
+                                    </h3>
+                                    <p className="text-slate-400 text-sm mt-1">Allow AI to control NPCs and narrate the story automatically.</p>
+                                </div>
+                                <label className="relative inline-flex items-center cursor-pointer">
+                                    <input type="checkbox" checked={aiEnabled} onChange={e => setAiEnabled(e.target.checked)} className="sr-only peer" />
+                                    <div className="w-14 h-8 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[4px] after:left-[4px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-indigo-600"></div>
+                                </label>
+                            </div>
+
+                            <div className={`space-y-8 transition-all duration-300 ${!aiEnabled ? 'opacity-40 pointer-events-none grayscale' : ''}`}>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                    <InputGroup label="GM Name">
+                                        <input value={aiName} onChange={e => setAiName(e.target.value)} className={inputClass} placeholder="e.g. The Watcher" />
+                                    </InputGroup>
+
+                                    <InputGroup label="Narrative Style">
+                                        <div className="relative">
+                                            <select value={aiStyle} onChange={e => setAiStyle(e.target.value)} className={`${inputClass} appearance-none cursor-pointer`}>
+                                                <option value="Classic Adventure">⚔️ Classic Adventure (Balanced)</option>
+                                                <option value="Dark Fantasy">🌑 Dark Fantasy (Grim & Serious)</option>
+                                                <option value="Comedy">🤡 Comedy (Lighthearted)</option>
+                                                <option value="Horror">👻 Horror (Suspenseful)</option>
+                                                <option value="Cyberpunk">🦾 Cyberpunk (Tech & Slang)</option>
+                                            </select>
+                                            <div className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">▼</div>
+                                        </div>
+                                    </InputGroup>
+                                </div>
+
+                                <InputGroup label="GM Personality & Instructions">
+                                    <textarea
+                                        value={aiPersonality}
+                                        onChange={e => setAiPersonality(e.target.value)}
+                                        className={textareaClass}
+                                        placeholder="Describe how the GM should behave. (e.g., 'Strict with rules, speaks in riddles, describes gore in detail')"
+                                        style={{ minHeight: '120px' }}
+                                    />
+                                </InputGroup>
+
+                                {/* Advanced Section */}
+                                <div className="border-t border-slate-800 pt-6">
+                                    <details className="group">
+                                        <summary className="cursor-pointer text-sm font-bold text-slate-500 hover:text-indigo-400 flex items-center gap-2 select-none">
+                                            <span>🛠️ Advanced System Prompt Override</span>
+                                            <span className="group-open:rotate-180 transition-transform">▼</span>
+                                        </summary>
+                                        <div className="mt-4 animate-in fade-in slide-in-from-top-2">
+                                            <textarea
+                                                value={aiCustomPrompt}
+                                                onChange={e => setAiCustomPrompt(e.target.value)}
+                                                className={`${textareaClass} font-mono text-xs text-slate-300`}
+                                                placeholder="WARNING: This overrides default behavior. Use only if you know Prompt Engineering."
+                                            />
+                                        </div>
+                                    </details>
+                                </div>
+                            </div>
                         </div>
                     )}
 
@@ -293,7 +401,6 @@ export default function CreateCampaignPage() {
                                         <div key={npc.id} className="bg-slate-900 border border-slate-800 rounded-xl p-4 relative group hover:border-amber-500/50 transition-colors">
                                             <button onClick={() => removeNpc(npc.id)} className="absolute top-2 right-2 z-10 bg-slate-950/80 text-red-500 hover:text-red-400 p-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity">🗑️</button>
 
-                                            {/* 4:3 Image */}
                                             <div className="mb-3 aspect-[4/3] bg-black rounded-lg overflow-hidden border border-slate-700 relative">
                                                 <img
                                                     src={npc.avatarUrl || 'https://placehold.co/400x300/1e293b/FFF?text=?'}
@@ -330,9 +437,9 @@ export default function CreateCampaignPage() {
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                                     {preGens.map((char, idx) => (
                                         <div key={idx} className="bg-slate-900 border border-slate-800 rounded-xl p-4 relative group hover:border-amber-500/50 transition-colors">
+                                            <button onClick={() => handleEditPreGen(idx)} className="absolute top-2 left-2 z-10 bg-slate-950/80 text-amber-500 hover:text-amber-400 p-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity">✏️</button>
                                             <button onClick={() => removePreGen(idx)} className="absolute top-2 right-2 z-10 bg-slate-950/80 text-red-500 hover:text-red-400 p-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity">🗑️</button>
 
-                                            {/* 4:3 Image */}
                                             <div className="mb-3 aspect-[4/3] bg-black rounded-lg overflow-hidden border border-slate-700 relative">
                                                 <img
                                                     src={char.imageUrl || char.avatarUrl || 'https://placehold.co/400x300/1e293b/FFF?text=Hero'}
@@ -363,13 +470,14 @@ export default function CreateCampaignPage() {
             </div>
 
             {/* Character Creator Modal */}
-            {isAddingPreGen && (
+            {(isAddingPreGen || editingPreGenIndex !== null) && (
                 <CharacterCreator
                     playerId="GM_DRAFT"
-                    initialName="New Hero"
+                    initialName={editingPreGenData?.name || "New Hero"}
                     campaignSystem={system}
-                    onSave={handleSavePreGen}
-                    onCancel={() => setIsAddingPreGen(false)}
+                    onSave={editingPreGenIndex !== null ? handleUpdatePreGen : handleSavePreGen}
+                    onCancel={editingPreGenIndex !== null ? handleCancelEdit : () => setIsAddingPreGen(false)}
+                    initialData={editingPreGenData}
                 />
             )}
         </div>
@@ -378,10 +486,15 @@ export default function CreateCampaignPage() {
 
 // --- Helper Components ---
 
-const SidebarBtn = ({ label, active, onClick }: any) => (
+const SidebarBtn = ({ label, active, onClick, special }: any) => (
     <button
         onClick={onClick}
-        className={`w-full text-left px-6 py-4 rounded-xl text-base font-bold transition-all duration-200 border border-transparent ${active ? 'bg-slate-800 text-amber-500 border-slate-700 shadow-inner' : 'text-slate-400 hover:bg-slate-800/50 hover:text-slate-200'}`}
+        className={`w-full text-left px-6 py-4 rounded-xl text-base font-bold transition-all duration-200 border border-transparent 
+        ${active
+                ? 'bg-slate-800 text-amber-500 border-slate-700 shadow-inner'
+                : special
+                    ? 'text-indigo-400 hover:bg-indigo-900/20 hover:text-indigo-300'
+                    : 'text-slate-400 hover:bg-slate-800/50 hover:text-slate-200'}`}
     >
         {label}
     </button>

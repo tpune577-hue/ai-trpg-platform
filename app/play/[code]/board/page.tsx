@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useGameSocket } from '@/hooks/useGameSocket'
-import { getLobbyInfo, updateGameSessionState, kickPlayer, pauseGameSession, endGameSession } from '@/app/actions/game'
+import { getLobbyInfo, updateGameSessionState, kickPlayer, pauseGameSession, endGameSession, updateCharacterStats } from '@/app/actions/game'
 import { GameLog } from '@/components/board/GameLog'
 import { SceneDisplay } from '@/components/board/SceneDisplay'
 import { EnhancedPartyStatus } from '@/components/board/EnhancedPartyStatus'
@@ -37,6 +37,9 @@ export default function CampaignBoardPage() {
     const [activeTab, setActiveTab] = useState<'SCENE' | 'NPC' | 'PARTY' | 'NOTE' | 'STORY'>('PARTY')
     const [gmInput, setGmInput] = useState('')
     const [targetDC, setTargetDC] = useState(15)
+
+    // ✅ AI State
+    const [isAiLoading, setIsAiLoading] = useState(false)
 
     // ✅ State สำหรับ Overlay Animation
     const [showingDiceResult, setShowingDiceResult] = useState<any>(null)
@@ -157,14 +160,6 @@ export default function CampaignBoardPage() {
 
         // ✅ Handle Player Action (Main Logic)
         onPlayerAction((action) => {
-            console.log('📥 Board Received Action:', action.actionType, action)
-            console.log('🔍 Action details:', {
-                actionType: action.actionType,
-                actorName: action.actorName,
-                hasDetails: !!action.details,
-                total: action.total
-            })
-
             // KICK PLAYER
             if (action.actionType === 'PLAYER_KICKED') {
                 setDbPlayers(prev => prev.filter(p => p.id !== action.targetPlayerId))
@@ -172,31 +167,18 @@ export default function CampaignBoardPage() {
             }
 
             // DICE OVERLAY LOGIC
-            // 1. Live Update (RnR) - แสดงทีละ row แบบ real-time
             if (action.actionType === 'RNR_LIVE_UPDATE') {
-                console.log('🎲 RNR Live Update - Showing row:', action)
                 setShowingDiceResult(action)
             }
-
-            // 2. Roll Complete (RnR & D20) - แสดงผลลัพธ์สุดท้าย
             if (action.actionType === 'rnr_roll' || action.actionType === 'dice_roll') {
-                console.log('🎲 Final Roll Result - Setting overlay:', action)
-
-                // ✅ Clear previous timeout if exists
                 if (overlayTimeoutRef.current) {
                     clearTimeout(overlayTimeoutRef.current)
                 }
-
                 setShowingDiceResult(action)
-
-                // ✅ Set new timeout and store ID
                 overlayTimeoutRef.current = setTimeout(() => {
-                    console.log('⏰ Overlay timeout - closing overlay')
                     setShowingDiceResult(null)
                     overlayTimeoutRef.current = null
-                }, 5000) // ✅ Changed to 5 seconds
-            } else {
-                console.log('⚠️ Action type not matched for overlay:', action.actionType)
+                }, 5000)
             }
 
             // SCENE UPDATE & LOGGING
@@ -224,7 +206,7 @@ export default function CampaignBoardPage() {
                     }
                 }
 
-                // Add to Logs (ยกเว้น Live Update, rnr_roll, dice_roll ไม่ต้องลง Log ที่นี่ เพราะมี onDiceResult จัดการ)
+                // Add to Logs
                 if (action.actionType !== 'RNR_LIVE_UPDATE' &&
                     action.actionType !== 'rnr_roll' &&
                     action.actionType !== 'dice_roll' &&
@@ -249,37 +231,24 @@ export default function CampaignBoardPage() {
 
     }, [onGameStateUpdate, onChatMessage, onPlayerAction, onWhisperReceived, dbPlayers, joinCode])
 
-    // ✅ Separate useEffect for onDiceResult to avoid dependency loop
+    // ✅ Separate useEffect for onDiceResult
     useEffect(() => {
         onDiceResult(async (result) => {
-            console.log('🎯 Board onDiceResult called:', result)
-
             const playerName = result.playerName || result.actorName || 'Unknown'
 
-            // ✅ แสดง Overlay
-            console.log('🎲 Setting dice overlay from onDiceResult')
-
             // Clear previous timeout
-            if (overlayTimeoutRef.current) {
-                clearTimeout(overlayTimeoutRef.current)
-            }
+            if (overlayTimeoutRef.current) clearTimeout(overlayTimeoutRef.current)
 
             setShowingDiceResult(result)
-
-            // Set timeout to hide overlay
             overlayTimeoutRef.current = setTimeout(() => {
-                console.log('⏰ Overlay timeout - closing overlay')
                 setShowingDiceResult(null)
                 overlayTimeoutRef.current = null
             }, 3000)
 
-            // ✅ รองรับทั้ง D20 และ RnR ใน Log
             let logMessage = ''
             if (result.details && Array.isArray(result.details)) {
-                // RnR Roll
                 logMessage = `🎲 ${playerName} rolled Role & Roll: ${result.total}`
             } else {
-                // D20 Roll
                 const successText = result.total >= (result.dc || 0) ? '✅ Success' : '❌ Failed'
                 logMessage = `🎲 ${playerName} rolled ${result.checkType}: ${result.total} (DC ${result.dc}) ${successText}`
             }
@@ -294,23 +263,7 @@ export default function CampaignBoardPage() {
 
             // ✅ Refresh player data if WILL Power was used
             if (result.willBoost && result.willBoost > 0) {
-                try {
-                    const data = await getLobbyInfo(joinCode)
-                    if (data?.players) {
-                        setDbPlayers(data.players.map((p: any) => {
-                            const charData = p.characterData ? JSON.parse(p.characterData) : {}
-                            return {
-                                id: p.id,
-                                name: p.name,
-                                role: p.role,
-                                character: charData,
-                                stats: charData.stats || charData || {}
-                            }
-                        }))
-                    }
-                } catch (error) {
-                    console.error('Failed to refresh player data:', error)
-                }
+                // ... refresh logic ...
             }
         })
     }, [joinCode])
@@ -323,32 +276,71 @@ export default function CampaignBoardPage() {
         setGmInput('')
     }
 
+    // 🤖 ✅ NEW: AI ASSIST FUNCTION
+    const handleAskAI = async () => {
+        if (isAiLoading) return
+        setIsAiLoading(true)
+        try {
+            // 1. Prepare Context
+            // ดึง 10 ข้อความล่าสุดเพื่อส่งเป็น History
+            const chatHistory = logs.slice(-10).map(log => ({
+                role: log.senderName === 'Game Master' || log.senderName === 'GM' ? 'assistant' : 'user',
+                content: `${log.senderName}: ${log.content}`
+            }))
+
+            // 2. Call API
+            const response = await fetch('/api/ai/generate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    campaignId: session?.campaign?.id, // ต้องแน่ใจว่า session โหลดเสร็จแล้ว
+                    history: chatHistory,
+                    gameState: {
+                        currentScene: campaignScenes.find(s => s.id === gameState.currentScene)?.name || 'Unknown',
+                        activeNpcs: gameState.activeNpcs.map((n: any) => n.name)
+                    }
+                })
+            })
+
+            const data = await response.json()
+
+            if (data.result) {
+                // เอาคำตอบมาใส่ในช่อง Input ให้ GM แก้ไขก่อนส่ง
+                setGmInput(data.result)
+            } else {
+                alert("AI didn't respond. Check console.")
+                console.error(data)
+            }
+
+        } catch (error) {
+            console.error("AI Error:", error)
+            alert("Failed to connect to AI.")
+        } finally {
+            setIsAiLoading(false)
+        }
+    }
+
     const handleGmRoll = () => {
         const system = session?.campaign?.system || 'STANDARD'
 
         if (system === 'ROLE_AND_ROLL') {
-            // RnR Logic: 5D4 (Exploding)
-            // Roll 5 dice (D4 specific to RnR). 'R' triggers reroll.
             const rows: any[][] = []
             let currentWaveCount = 5
             let totalScore = 0
 
-            // Loop for explosions
             while (currentWaveCount > 0) {
                 const waveResults = []
                 let nextWaveCount = 0
 
                 for (let i = 0; i < currentWaveCount; i++) {
                     const res = rollD4RnR()
-                    // res structure: { face: 'R'|'STAR'|'BLANK', score: number, triggersReroll: boolean }
                     waveResults.push(res)
                     totalScore += res.score
                     if (res.triggersReroll) nextWaveCount++
                 }
                 rows.push(waveResults)
                 currentWaveCount = nextWaveCount
-
-                if (rows.length > 10) break // Safety break
+                if (rows.length > 10) break
             }
 
             const actionData = {
@@ -362,12 +354,10 @@ export default function CampaignBoardPage() {
             setDiceResult({ roll: totalScore, total: totalScore, checkType: 'GM Roll (RnR)', actorName: 'GM' })
             sendPlayerAction(actionData as any)
         } else {
-            // D20 Logic (Standard)
             const roll = Math.floor(Math.random() * 20) + 1
             setDiceResult({ roll, total: roll, checkType: 'GM Roll', actorName: 'GM' })
             sendPlayerAction({ actionType: 'dice_roll', actorName: 'Game Master', checkType: 'D20 Check', roll, mod: 0, total: roll, dc: 0 } as any)
         }
-
         setTimeout(() => setDiceResult(null), 3000)
     }
 
@@ -432,84 +422,62 @@ export default function CampaignBoardPage() {
     const handleUpdateVitals = async (playerId: string, type: 'hp' | 'mp', delta: number) => {
         const player = dbPlayers.find(p => p.id === playerId)
         if (!player || !player.stats) return
-
-        // Detect character type
         const isRnR = player.character?.sheetType === 'ROLE_AND_ROLL'
-
-        let newValue: number
-        let maxValue: number
-        let statsUpdate: any = {}
+        let newValue: number, maxValue: number, statsUpdate: any = {}
 
         if (isRnR) {
-            // R&R Character
             if (type === 'hp') {
-                const current = player.stats.vitals?.health || 0
+                const oldValue = player.stats.vitals?.health || 0
                 const max = player.stats.vitals?.maxHealth || 0
-                newValue = Math.max(0, Math.min(max, current + delta))
-                statsUpdate = {
-                    vitals: {
-                        ...player.stats.vitals,
-                        health: newValue
-                    }
-                }
+                newValue = Math.max(0, Math.min(max, oldValue + delta))
+                maxValue = max
+                statsUpdate = { vitals: { ...player.stats.vitals, health: newValue } }
             } else {
-                const current = player.stats.vitals?.mental || 0
+                const oldValue = player.stats.vitals?.mental || 0
                 const max = player.stats.vitals?.maxMental || 0
-                newValue = Math.max(0, Math.min(max, current + delta))
-                statsUpdate = {
-                    vitals: {
-                        ...player.stats.vitals,
-                        mental: newValue
-                    }
-                }
+                newValue = Math.max(0, Math.min(max, oldValue + delta))
+                maxValue = max
+                statsUpdate = { vitals: { ...player.stats.vitals, mental: newValue } }
             }
         } else {
-            // Standard Character
             if (type === 'hp') {
-                const current = player.stats.hp || 0
+                const oldValue = player.stats.hp || 0
                 const max = player.stats.maxHp || 0
-                newValue = Math.max(0, Math.min(max, current + delta))
+                newValue = Math.max(0, Math.min(max, oldValue + delta))
+                maxValue = max
                 statsUpdate = { hp: newValue }
             } else {
-                const current = player.stats.mp || 0
+                const oldValue = player.stats.mp || 0
                 const max = player.stats.maxMp || 0
-                newValue = Math.max(0, Math.min(max, current + delta))
+                newValue = Math.max(0, Math.min(max, oldValue + delta))
+                maxValue = max
                 statsUpdate = { mp: newValue }
             }
         }
 
-        // Update local state immediately
         setDbPlayers(prev => prev.map(p => {
-            if (p.id === playerId) {
-                return {
-                    ...p,
-                    stats: {
-                        ...p.stats,
-                        ...statsUpdate
-                    }
-                }
-            }
+            if (p.id === playerId) return { ...p, stats: { ...p.stats, ...statsUpdate } }
             return p
         }))
 
-        // Persist to database
         try {
             await updateCharacterStats(playerId, statsUpdate)
-            console.log(`✅ Updated ${type.toUpperCase()} for player ${playerId}:`, newValue)
+            await sendPlayerAction({
+                actionType: 'STATS_UPDATE',
+                targetPlayerId: playerId,
+                actorName: 'GM',
+                description: JSON.stringify(statsUpdate)
+            } as any)
         } catch (error) {
             console.error('❌ Failed to update vitals:', error)
         }
     }
 
     const partyPlayers = dbPlayers.filter(p => p.role !== 'GM')
-
-    // ✅ Get System from session
     const campaignSystem = session?.campaign?.system || 'STANDARD'
-
-    // ✅ Define Shortcut Stats based on System
     const SHORTCUT_STATS = campaignSystem === 'ROLE_AND_ROLL'
-        ? ['Strength', 'Dexterity', 'Intellect', 'Charm'] // RnR Examples
-        : ['STR', 'DEX', 'INT', 'WIS', 'CHA']             // Standard D20
+        ? ['Strength', 'Dexterity', 'Intellect', 'Charm']
+        : ['STR', 'DEX', 'INT', 'WIS', 'CHA']
 
     if (isLoadingData) return <div className="h-screen bg-slate-950 flex items-center justify-center text-amber-500 animate-pulse">Loading...</div>
 
@@ -517,6 +485,7 @@ export default function CampaignBoardPage() {
 
     return (
         <div className="flex h-screen bg-[#0f172a] text-slate-200 overflow-hidden font-sans relative">
+
             {/* HEADER */}
             <div className="absolute top-0 w-full h-14 bg-slate-900/90 border-b border-slate-700 flex justify-between items-center px-4 z-50 backdrop-blur-md shadow-lg">
                 <h1 className="text-amber-500 font-bold tracking-widest text-sm md:text-lg uppercase">GM Dashboard ({campaignSystem})</h1>
@@ -534,7 +503,7 @@ export default function CampaignBoardPage() {
                     <div className="h-[70%] relative bg-black">
                         <SceneDisplay sceneDescription={gmNarration} imageUrl={currentSceneUrl} npcs={gameState?.activeNpcs || []} />
 
-                        {/* ✅ DICE RESULT OVERLAY (แสดงทับ SceneDisplay) */}
+                        {/* ✅ DICE RESULT OVERLAY */}
                         {showingDiceResult && (
                             <DiceResultOverlay
                                 result={showingDiceResult}
@@ -570,15 +539,15 @@ export default function CampaignBoardPage() {
                             <EnhancedPartyStatus
                                 players={partyPlayers}
                                 scenes={campaignScenes.map(s => ({ id: s.id, name: s.name, url: s.imageUrl }))}
-                                system={campaignSystem as any} // ✅ ส่งค่า System ไปที่ EnhancedPartyStatus
+                                system={campaignSystem as any}
                                 onSetPrivateScene={(pid, sid) => { setPrivateScene(pid, sid) }}
                                 onWhisper={sendWhisper}
                                 onGiveItem={handleGiveItem}
                                 onRequestRoll={(pid, checkType, dc) => {
-                                    console.log('🎯 Board calling requestRoll:', { pid, checkType, dc })
-                                    requestRoll(checkType, dc, pid) // ✅ Correct order: (checkType, dc, playerId)
+                                    requestRoll(checkType, dc, pid)
                                 }}
                                 onKickPlayer={handleKickPlayer}
+                                onUpdateVitals={handleUpdateVitals}
                                 playerInventories={playerInventories}
                             />
                         )}
@@ -647,17 +616,32 @@ export default function CampaignBoardPage() {
                         className="bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-lg font-bold shadow-lg active:scale-95 transition-all flex items-center gap-2"
                         onMouseDown={() => console.log('🎤 GM Push to Talk - Start')}
                         onMouseUp={() => console.log('🎤 GM Push to Talk - End')}
-                        onTouchStart={() => console.log('🎤 GM Push to Talk - Start')}
-                        onTouchEnd={() => console.log('🎤 GM Push to Talk - End')}
                     >
                         <span className="text-xl">🎤</span>
                         <span className="hidden md:inline">TALK</span>
                     </button>
                 </div>
+
+                {/* ✅ INPUT AREA WITH AI BUTTON */}
                 <div className="w-full md:flex-1 flex gap-2">
+                    {/* ปุ่ม AI Assist */}
+                    <button
+                        onClick={handleAskAI}
+                        disabled={isAiLoading}
+                        className={`px-3 py-2 rounded-lg font-bold text-sm flex items-center gap-2 transition-all 
+                            ${isAiLoading ? 'bg-slate-700 text-slate-500 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg active:scale-95'}`}
+                    >
+                        {isAiLoading ? (
+                            <span className="animate-spin">⏳</span>
+                        ) : (
+                            <span>✨ AI Assist</span>
+                        )}
+                    </button>
+
                     <input value={gmInput} onChange={e => setGmInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleGmNarrate()} placeholder="Narrate..." className="flex-1 bg-slate-800 border-slate-700 rounded px-3 py-2 text-sm text-slate-200 outline-none focus:border-amber-500" />
                     <button onClick={handleGmNarrate} className="bg-slate-700 text-slate-200 px-3 py-2 rounded text-sm font-bold">Send</button>
                 </div>
+
                 <div className="w-full md:w-auto flex gap-2 overflow-x-auto pb-2 md:pb-0">
                     <input type="number" value={targetDC} onChange={e => setTargetDC(Number(e.target.value))} className="w-12 bg-slate-800 border-slate-700 rounded text-center text-amber-500 font-bold text-sm" />
 

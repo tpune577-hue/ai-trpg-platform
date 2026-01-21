@@ -197,22 +197,36 @@ export function EnhancedPartyStatus({
                                                 <div className="flex justify-between items-center gap-2">
                                                     <span className="text-[10px] text-slate-400 font-bold">HP</span>
                                                     <div className="flex items-center gap-1">
-                                                        <button
-                                                            onClick={() => onUpdateVitals?.(player.id, 'hp', -5)}
-                                                            className="w-5 h-5 bg-red-900/50 hover:bg-red-800 text-red-200 rounded text-xs font-bold flex items-center justify-center"
-                                                            title="Decrease HP by 5"
-                                                        >
-                                                            −
-                                                        </button>
-                                                        <span className="text-[11px] text-green-400 font-mono font-bold min-w-[50px] text-center">
+                                                        <span className="text-[11px] text-green-400 font-mono font-bold">
                                                             {hp} / {maxHp}
                                                         </span>
+                                                        <input
+                                                            type="text"
+                                                            placeholder="+/-"
+                                                            className="w-14 h-5 bg-slate-950 border border-slate-600 rounded px-1 text-[10px] text-white text-center"
+                                                            onKeyDown={(e) => {
+                                                                if (e.key === 'Enter') {
+                                                                    const value = parseInt((e.target as HTMLInputElement).value)
+                                                                    if (!isNaN(value)) {
+                                                                        onUpdateVitals?.(player.id, 'hp', value)
+                                                                            ; (e.target as HTMLInputElement).value = ''
+                                                                    }
+                                                                }
+                                                            }}
+                                                        />
                                                         <button
-                                                            onClick={() => onUpdateVitals?.(player.id, 'hp', 5)}
-                                                            className="w-5 h-5 bg-green-900/50 hover:bg-green-800 text-green-200 rounded text-xs font-bold flex items-center justify-center"
-                                                            title="Increase HP by 5"
+                                                            onClick={(e) => {
+                                                                const input = (e.target as HTMLElement).previousElementSibling as HTMLInputElement
+                                                                const value = parseInt(input.value)
+                                                                if (!isNaN(value)) {
+                                                                    onUpdateVitals?.(player.id, 'hp', value)
+                                                                    input.value = ''
+                                                                }
+                                                            }}
+                                                            className="w-8 h-5 bg-amber-900/50 hover:bg-amber-800 text-amber-200 rounded text-[9px] font-bold"
+                                                            title="Apply HP change (+/-)"
                                                         >
-                                                            +
+                                                            SET
                                                         </button>
                                                     </div>
                                                 </div>
@@ -220,22 +234,36 @@ export function EnhancedPartyStatus({
                                                 <div className="flex justify-between items-center gap-2">
                                                     <span className="text-[10px] text-slate-400 font-bold">MP</span>
                                                     <div className="flex items-center gap-1">
-                                                        <button
-                                                            onClick={() => onUpdateVitals?.(player.id, 'mp', -5)}
-                                                            className="w-5 h-5 bg-red-900/50 hover:bg-red-800 text-red-200 rounded text-xs font-bold flex items-center justify-center"
-                                                            title="Decrease MP by 5"
-                                                        >
-                                                            −
-                                                        </button>
-                                                        <span className="text-[11px] text-blue-400 font-mono font-bold min-w-[50px] text-center">
+                                                        <span className="text-[11px] text-blue-400 font-mono font-bold">
                                                             {mp} / {maxMp}
                                                         </span>
+                                                        <input
+                                                            type="text"
+                                                            placeholder="+/-"
+                                                            className="w-14 h-5 bg-slate-950 border border-slate-600 rounded px-1 text-[10px] text-white text-center"
+                                                            onKeyDown={(e) => {
+                                                                if (e.key === 'Enter') {
+                                                                    const value = parseInt((e.target as HTMLInputElement).value)
+                                                                    if (!isNaN(value)) {
+                                                                        onUpdateVitals?.(player.id, 'mp', value)
+                                                                            ; (e.target as HTMLInputElement).value = ''
+                                                                    }
+                                                                }
+                                                            }}
+                                                        />
                                                         <button
-                                                            onClick={() => onUpdateVitals?.(player.id, 'mp', 5)}
-                                                            className="w-5 h-5 bg-blue-900/50 hover:bg-blue-800 text-blue-200 rounded text-xs font-bold flex items-center justify-center"
-                                                            title="Increase MP by 5"
+                                                            onClick={(e) => {
+                                                                const input = (e.target as HTMLElement).previousElementSibling as HTMLInputElement
+                                                                const value = parseInt(input.value)
+                                                                if (!isNaN(value)) {
+                                                                    onUpdateVitals?.(player.id, 'mp', value)
+                                                                    input.value = ''
+                                                                }
+                                                            }}
+                                                            className="w-8 h-5 bg-amber-900/50 hover:bg-amber-800 text-amber-200 rounded text-[9px] font-bold"
+                                                            title="Apply MP change (+/-)"
                                                         >
-                                                            +
+                                                            SET
                                                         </button>
                                                     </div>
                                                 </div>

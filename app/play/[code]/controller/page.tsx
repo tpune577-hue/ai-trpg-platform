@@ -330,6 +330,58 @@ export default function PlayerControllerPage() {
                     return
                 }
 
+                // ✅ Stats Update (HP/MP changes from GM)
+                if (action.actionType === 'STATS_UPDATE' && action.targetPlayerId === playerId) {
+                    try {
+                        const statsUpdate = JSON.parse(action.description)
+                        console.log('📊 Received stats update:', statsUpdate)
+
+                        // Calculate changes for log message BEFORE updating state
+                        const oldStats = character?.stats || {}
+                        const changes: string[] = []
+
+                        if (statsUpdate.hp !== undefined && oldStats.hp !== statsUpdate.hp) {
+                            const delta = statsUpdate.hp - (oldStats.hp || 0)
+                            changes.push(`HP ${delta > 0 ? '+' : ''}${delta}`)
+                        }
+                        if (statsUpdate.mp !== undefined && oldStats.mp !== statsUpdate.mp) {
+                            const delta = statsUpdate.mp - (oldStats.mp || 0)
+                            changes.push(`MP ${delta > 0 ? '+' : ''}${delta}`)
+                        }
+                        if (statsUpdate.vitals?.health !== undefined && oldStats.vitals?.health !== statsUpdate.vitals.health) {
+                            const delta = statsUpdate.vitals.health - (oldStats.vitals?.health || 0)
+                            changes.push(`Health ${delta > 0 ? '+' : ''}${delta}`)
+                        }
+                        if (statsUpdate.vitals?.mental !== undefined && oldStats.vitals?.mental !== statsUpdate.vitals.mental) {
+                            const delta = statsUpdate.vitals.mental - (oldStats.vitals?.mental || 0)
+                            changes.push(`Mental ${delta > 0 ? '+' : ''}${delta}`)
+                        }
+
+                        // Log ONCE before state update
+                        if (changes.length > 0) {
+                            handleLog({
+                                id: `stats-${Date.now()}`,
+                                content: `📊 GM updated your stats: ${changes.join(', ')}`,
+                                type: 'SYSTEM',
+                                senderName: 'GM',
+                                timestamp: new Date()
+                            })
+                        }
+
+                        // Update character stats
+                        setCharacter((prev: any) => ({
+                            ...prev,
+                            stats: {
+                                ...prev.stats,
+                                ...statsUpdate
+                            }
+                        }))
+                    } catch (error) {
+                        console.error('❌ Failed to parse stats update:', error)
+                    }
+                    return
+                }
+
                 // Inventory Management
                 if (action.actionType === 'GM_MANAGE_INVENTORY' && action.targetPlayerId === playerId) {
                     const { itemData, action: mode } = action.payload || {};
@@ -344,7 +396,7 @@ export default function PlayerControllerPage() {
                 }
 
                 // General Logs (✅ Filter dice rolls - handled by onDiceResult, WHISPER handled by onWhisperReceived)
-                if (!['GM_MANAGE_INVENTORY', 'GM_UPDATE_SCENE', 'RNR_LIVE_UPDATE', 'rnr_roll', 'dice_roll', 'WHISPER'].includes(action.actionType)) {
+                if (!['GM_MANAGE_INVENTORY', 'GM_UPDATE_SCENE', 'RNR_LIVE_UPDATE', 'rnr_roll', 'dice_roll', 'WHISPER', 'STATS_UPDATE'].includes(action.actionType)) {
                     // ✅ Private Action Filtering: Hide from others
                     const isPrivate = action.isPrivate || action.payload?.isPrivate // ✅ Fallback
 

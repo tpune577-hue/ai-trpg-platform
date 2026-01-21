@@ -18,6 +18,9 @@ model User {
   emailVerified DateTime?
   image         String?   // รูป Profile จาก Google
   
+  // Role: "USER", "GM", "ADMIN"
+  role          String    @default("USER")
+
   // NextAuth Relations
   accounts      Account[]
   sessions      Session[]
@@ -27,8 +30,45 @@ model User {
   ownedCampaigns   Purchase[] 
   receivedReviews  Review[]
   
+  // Seller Profile (สำหรับรับเงิน/ขายของ)
+  sellerProfile    SellerProfile?
+
+  // ✅ Marketplace Relations (เพิ่มใหม่)
+  orders           Order[]
+  inventory        InventoryItem[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// SellerProfile สำหรับ KYC และรับเงิน
+model SellerProfile {
+  id            String    @id @default(cuid())
+  userId        String    @unique
+  user          User      @relation(fields: [userId], references: [id])
+
+  // ข้อมูลส่วนตัว (KYC)
+  realName      String?   // ชื่อจริงตามบัตร
+  idCardNumber  String?   // เลขบัตรประชาชน
+  address       String?   // ที่อยู่
+  
+  // หลักฐาน (เก็บ URL รูปภาพ)
+  idCardImage   String?   
+  bookBankImage String?
+
+  // ข้อมูลธนาคาร
+  bankName      String?   // SCB, KBANK
+  bankAccount   String?   
+
+  // สถานะการตรวจสอบ: "PENDING", "APPROVED", "REJECTED"
+  status        String    @default("PENDING") 
+  rejectReason  String?   
+
+  // ✅ Marketplace Relations (เพิ่มใหม่)
+  products      Product[]
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 }
 
 // ✅ Model มาตรฐานสำหรับ NextAuth (Account)
@@ -79,13 +119,20 @@ model Campaign {
   coverImage  String?
   tags        String? 
   
-  // ✅ Game System
+  // Game System: "STANDARD", "ROLE_AND_ROLL"
   system      String   @default("STANDARD") 
 
   // Story Details
   storyIntro  String? 
   storyMid    String? 
   storyEnd    String? 
+
+  // AI Game Master Configuration
+  aiEnabled      Boolean  @default(false)
+  aiName         String?  @default("The Narrator")
+  aiPersonality  String?  // นิสัย AI (เช่น ดุดัน, ตลก)
+  aiStyle        String?  // สไตล์การเล่าเรื่อง
+  aiCustomPrompt String?  // System Prompt Override
 
   // Marketplace Fields
   isPublished Boolean  @default(false)
@@ -102,6 +149,7 @@ model Campaign {
   creator     User      @relation(fields: [creatorId], references: [id])
   purchases   Purchase[]
   sessions    GameSession[]
+  reviews     Review[]  // Campaign reviews
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @default(now()) @updatedAt
@@ -202,16 +250,92 @@ model Player {
 
 // --- REVIEWS & FEEDBACK ---
 model Review {
-  id             String   @id @default(cuid())
-  rating         Int      // 0-5
-  comment        String?
-  reviewerName   String   // ชื่อ Player ที่รีวิว
+  id              String   @id @default(cuid())
+  reviewType      String   @default("GM") // 'GM' or 'CAMPAIGN'
+  rating          Int      // 0-5
+  comment         String?
+  reviewerName    String   
   
   // เชื่อมกับ GM (User)
-  targetUserId   String
-  targetUser     User     @relation(fields: [targetUserId], references: [id])
+  targetUserId    String?
+  targetUser      User?    @relation(fields: [targetUserId], references: [id])
+  
+  // เชื่อมกับ Campaign
+  campaignId      String?
+  campaign        Campaign? @relation(fields: [campaignId], references: [id])
 
-  sessionCode    String?
+  sessionCode     String?
 
-  createdAt      DateTime @default(now())
+  createdAt       DateTime @default(now())
+}
+
+// --- MARKETPLACE & ASSETS (SQLite Compatible) ---
+
+model Product {
+  id          String   @id @default(cuid())
+  sellerId    String
+  seller      SellerProfile @relation(fields: [sellerId], references: [id])
+  
+  name        String
+  description String?  // SQLite ไม่ต้องใช้ @db.Text
+  price       Int      @default(0) // ราคา (Coins)
+  
+  // Type: "ITEM", "CHARACTER_ART", "SCENE_ART", "AUDIO", "RULESET"
+  type        String   @default("ITEM") 
+  
+  // Images: เก็บเป็น JSON String หรือ URL เดี่ยวๆ เพราะ SQLite ไม่มี Array
+  images      String? 
+  
+  fileUrl     String?  // URL ไฟล์จริง (สำหรับ Download/Use)
+  
+  isPublished Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  orderItems  OrderItem[]
+  inventoryItems InventoryItem[] 
+}
+
+model Order {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id])
+  
+  total     Int
+  
+  // Status: "PENDING", "COMPLETED", "FAILED", "REFUNDED"
+  status    String    @default("COMPLETED")
+  
+  items     OrderItem[]
+  
+  createdAt DateTime  @default(now())
+}
+
+model OrderItem {
+  id        String  @id @default(cuid())
+  orderId   String
+  order     Order   @relation(fields: [orderId], references: [id])
+  
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
+  
+  price     Int     // ราคา ณ ตอนที่ซื้อ
+}
+
+// เก็บว่าใครมีของอะไรบ้าง (Inventory)
+model InventoryItem {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  
+  productId String
+  product   Product  @relation(fields: [productId], references: [id])
+  
+  acquiredAt DateTime @default(now())
+  
+  // Custom Data สำหรับไอเทมชิ้นนี้ (เช่น ตีบวก, ใส่ชื่อเฉพาะ)
+  customName String?
+  quantity   Int      @default(1)
+
+  @@unique([userId, productId]) 
 }

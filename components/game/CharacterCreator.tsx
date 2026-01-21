@@ -25,22 +25,31 @@ interface CharacterCreatorProps {
     campaignSystem: 'STANDARD' | 'ROLE_AND_ROLL' // ✅ Campaign system determines available options
     onSave: (data: any) => void
     onCancel: () => void
+    initialData?: any // ✅ Optional initial data for edit mode
 }
 
-export default function CharacterCreator({ playerId, initialName, campaignSystem, onSave, onCancel }: CharacterCreatorProps) {
-    const [sheetType, setSheetType] = useState<'STANDARD' | 'ROLE_AND_ROLL'>('STANDARD')
+export default function CharacterCreator({ playerId, initialName, campaignSystem, onSave, onCancel, initialData }: CharacterCreatorProps) {
+    const [sheetType, setSheetType] = useState<'STANDARD' | 'ROLE_AND_ROLL'>(initialData?.sheetType || 'STANDARD')
     const [isSaving, setIsSaving] = useState(false)
 
-    // State รวม
+    // State รวม - populate from initialData if editing
     const [formData, setFormData] = useState<any>({
-        name: initialName || 'Adventurer',
-        imageUrl: '',
-        description: '',
+        name: initialData?.name || initialName || 'Adventurer',
+        imageUrl: initialData?.imageUrl || initialData?.avatarUrl || '',
+        description: initialData?.description || initialData?.bio?.description || '',
         // Standard
-        hp: 20, mp: 10, wp: 5,
-        str: 0, dex: 0, int: 0, wis: 0, cha: 0,
+        hp: initialData?.stats?.hp || 20,
+        mp: initialData?.stats?.mp || 10,
+        wp: initialData?.stats?.willPower || 5,
+        str: initialData?.stats?.str || 0,
+        dex: initialData?.stats?.dex || 0,
+        int: initialData?.stats?.int || 0,
+        wis: initialData?.stats?.wis || 0,
+        cha: initialData?.stats?.cha || 0,
         // Role & Roll (Manual Input)
-        rr_willPower: 3, rr_health: 10, rr_mental: 5,
+        rr_willPower: initialData?.stats?.vitals?.willPower || 3,
+        rr_health: initialData?.stats?.vitals?.maxHealth || 10,
+        rr_mental: initialData?.stats?.vitals?.maxMental || 5,
     })
 
     const handleChange = (key: string, value: any) => {

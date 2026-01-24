@@ -42,7 +42,6 @@ export async function acquireCampaignAction(campaignId: string) {
                 data: {
                     userId: session.user.id,
                     campaignId: campaignId,
-                    price: 0, // บันทึกว่า 0 บาท
                     // purchasedAt จะเป็น default now()
                 }
             })

@@ -1,5 +1,4 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
+// 📄 ไฟล์: prisma/schema.prisma
 
 generator client {
   provider = "prisma-client-js"
@@ -21,9 +20,9 @@ model User {
   // Role: "USER", "GM", "ADMIN"
   role          String    @default("USER")
 
-// ✅ Ban feature
-  bannedUntil   DateTime? // วันที่ปลดแบน (ถ้าเป็น null แปลว่าปกติ, ถ้ามีค่าและยังไม่ถึง = โดนแบน)
-  banReason     String?   // เหตุผลที่แบน
+  // ✅ Ban feature
+  bannedUntil   DateTime? 
+  banReason     String?   
 
   // NextAuth Relations
   accounts      Account[]
@@ -37,7 +36,7 @@ model User {
   // Seller Profile (สำหรับรับเงิน/ขายของ)
   sellerProfile    SellerProfile?
 
-  // ✅ Marketplace Relations (เพิ่มใหม่)
+  // ✅ Marketplace Relations
   orders           Order[]
   inventory        InventoryItem[]
 
@@ -52,23 +51,22 @@ model SellerProfile {
   user          User      @relation(fields: [userId], references: [id])
 
   // ข้อมูลส่วนตัว (KYC)
-  realName      String?   // ชื่อจริงตามบัตร
-  idCardNumber  String?   // เลขบัตรประชาชน
-  address       String?   // ที่อยู่
+  realName      String?   
+  idCardNumber  String?   
+  address       String?   
   
   // หลักฐาน (เก็บ URL รูปภาพ)
   idCardImage   String?   
   bookBankImage String?
 
   // ข้อมูลธนาคาร
-  bankName      String?   // SCB, KBANK
+  bankName      String?   
   bankAccount   String?   
 
   // สถานะการตรวจสอบ: "PENDING", "APPROVED", "REJECTED"
   status        String    @default("PENDING") 
   rejectReason  String?   
 
-  // ✅ Marketplace Relations (เพิ่มใหม่)
   products      Product[]
 
   createdAt     DateTime  @default(now())
@@ -134,9 +132,9 @@ model Campaign {
   // AI Game Master Configuration
   aiEnabled      Boolean  @default(false)
   aiName         String?  @default("The Narrator")
-  aiPersonality  String?  // นิสัย AI (เช่น ดุดัน, ตลก)
-  aiStyle        String?  // สไตล์การเล่าเรื่อง
-  aiCustomPrompt String?  // System Prompt Override
+  aiPersonality  String?  
+  aiStyle        String?  
+  aiCustomPrompt String?  
 
   // Marketplace Fields
   isPublished Boolean  @default(false)
@@ -153,7 +151,7 @@ model Campaign {
   creator     User      @relation(fields: [creatorId], references: [id])
   purchases   Purchase[]
   sessions    GameSession[]
-  reviews     Review[]  // Campaign reviews
+  reviews     Review[] 
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @default(now()) @updatedAt
@@ -215,16 +213,20 @@ model Purchase {
 
 // --- GAME SESSION (ห้องเล่นจริง) ---
 model GameSession {
-  id              String   @id @default(cuid())
-  joinCode        String   @unique 
-  status          String   @default("WAITING") 
+  id              String    @id @default(cuid())
+  joinCode        String    @unique 
+  status          String    @default("WAITING") 
   
   // Current State
   currentSceneId  String?
-  activeNpcs      String?  // JSON Array String
+  activeNpcs      String?   // JSON Array String (NPC ที่กำลังโชว์)
   
   // Lobby Settings
   isAiGm          Boolean  @default(false)
+
+  // ✅ Quick Add Assets (ใช้ Custom แทน Temp เพื่อความชัดเจน)
+  customScenes    String?  // JSON Array: [{ id, name, imageUrl }]
+  customNpcs      String?  // JSON Array: [{ id, name, imageUrl }]
 
   // Campaign 
   campaignId      String?
@@ -243,7 +245,7 @@ model Player {
   isReady       Boolean     @default(false)
   sheetType     String      @default("STANDARD")
   
-  characterData String?     
+  characterData String?      
   preGenId      String?
   
   sessionId     String
@@ -254,26 +256,24 @@ model Player {
 
 // --- REVIEWS & FEEDBACK ---
 model Review {
-  id              String   @id @default(cuid())
-  reviewType      String   @default("GM") // 'GM' or 'CAMPAIGN'
-  rating          Int      // 0-5
-  comment         String?
-  reviewerName    String   
+  id            String   @id @default(cuid())
+  reviewType    String   @default("GM") // 'GM' or 'CAMPAIGN'
+  rating        Int      
+  comment       String?
+  reviewerName  String   
   
-  // เชื่อมกับ GM (User)
-  targetUserId    String?
-  targetUser      User?    @relation(fields: [targetUserId], references: [id])
+  targetUserId  String?
+  targetUser    User?    @relation(fields: [targetUserId], references: [id])
   
-  // เชื่อมกับ Campaign
-  campaignId      String?
-  campaign        Campaign? @relation(fields: [campaignId], references: [id])
+  campaignId    String?
+  campaign      Campaign? @relation(fields: [campaignId], references: [id])
 
-  sessionCode     String?
+  sessionCode   String?
 
-  createdAt       DateTime @default(now())
+  createdAt     DateTime @default(now())
 }
 
-// --- MARKETPLACE & ASSETS (SQLite Compatible) ---
+// --- MARKETPLACE & ASSETS (For Individual Items/Products) ---
 
 model Product {
   id          String   @id @default(cuid())
@@ -281,16 +281,12 @@ model Product {
   seller      SellerProfile @relation(fields: [sellerId], references: [id])
   
   name        String
-  description String?  // SQLite ไม่ต้องใช้ @db.Text
-  price       Int      @default(0) // ราคา (Coins)
+  description String?  
+  price       Int      @default(0) 
   
-  // Type: "ITEM", "CHARACTER_ART", "SCENE_ART", "AUDIO", "RULESET"
   type        String   @default("ITEM") 
-  
-  // Images: เก็บเป็น JSON String หรือ URL เดี่ยวๆ เพราะ SQLite ไม่มี Array
-  images      String? 
-  
-  fileUrl     String?  // URL ไฟล์จริง (สำหรับ Download/Use)
+  images      String?  
+  fileUrl     String?  
   
   isPublished Boolean  @default(false)
   createdAt   DateTime @default(now())
@@ -306,8 +302,6 @@ model Order {
   user      User      @relation(fields: [userId], references: [id])
   
   total     Int
-  
-  // Status: "PENDING", "COMPLETED", "FAILED", "REFUNDED"
   status    String    @default("COMPLETED")
   
   items     OrderItem[]
@@ -323,23 +317,20 @@ model OrderItem {
   productId String
   product   Product @relation(fields: [productId], references: [id])
   
-  price     Int     // ราคา ณ ตอนที่ซื้อ
+  price     Int     
 }
 
-// เก็บว่าใครมีของอะไรบ้าง (Inventory)
 model InventoryItem {
-  id        String   @id @default(cuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id])
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
   
-  productId String
-  product   Product  @relation(fields: [productId], references: [id])
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id])
   
-  acquiredAt DateTime @default(now())
-  
-  // Custom Data สำหรับไอเทมชิ้นนี้ (เช่น ตีบวก, ใส่ชื่อเฉพาะ)
-  customName String?
-  quantity   Int      @default(1)
+  acquiredAt  DateTime @default(now())
+  customName  String?
+  quantity    Int      @default(1)
 
   @@unique([userId, productId]) 
 }

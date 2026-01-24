@@ -1,9 +1,8 @@
-// ไฟล์: app/api/marketplace/items/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { auth } from '@/auth' // ✅ ใช้ Auth จริง
+import { auth } from '@/auth'
 
-// บังคับให้โหลดข้อมูลใหม่เสมอ ไม่ใช้ Cache
+// บังคับไม่ให้ Cache (ดึงสดจาก DB เสมอ)
 export const dynamic = 'force-dynamic'
 
 export async function GET(request: NextRequest) {
@@ -11,103 +10,66 @@ export async function GET(request: NextRequest) {
         const session = await auth()
         const userId = session?.user?.id
 
-        // 1. Fetch Published Campaigns
-        const campaignsPromise = prisma.campaign.findMany({
-            where: { isPublished: true },
-            include: {
-                creator: { select: { name: true } },
-                _count: { select: { purchases: true } }
+        // 1. ดึงข้อมูลจากตาราง 'Campaign' (เพราะใน Schema ไม่มี MarketplaceItem)
+        const campaigns = await prisma.campaign.findMany({
+            where: {
+                isPublished: true, // ต้องเป็น Campaign ที่ Publish แล้ว
             },
-            orderBy: { createdAt: 'desc' }
-        })
-
-        // 2. Fetch Published Products (Assets, Art, Themes)
-        const productsPromise = prisma.product.findMany({
-            where: { isPublished: true },
             include: {
-                seller: {
-                    include: { user: { select: { name: true } } }
+                creator: {
+                    select: { name: true }, // ดึงชื่อคนสร้าง
                 },
-                _count: { select: { orderItems: true } }
+                purchases: {
+                    select: { id: true } // ดึงรายการสั่งซื้อเพื่อนับยอด
+                }
             },
-            orderBy: { createdAt: 'desc' }
+            orderBy: {
+                createdAt: 'desc',
+            },
         })
 
-        const [campaigns, products] = await Promise.all([campaignsPromise, productsPromise])
-
-        // 3. Map Campaigns
-        const campaignItems = campaigns.map((c) => ({
-            id: c.id,
-            title: c.title,
-            description: c.description || '',
-            type: 'CAMPAIGN',
-            price: c.price,
-            downloads: c._count.purchases,
-            rating: 5.0,
-            creatorName: c.creator?.name || 'Unknown GM',
-            imageUrl: c.coverImage || '/images/placeholder-campaign.jpg',
-            tags: [c.system],
-            createdAt: c.createdAt
-        }))
-
-        // 4. Map Products
-        const productItems = products.map((p) => {
-            let imageUrl = '/images/placeholder.jpg'
-            try {
-                // Parse JSON string for images
-                const images = p.images ? JSON.parse(p.images) : []
-                if (Array.isArray(images) && images.length > 0) imageUrl = images[0]
-                else if (typeof images === 'string') imageUrl = images
-            } catch (e) {
-                console.error("Error parsing product images:", e)
-            }
-
-            // Map Product Type to Marketplace Type
-            let marketType = 'THEME'
-            if (p.type.includes('ART') || p.type === 'ITEM') marketType = 'ART'
-
-            return {
-                id: p.id,
-                title: p.name,
-                description: p.description || '',
-                type: marketType,
-                price: p.price,
-                downloads: p._count.orderItems,
-                rating: 4.8,
-                creatorName: p.seller?.user?.name || 'Unknown Creator',
-                imageUrl: imageUrl,
-                tags: [p.type],
-                createdAt: p.createdAt
-            }
-        })
-
-        // 5. Combine and Sort by Date
-        const allItems = [...campaignItems, ...productItems].sort((a, b) =>
-            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-        )
-
-        // 6. Get User Purchased IDs
+        // 2. เช็คว่า User เคยซื้ออะไรไปแล้วบ้าง
         let purchasedIds: string[] = []
         if (userId) {
-            const user = await prisma.user.findUnique({
-                where: { id: userId },
-                include: {
-                    ownedCampaigns: true,
-                    inventory: true
-                }
-            })
-            const campaignIds = user?.ownedCampaigns.map(p => p.campaignId) || []
-            const productIds = user?.inventory.map(i => i.productId) || []
-            purchasedIds = [...campaignIds, ...productIds]
+            try {
+                // เช็คจากตาราง Purchase
+                const purchases = await prisma.purchase.findMany({
+                    where: { userId: userId },
+                    select: { campaignId: true }
+                })
+                purchasedIds = purchases.map(p => p.campaignId)
+            } catch (e) {
+                console.error("Error checking purchases:", e)
+            }
         }
 
+        // 3. แปลงข้อมูลส่งกลับไปหน้าบ้าน
+        const transformedItems = campaigns.map((campaign) => ({
+            id: campaign.id,
+            title: campaign.title,
+            description: campaign.description || '',
+
+            type: 'CAMPAIGN', // ส่งค่านี้เพื่อให้หน้าบ้าน Filter ถูกต้อง
+            price: campaign.price,
+            downloads: campaign.purchases ? campaign.purchases.length : 0,
+            rating: 5.0,
+
+            creatorName: campaign.creator?.name || 'Unknown GM',
+
+            // ใน Schema คุณใช้ชื่อ 'coverImage' ต้องแปลงเป็น 'imageUrl' ให้หน้าบ้าน
+            imageUrl: campaign.coverImage || 'https://placehold.co/600x400/1e293b/FFF?text=Campaign',
+
+            // เอา system มาเป็น Tag
+            tags: campaign.system ? [campaign.system] : []
+        }))
+
         return NextResponse.json({
-            items: allItems,
+            items: transformedItems,
             purchasedAssets: purchasedIds,
         })
 
     } catch (error) {
-        console.error('❌ SERVER ERROR:', error)
-        return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+        console.error('❌ Error fetching marketplace items:', error)
+        return NextResponse.json({ error: 'Failed to fetch items' }, { status: 500 })
     }
 }

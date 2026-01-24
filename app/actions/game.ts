@@ -2,11 +2,33 @@
 
 import { prisma } from '@/lib/prisma'
 
-// 1. ดึงข้อมูล Campaign ทั้งหมด (สำหรับหน้า Create Room)
+import { auth } from '@/auth'
+
+// 1. ดึงข้อมูล Campaign ที่เป็นเจ้าของ (สร้างเอง หรือ ซื้อมา)
 export async function getPublishedCampaigns() {
+    const session = await auth()
+    const userId = session?.user?.id
+
+    if (!userId) return []
+
+    // 1.1 หา ID ที่ซื้อมา
+    const purchases = await prisma.purchase.findMany({
+        where: { userId },
+        select: { campaignId: true }
+    })
+    const purchasedIds = purchases.map(p => p.campaignId)
+
+    // 1.2 Query Campaign (สร้างเอง OR ซื้อมา)
     return await prisma.campaign.findMany({
-        where: { isPublished: true },
-        include: { creator: true }
+        where: {
+            isPublished: true, // ยังคงเอาเฉพาะที่ Publish (หรือจะเอา Draft ด้วยถ้าเป็นของตัวเอง? ตาม Requirement เอาแค่ Published ก็เซฟดี)
+            OR: [
+                { creatorId: userId },
+                { id: { in: purchasedIds } }
+            ]
+        },
+        include: { creator: true },
+        orderBy: { updatedAt: 'desc' }
     })
 }
 
@@ -322,5 +344,29 @@ export async function createCampaign(data: any) { // หรือระบุ Ty
     } catch (error) {
         console.error("Create Campaign Error:", error)
         return { success: false, error: "Failed to create campaign" }
+    }
+}
+
+// 15. Quick Add Temporary Assets (Scene/NPC)
+export async function addTemporaryAsset(joinCode: string, type: 'SCENE' | 'NPC', data: { name: string, imageUrl: string }) {
+    const session = await prisma.gameSession.findUnique({ where: { joinCode } })
+    if (!session) throw new Error("Session not found")
+
+    if (type === 'SCENE') {
+        const currentScenes = session.customScenes ? JSON.parse(session.customScenes) : []
+        const newScene = { id: `custom-scene-${Date.now()}`, ...data }
+        await prisma.gameSession.update({
+            where: { joinCode },
+            data: { customScenes: JSON.stringify([...currentScenes, newScene]) }
+        })
+        return { success: true, asset: newScene }
+    } else {
+        const currentNpcs = session.customNpcs ? JSON.parse(session.customNpcs) : []
+        const newNpc = { id: `custom-npc-${Date.now()}`, ...data, type: 'NEUTRAL' }
+        await prisma.gameSession.update({
+            where: { joinCode },
+            data: { customNpcs: JSON.stringify([...currentNpcs, newNpc]) }
+        })
+        return { success: true, asset: newNpc }
     }
 }

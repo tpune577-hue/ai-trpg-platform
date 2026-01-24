@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-
-// Mock user ID - replace with actual authentication
-const MOCK_USER_ID = 'user-1'
+import { auth } from '@/auth'
 
 export async function POST(request: NextRequest) {
     try {
+        const session = await auth()
+        if (!session?.user?.id) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+        }
+
         const body = await request.json()
         const { itemId } = body
 
@@ -13,50 +16,34 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'Item ID required' }, { status: 400 })
         }
 
-        // Check if item exists
-        const item = await prisma.marketplaceItem.findUnique({
+        // 1. Check if campaign exists
+        const campaign = await prisma.campaign.findUnique({
             where: { id: itemId },
         })
 
-        if (!item) {
+        if (!campaign) {
             return NextResponse.json({ error: 'Item not found' }, { status: 404 })
         }
 
-        // Get user
-        const user = await prisma.user.findUnique({
-            where: { id: MOCK_USER_ID },
-            select: { purchasedAssets: true },
-        })
-
-        if (!user) {
-            return NextResponse.json({ error: 'User not found' }, { status: 404 })
-        }
-
-        // Parse existing assets or start empty
-        const currentAssets = user.purchasedAssets ? JSON.parse(user.purchasedAssets as unknown as string) : []
-
-        // Check if already purchased
-        if (currentAssets.includes(itemId)) {
-            return NextResponse.json({ error: 'Already purchased' }, { status: 400 })
-        }
-
-        // Add to purchased assets
-        const newAssets = [...currentAssets, itemId]
-
-        await prisma.user.update({
-            where: { id: MOCK_USER_ID },
-            data: {
-                purchasedAssets: JSON.stringify(newAssets),
+        // 2. Check if already purchased
+        const existingPurchase = await prisma.purchase.findUnique({
+            where: {
+                userId_campaignId: {
+                    userId: session.user.id,
+                    campaignId: itemId,
+                },
             },
         })
 
-        // Increment download count
-        await prisma.marketplaceItem.update({
-            where: { id: itemId },
+        if (existingPurchase) {
+            return NextResponse.json({ error: 'Already purchased' }, { status: 400 })
+        }
+
+        // 3. Create purchase record
+        await prisma.purchase.create({
             data: {
-                downloads: {
-                    increment: 1,
-                },
+                userId: session.user.id,
+                campaignId: itemId,
             },
         })
 

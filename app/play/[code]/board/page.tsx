@@ -4,6 +4,8 @@ import { useEffect, useState, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useGameSocket } from '@/hooks/useGameSocket'
 import { getLobbyInfo, updateGameSessionState, kickPlayer, pauseGameSession, endGameSession, updateCharacterStats } from '@/app/actions/game'
+import { addCustomAsset } from '@/app/actions/quick-add'
+
 import { GameLog } from '@/components/board/GameLog'
 import { SceneDisplay } from '@/components/board/SceneDisplay'
 import { EnhancedPartyStatus } from '@/components/board/EnhancedPartyStatus'
@@ -19,6 +21,8 @@ export default function CampaignBoardPage() {
     const [session, setSession] = useState<any>(null)
     const [campaignScenes, setCampaignScenes] = useState<any[]>([])
     const [campaignNpcs, setCampaignNpcs] = useState<any[]>([])
+    const [customScenes, setCustomScenes] = useState<any[]>([])
+    const [customNpcs, setCustomNpcs] = useState<any[]>([])
     const [dbPlayers, setDbPlayers] = useState<any[]>([])
     const [isLoadingData, setIsLoadingData] = useState(true)
 
@@ -38,18 +42,27 @@ export default function CampaignBoardPage() {
     const [gmInput, setGmInput] = useState('')
     const [targetDC, setTargetDC] = useState(15)
 
-    // ✅ AI State
+    // ✅ RESIZE STATE (สำหรับยืดหด Log)
+    const [sceneHeightPercent, setSceneHeightPercent] = useState(60) // เริ่มต้น Scene สูง 60%
+    const [isResizing, setIsResizing] = useState(false)
+    const boardRef = useRef<HTMLDivElement>(null)
+
+    // Quick Add Modal State
+    const [isAddModalOpen, setIsAddModalOpen] = useState(false)
+    const [addModalType, setAddModalType] = useState<'SCENE' | 'NPC'>('SCENE')
+    const [newItemName, setNewItemName] = useState('')
+    const [newItemUrl, setNewItemUrl] = useState('')
+    const [isAddingItem, setIsAddingItem] = useState(false)
+
+    // AI State
     const [isAiLoading, setIsAiLoading] = useState(false)
 
-    // ✅ State สำหรับ Overlay Animation
+    // Animation State
     const [showingDiceResult, setShowingDiceResult] = useState<any>(null)
-    // สำหรับ D20 Result ธรรมดา (กรณีไม่ใช่ Overlay)
     const [diceResult, setDiceResult] = useState<any>(null)
-
-    // ✅ Ref สำหรับเก็บ timeout ID
     const overlayTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
-    // --- NOTE & TASK STATE ---
+    // Note & Task State
     const [gmNotes, setGmNotes] = useState('')
     const [tasks, setTasks] = useState<{ id: number, text: string, done: boolean }[]>([])
     const [newTask, setNewTask] = useState('')
@@ -67,7 +80,7 @@ export default function CampaignBoardPage() {
         setTasks(prev => prev.filter(t => t.id !== id))
     }
 
-    // Load LocalStorage (GM Notes)
+    // Load LocalStorage
     useEffect(() => {
         if (typeof window !== 'undefined') {
             const savedNotes = localStorage.getItem(`gm_notes_${joinCode}`)
@@ -84,6 +97,37 @@ export default function CampaignBoardPage() {
         }
     }, [gmNotes, tasks, joinCode])
 
+    // ✅ RESIZE LOGIC (ทำงานเมื่อเริ่มลาก)
+    useEffect(() => {
+        const handleMouseMove = (e: MouseEvent) => {
+            if (!isResizing || !boardRef.current) return
+
+            const boardRect = boardRef.current.getBoundingClientRect()
+            const relativeY = e.clientY - boardRect.top
+            const newPercent = (relativeY / boardRect.height) * 100
+
+            // จำกัดความสูงไม่ให้น้อยกว่า 20% และไม่เกิน 80%
+            setSceneHeightPercent(Math.min(80, Math.max(20, newPercent)))
+        }
+
+        const handleMouseUp = () => {
+            setIsResizing(false)
+            document.body.style.cursor = 'default'
+        }
+
+        if (isResizing) {
+            window.addEventListener('mousemove', handleMouseMove)
+            window.addEventListener('mouseup', handleMouseUp)
+            document.body.style.cursor = 'row-resize' // เปลี่ยน Cursor ทั้งหน้า
+        }
+
+        return () => {
+            window.removeEventListener('mousemove', handleMouseMove)
+            window.removeEventListener('mouseup', handleMouseUp)
+            document.body.style.cursor = 'default'
+        }
+    }, [isResizing])
+
     // --- SOCKET HOOK ---
     const {
         onGameStateUpdate, onChatMessage, onPlayerAction, onDiceResult,
@@ -94,7 +138,6 @@ export default function CampaignBoardPage() {
         autoConnect: true
     })
 
-    // Announce handler
     const handleAnnounce = (log: any) => {
         sendPlayerAction({
             actionType: 'ANNOUNCE',
@@ -106,44 +149,53 @@ export default function CampaignBoardPage() {
     }
 
     // Fetch Data
-    useEffect(() => {
-        const fetchCampaignData = async () => {
-            try {
-                const data = await getLobbyInfo(joinCode)
-                if (data) {
-                    setSession(data)
-                    setCampaignScenes(data.campaign?.scenes || [])
-                    setCampaignNpcs(data.campaign?.npcs || [])
+    const fetchCampaignData = async () => {
+        try {
+            const data = await getLobbyInfo(joinCode)
+            if (data) {
+                setSession(data)
+                setCampaignScenes(data.campaign?.scenes || [])
+                setCampaignNpcs(data.campaign?.npcs || [])
 
-                    if (data.players) {
-                        setDbPlayers(data.players.map((p: any) => {
-                            const charData = p.characterData ? JSON.parse(p.characterData) : {}
-                            return {
-                                id: p.id,
-                                name: p.name,
-                                role: p.role,
-                                character: charData,
-                                stats: charData.stats || charData || {}
-                            }
-                        }))
-                    }
+                if (data.customScenes) {
+                    try { setCustomScenes(JSON.parse(data.customScenes)) } catch (e) { console.error("Parse Error customScenes", e) }
+                }
+                if (data.customNpcs) {
+                    try { setCustomNpcs(JSON.parse(data.customNpcs)) } catch (e) { console.error("Parse Error customNpcs", e) }
+                }
 
-                    const savedActiveNpcs = data.activeNpcs ? JSON.parse(data.activeNpcs) : []
-                    let initialSceneId = data.currentSceneId
-                    let initialSceneUrl = ''
-                    if (initialSceneId) {
-                        const foundScene = data.campaign?.scenes.find((s: any) => s.id === initialSceneId)
-                        initialSceneUrl = foundScene?.imageUrl || ''
-                    } else if (data.campaign?.scenes?.length > 0) {
-                        initialSceneId = data.campaign.scenes[0].id
-                        initialSceneUrl = data.campaign.scenes[0].imageUrl
-                    }
-                    setGameState((prev: any) => ({
-                        ...prev, currentScene: initialSceneId, sceneImageUrl: initialSceneUrl, activeNpcs: savedActiveNpcs
+                if (data.players) {
+                    setDbPlayers(data.players.map((p: any) => {
+                        const charData = p.characterData ? JSON.parse(p.characterData) : {}
+                        return {
+                            id: p.id,
+                            name: p.name,
+                            role: p.role,
+                            character: charData,
+                            stats: charData.stats || charData || {}
+                        }
                     }))
                 }
-            } catch (err) { console.error(err) } finally { setIsLoadingData(false) }
-        }
+
+                const savedActiveNpcs = data.activeNpcs ? JSON.parse(data.activeNpcs) : []
+                let initialSceneId = data.currentSceneId
+                let initialSceneUrl = ''
+                if (initialSceneId) {
+                    const allScenes = [...(data.campaign?.scenes || []), ...(data.customScenes ? JSON.parse(data.customScenes) : [])]
+                    const foundScene = allScenes.find((s: any) => s.id === initialSceneId)
+                    initialSceneUrl = foundScene?.imageUrl || ''
+                } else if (data.campaign?.scenes?.length > 0) {
+                    initialSceneId = data.campaign.scenes[0].id
+                    initialSceneUrl = data.campaign.scenes[0].imageUrl
+                }
+                setGameState((prev: any) => ({
+                    ...prev, currentScene: initialSceneId, sceneImageUrl: initialSceneUrl, activeNpcs: savedActiveNpcs
+                }))
+            }
+        } catch (err) { console.error(err) } finally { setIsLoadingData(false) }
+    }
+
+    useEffect(() => {
         fetchCampaignData()
     }, [joinCode])
 
@@ -158,22 +210,16 @@ export default function CampaignBoardPage() {
             }])
         })
 
-        // ✅ Handle Player Action (Main Logic)
         onPlayerAction((action) => {
-            // KICK PLAYER
             if (action.actionType === 'PLAYER_KICKED') {
                 setDbPlayers(prev => prev.filter(p => p.id !== action.targetPlayerId))
                 return
             }
-
-            // DICE OVERLAY LOGIC
             if (action.actionType === 'RNR_LIVE_UPDATE') {
                 setShowingDiceResult(action)
             }
             if (action.actionType === 'rnr_roll' || action.actionType === 'dice_roll') {
-                if (overlayTimeoutRef.current) {
-                    clearTimeout(overlayTimeoutRef.current)
-                }
+                if (overlayTimeoutRef.current) clearTimeout(overlayTimeoutRef.current)
                 setShowingDiceResult(action)
                 overlayTimeoutRef.current = setTimeout(() => {
                     setShowingDiceResult(null)
@@ -181,7 +227,6 @@ export default function CampaignBoardPage() {
                 }, 5000)
             }
 
-            // SCENE UPDATE & LOGGING
             if (action.actionType !== 'GM_UPDATE_SCENE') {
                 let content = ''
                 if (action.actorName === 'Game Master' && action.actionType === 'custom') {
@@ -206,7 +251,6 @@ export default function CampaignBoardPage() {
                     }
                 }
 
-                // Add to Logs
                 if (action.actionType !== 'RNR_LIVE_UPDATE' &&
                     action.actionType !== 'rnr_roll' &&
                     action.actionType !== 'dice_roll' &&
@@ -231,14 +275,10 @@ export default function CampaignBoardPage() {
 
     }, [onGameStateUpdate, onChatMessage, onPlayerAction, onWhisperReceived, dbPlayers, joinCode])
 
-    // ✅ Separate useEffect for onDiceResult
     useEffect(() => {
         onDiceResult(async (result) => {
             const playerName = result.playerName || result.actorName || 'Unknown'
-
-            // Clear previous timeout
             if (overlayTimeoutRef.current) clearTimeout(overlayTimeoutRef.current)
-
             setShowingDiceResult(result)
             overlayTimeoutRef.current = setTimeout(() => {
                 setShowingDiceResult(null)
@@ -260,14 +300,8 @@ export default function CampaignBoardPage() {
                 senderName: playerName,
                 timestamp: new Date()
             }])
-
-            // ✅ Refresh player data if WILL Power was used
-            if (result.willBoost && result.willBoost > 0) {
-                // ... refresh logic ...
-            }
         })
     }, [joinCode])
-
 
     // --- GM Actions ---
     const handleGmNarrate = () => {
@@ -276,24 +310,19 @@ export default function CampaignBoardPage() {
         setGmInput('')
     }
 
-    // 🤖 ✅ NEW: AI ASSIST FUNCTION
     const handleAskAI = async () => {
         if (isAiLoading) return
         setIsAiLoading(true)
         try {
-            // 1. Prepare Context
-            // ดึง 10 ข้อความล่าสุดเพื่อส่งเป็น History
             const chatHistory = logs.slice(-10).map(log => ({
                 role: log.senderName === 'Game Master' || log.senderName === 'GM' ? 'assistant' : 'user',
                 content: `${log.senderName}: ${log.content}`
             }))
-
-            // 2. Call API
             const response = await fetch('/api/ai/generate', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    campaignId: session?.campaign?.id, // ต้องแน่ใจว่า session โหลดเสร็จแล้ว
+                    campaignId: session?.campaign?.id,
                     history: chatHistory,
                     gameState: {
                         currentScene: campaignScenes.find(s => s.id === gameState.currentScene)?.name || 'Unknown',
@@ -301,17 +330,13 @@ export default function CampaignBoardPage() {
                     }
                 })
             })
-
             const data = await response.json()
-
             if (data.result) {
-                // เอาคำตอบมาใส่ในช่อง Input ให้ GM แก้ไขก่อนส่ง
                 setGmInput(data.result)
             } else {
                 alert("AI didn't respond. Check console.")
                 console.error(data)
             }
-
         } catch (error) {
             console.error("AI Error:", error)
             alert("Failed to connect to AI.")
@@ -322,16 +347,13 @@ export default function CampaignBoardPage() {
 
     const handleGmRoll = () => {
         const system = session?.campaign?.system || 'STANDARD'
-
         if (system === 'ROLE_AND_ROLL') {
             const rows: any[][] = []
             let currentWaveCount = 5
             let totalScore = 0
-
             while (currentWaveCount > 0) {
                 const waveResults = []
                 let nextWaveCount = 0
-
                 for (let i = 0; i < currentWaveCount; i++) {
                     const res = rollD4RnR()
                     waveResults.push(res)
@@ -342,7 +364,6 @@ export default function CampaignBoardPage() {
                 currentWaveCount = nextWaveCount
                 if (rows.length > 10) break
             }
-
             const actionData = {
                 actionType: 'rnr_roll',
                 actorName: 'Game Master',
@@ -350,7 +371,6 @@ export default function CampaignBoardPage() {
                 details: rows,
                 checkType: 'GM Roll'
             }
-
             setDiceResult({ roll: totalScore, total: totalScore, checkType: 'GM Roll (RnR)', actorName: 'GM' })
             sendPlayerAction(actionData as any)
         } else {
@@ -376,7 +396,9 @@ export default function CampaignBoardPage() {
     const toggleNpc = async (npc: any) => {
         const currentNpcs = gameState?.activeNpcs || []
         const isActive = currentNpcs.some((n: any) => n.id === npc.id)
-        let newNpcs = isActive ? currentNpcs.filter((n: any) => n.id !== npc.id) : [...currentNpcs, { ...npc, imageUrl: npc.avatarUrl || npc.imageUrl }]
+        const npcImage = npc.avatarUrl || npc.imageUrl
+
+        let newNpcs = isActive ? currentNpcs.filter((n: any) => n.id !== npc.id) : [...currentNpcs, { ...npc, imageUrl: npcImage }]
         const newState = { ...gameState, activeNpcs: newNpcs }
         setGameState(newState)
         await sendPlayerAction({
@@ -418,7 +440,6 @@ export default function CampaignBoardPage() {
         })
     }
 
-    // ✅ Handle HP/MP Updates
     const handleUpdateVitals = async (playerId: string, type: 'hp' | 'mp', delta: number) => {
         const player = dbPlayers.find(p => p.id === playerId)
         if (!player || !player.stats) return
@@ -473,11 +494,44 @@ export default function CampaignBoardPage() {
         }
     }
 
+    // Quick Add Handler
+    const handleQuickAdd = async (e: React.FormEvent) => {
+        e.preventDefault()
+        if (!newItemName || !newItemUrl) return
+
+        setIsAddingItem(true)
+        try {
+            const tempItem = {
+                id: `temp_${Date.now()}`,
+                name: newItemName,
+                imageUrl: newItemUrl,
+                avatarUrl: newItemUrl,
+                isCustom: true
+            }
+            if (addModalType === 'SCENE') setCustomScenes(prev => [...prev, tempItem])
+            else setCustomNpcs(prev => [...prev, tempItem])
+
+            await addCustomAsset(session.id, addModalType, newItemName, newItemUrl)
+
+            setIsAddModalOpen(false)
+            setNewItemName('')
+            setNewItemUrl('')
+        } catch (error) {
+            console.error("Quick Add Failed:", error)
+            alert("Failed to add asset.")
+        } finally {
+            setIsAddingItem(false)
+        }
+    }
+
     const partyPlayers = dbPlayers.filter(p => p.role !== 'GM')
     const campaignSystem = session?.campaign?.system || 'STANDARD'
     const SHORTCUT_STATS = campaignSystem === 'ROLE_AND_ROLL'
         ? ['Strength', 'Dexterity', 'Intellect', 'Charm']
         : ['STR', 'DEX', 'INT', 'WIS', 'CHA']
+
+    const allScenes = [...campaignScenes, ...customScenes]
+    const allNpcs = [...campaignNpcs, ...customNpcs]
 
     if (isLoadingData) return <div className="h-screen bg-slate-950 flex items-center justify-center text-amber-500 animate-pulse">Loading...</div>
 
@@ -497,21 +551,20 @@ export default function CampaignBoardPage() {
             </div>
 
             {/* CONTENT */}
-            <div className="flex flex-1 pt-14 pb-24 md:pb-24 h-full w-full relative">
-                {/* LEFT: Board & Log */}
-                <div className="flex-1 flex flex-col w-full h-full min-w-0">
-                    <div className="h-[70%] relative bg-black">
-                        <SceneDisplay sceneDescription={gmNarration} imageUrl={currentSceneUrl} npcs={gameState?.activeNpcs || []} />
+            <div className="flex flex-1 pt-14 pb-24 md:pb-32 h-full w-full relative">
 
-                        {/* ✅ DICE RESULT OVERLAY */}
+                {/* ✅ LEFT: Board & Log with Resize */}
+                <div className="flex-1 flex flex-col w-full h-full min-w-0 relative" ref={boardRef}>
+
+                    {/* Scene Area (Height controlled by state) */}
+                    <div style={{ height: `${sceneHeightPercent}%` }} className="w-full relative bg-black shrink-0">
+                        <SceneDisplay sceneDescription={gmNarration} imageUrl={currentSceneUrl} npcs={gameState?.activeNpcs || []} />
                         {showingDiceResult && (
                             <DiceResultOverlay
                                 result={showingDiceResult}
                                 onClose={() => setShowingDiceResult(null)}
                             />
                         )}
-
-                        {/* Standard Dice Result Popup (Legacy) */}
                         {diceResult && !showingDiceResult && (
                             <div className="absolute inset-0 flex items-center justify-center z-50 bg-black/60 backdrop-blur-sm">
                                 <div className="bg-slate-900 p-8 rounded-2xl border-2 border-amber-500 text-center animate-in zoom-in">
@@ -521,8 +574,21 @@ export default function CampaignBoardPage() {
                             </div>
                         )}
                     </div>
-                    <div className="h-[30%] bg-slate-950 border-t border-slate-800 flex flex-col">
-                        <div className="bg-slate-900 px-3 py-1 text-xs font-bold text-slate-500 uppercase">Adventure Log</div>
+
+                    {/* ✅ DRAG HANDLE */}
+                    <div
+                        onMouseDown={() => setIsResizing(true)}
+                        className="h-2 w-full bg-slate-800 hover:bg-amber-500 cursor-row-resize flex items-center justify-center shrink-0 transition-colors z-20 group"
+                    >
+                        <div className="w-12 h-1 bg-slate-600 rounded-full group-hover:bg-white transition-colors" />
+                    </div>
+
+                    {/* Log Area (Fills remaining space) */}
+                    <div className="flex-1 bg-slate-950 border-t border-slate-800 flex flex-col min-h-0">
+                        <div className="bg-slate-900 px-3 py-1 text-xs font-bold text-slate-500 uppercase flex justify-between">
+                            <span>Adventure Log</span>
+                            <span className="text-[10px] opacity-50">Drag bar above to resize</span>
+                        </div>
                         <div className="flex-1 p-2 overflow-y-auto custom-scrollbar"><GameLog logs={logs} onAnnounce={handleAnnounce} /></div>
                     </div>
                 </div>
@@ -538,14 +604,12 @@ export default function CampaignBoardPage() {
                         {activeTab === 'PARTY' && (
                             <EnhancedPartyStatus
                                 players={partyPlayers}
-                                scenes={campaignScenes.map(s => ({ id: s.id, name: s.name, url: s.imageUrl }))}
+                                scenes={allScenes.map(s => ({ id: s.id, name: s.name, url: s.imageUrl }))}
                                 system={campaignSystem as any}
                                 onSetPrivateScene={(pid, sid) => { setPrivateScene(pid, sid) }}
                                 onWhisper={sendWhisper}
                                 onGiveItem={handleGiveItem}
-                                onRequestRoll={(pid, checkType, dc) => {
-                                    requestRoll(checkType, dc, pid)
-                                }}
+                                onRequestRoll={(pid, checkType, dc) => { requestRoll(checkType, dc, pid) }}
                                 onKickPlayer={handleKickPlayer}
                                 onUpdateVitals={handleUpdateVitals}
                                 playerInventories={playerInventories}
@@ -553,21 +617,51 @@ export default function CampaignBoardPage() {
                         )}
                         {activeTab === 'SCENE' && (
                             <div className="grid grid-cols-2 gap-2">
-                                {campaignScenes.map(s => (
-                                    <div key={s.id} onClick={() => changeScene(s.id, s.imageUrl)} className={`aspect-video bg-black rounded border-2 cursor-pointer relative ${gameState.sceneImageUrl === s.imageUrl ? 'border-amber-500' : 'border-slate-700 hover:border-slate-500'}`}>
-                                        <img src={s.imageUrl} className="w-full h-full object-cover opacity-70 hover:opacity-100" />
-                                        <div className="absolute bottom-0 w-full bg-black/60 text-white text-[9px] p-1 truncate">{s.name}</div>
+                                <button
+                                    onClick={() => { setAddModalType('SCENE'); setIsAddModalOpen(true) }}
+                                    className="aspect-video bg-slate-800 border-2 border-dashed border-slate-600 rounded flex flex-col items-center justify-center hover:bg-slate-700 hover:border-amber-500 transition-all group"
+                                >
+                                    <div className="w-8 h-8 rounded-full bg-slate-700 group-hover:bg-amber-500 flex items-center justify-center text-slate-400 group-hover:text-black transition-colors mb-1">
+                                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                                    </div>
+                                    <span className="text-[10px] uppercase font-bold text-slate-500 group-hover:text-white">Add Scene</span>
+                                </button>
+                                {allScenes.map(s => (
+                                    <div
+                                        key={s.id}
+                                        onClick={() => changeScene(s.id, s.imageUrl)}
+                                        className={`aspect-video bg-black rounded border-2 cursor-pointer relative group ${gameState.sceneImageUrl === s.imageUrl ? 'border-amber-500' : (s.isCustom ? 'border-green-600/50 hover:border-green-400' : 'border-slate-700 hover:border-slate-500')}`}
+                                    >
+                                        <img src={s.imageUrl} className="w-full h-full object-cover opacity-70 group-hover:opacity-100 transition-opacity" />
+                                        <div className="absolute bottom-0 w-full bg-black/60 text-white text-[9px] p-1 truncate flex justify-between items-center">
+                                            <span>{s.name}</span>
+                                            {s.isCustom && <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>}
+                                        </div>
                                     </div>
                                 ))}
                             </div>
                         )}
                         {activeTab === 'NPC' && (
                             <div className="space-y-1">
-                                {campaignNpcs.map(npc => {
+                                <button
+                                    onClick={() => { setAddModalType('NPC'); setIsAddModalOpen(true) }}
+                                    className="w-full flex items-center justify-center gap-2 p-3 rounded border-2 border-dashed border-slate-700 hover:border-green-500 hover:bg-slate-800 text-slate-500 hover:text-green-400 transition-all mb-3 font-bold text-xs uppercase"
+                                >
+                                    <span>+ Add Temporary NPC</span>
+                                </button>
+                                {allNpcs.map(npc => {
                                     const active = gameState.activeNpcs.some((n: any) => n.id === npc.id)
+                                    const displayImage = npc.avatarUrl || npc.imageUrl
                                     return (
-                                        <div key={npc.id} onClick={() => toggleNpc(npc)} className={`flex items-center gap-2 p-2 rounded cursor-pointer border ${active ? 'bg-amber-900/20 border-amber-500' : 'hover:bg-slate-800 border-transparent'}`}>
-                                            <img src={npc.avatarUrl} className="w-8 h-8 rounded bg-black" />
+                                        <div
+                                            key={npc.id}
+                                            onClick={() => toggleNpc(npc)}
+                                            className={`flex items-center gap-2 p-2 rounded cursor-pointer border ${active ? 'bg-amber-900/20 border-amber-500' : (npc.isCustom ? 'border-green-900/30 hover:border-green-500/50' : 'hover:bg-slate-800 border-transparent')}`}
+                                        >
+                                            <div className="relative">
+                                                <img src={displayImage} className="w-8 h-8 rounded bg-black object-cover" />
+                                                {npc.isCustom && <div className="absolute -top-1 -right-1 w-2 h-2 bg-green-500 rounded-full border border-black"></div>}
+                                            </div>
                                             <span className="text-xs text-white font-bold flex-1">{npc.name}</span>
                                             {active && <span className="text-[9px] text-amber-500">ON BOARD</span>}
                                         </div>
@@ -608,10 +702,9 @@ export default function CampaignBoardPage() {
             </div>
 
             {/* BOTTOM CONTROLS */}
-            <div className="absolute bottom-0 w-full h-auto min-h-[80px] md:h-24 bg-slate-900 border-t border-slate-700 flex flex-col md:flex-row items-center px-4 py-2 gap-3 z-50">
+            <div className="absolute bottom-0 w-full h-auto min-h-[80px] md:h-32 bg-slate-900 border-t border-slate-700 flex flex-col md:flex-row items-center px-4 py-2 gap-3 z-50">
                 <div className="flex gap-2 shrink-0">
                     <button onClick={handleGmRoll} className="bg-amber-600 hover:bg-amber-500 text-black px-4 py-2 rounded-lg font-black shadow-lg active:scale-95 transition-all flex items-center gap-2"><span className="text-xl">🎲</span><span className="hidden md:inline">GM Roll</span></button>
-                    {/* Push to Talk Button */}
                     <button
                         className="bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-lg font-bold shadow-lg active:scale-95 transition-all flex items-center gap-2"
                         onMouseDown={() => console.log('🎤 GM Push to Talk - Start')}
@@ -622,30 +715,21 @@ export default function CampaignBoardPage() {
                     </button>
                 </div>
 
-                {/* ✅ INPUT AREA WITH AI BUTTON */}
                 <div className="w-full md:flex-1 flex gap-2">
-                    {/* ปุ่ม AI Assist */}
                     <button
                         onClick={handleAskAI}
                         disabled={isAiLoading}
                         className={`px-3 py-2 rounded-lg font-bold text-sm flex items-center gap-2 transition-all 
                             ${isAiLoading ? 'bg-slate-700 text-slate-500 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg active:scale-95'}`}
                     >
-                        {isAiLoading ? (
-                            <span className="animate-spin">⏳</span>
-                        ) : (
-                            <span>✨ AI Assist</span>
-                        )}
+                        {isAiLoading ? <span className="animate-spin">⏳</span> : <span>✨ AI Assist</span>}
                     </button>
-
-                    <input value={gmInput} onChange={e => setGmInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleGmNarrate()} placeholder="Narrate..." className="flex-1 bg-slate-800 border-slate-700 rounded px-3 py-2 text-sm text-slate-200 outline-none focus:border-amber-500" />
-                    <button onClick={handleGmNarrate} className="bg-slate-700 text-slate-200 px-3 py-2 rounded text-sm font-bold">Send</button>
+                    <input value={gmInput} onChange={e => setGmInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleGmNarrate()} placeholder="Narrate..." className="flex-1 bg-slate-800 border-slate-700 rounded px-3 py-2 text-sm text-slate-200 outline-none focus:border-amber-500 h-12" />
+                    <button onClick={handleGmNarrate} className="bg-slate-700 text-slate-200 px-3 py-2 rounded text-sm font-bold h-12">Send</button>
                 </div>
 
                 <div className="w-full md:w-auto flex gap-2 overflow-x-auto pb-2 md:pb-0">
-                    <input type="number" value={targetDC} onChange={e => setTargetDC(Number(e.target.value))} className="w-12 bg-slate-800 border-slate-700 rounded text-center text-amber-500 font-bold text-sm" />
-
-                    {/* ✅ Dynamic Shortcuts based on System */}
+                    <input type="number" value={targetDC} onChange={e => setTargetDC(Number(e.target.value))} className="w-12 bg-slate-800 border-slate-700 rounded text-center text-amber-500 font-bold text-sm h-10" />
                     {SHORTCUT_STATS.map(stat => (
                         <button key={stat} onClick={() => requestRoll(`${stat} Check`, targetDC)} className="w-10 h-10 bg-slate-800 border-slate-600 rounded flex flex-col items-center justify-center active:scale-95 hover:border-slate-400">
                             <span className="text-[8px] text-slate-400">{stat.substring(0, 3)}</span>
@@ -654,6 +738,31 @@ export default function CampaignBoardPage() {
                     ))}
                 </div>
             </div>
+
+            {/* ADD ASSET MODAL */}
+            {isAddModalOpen && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+                    <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-sm p-6 shadow-2xl">
+                        <h3 className="text-lg font-bold text-white mb-4">Add Temporary {addModalType === 'SCENE' ? 'Scene' : 'NPC'}</h3>
+                        <form onSubmit={handleQuickAdd} className="space-y-4">
+                            <div>
+                                <label className="text-xs font-bold text-slate-400 uppercase">Name</label>
+                                <input required value={newItemName} onChange={e => setNewItemName(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-white" placeholder="e.g. Dark Cave" />
+                            </div>
+                            <div>
+                                <label className="text-xs font-bold text-slate-400 uppercase">Image URL</label>
+                                <input required type="url" value={newItemUrl} onChange={e => setNewItemUrl(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-white" placeholder="https://..." />
+                            </div>
+                            <div className="flex gap-2 pt-2">
+                                <button type="button" onClick={() => setIsAddModalOpen(false)} className="flex-1 py-2 bg-slate-800 text-slate-300 rounded font-bold">Cancel</button>
+                                <button type="submit" disabled={isAddingItem} className="flex-1 py-2 bg-green-600 text-white rounded font-bold hover:bg-green-500">
+                                    {isAddingItem ? 'Adding...' : 'Add Asset'}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
         </div>
     )
 }

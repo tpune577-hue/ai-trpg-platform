@@ -21,6 +21,10 @@ model User {
   // Role: "USER", "GM", "ADMIN"
   role          String    @default("USER")
 
+// ✅ Ban feature
+  bannedUntil   DateTime? // วันที่ปลดแบน (ถ้าเป็น null แปลว่าปกติ, ถ้ามีค่าและยังไม่ถึง = โดนแบน)
+  banReason     String?   // เหตุผลที่แบน
+
   // NextAuth Relations
   accounts      Account[]
   sessions      Session[]

@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma"
 import { auth } from "@/auth"
+import Link from "next/link"
 import AdminDashboardClient from "./AdminDashboardClient"
 
 export const dynamic = 'force-dynamic'
@@ -42,7 +43,7 @@ export default async function AdminDashboard() {
                 <p className="text-slate-400">Welcome back, {session.user.name}.</p>
             </div>
 
-            {/* Stats Cards */}
+            {/* --- STATS CARDS --- */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 <StatCard title="Total Users" value={userCount} icon="👥" color="bg-blue-900/20 border-blue-800 text-blue-400" />
                 <StatCard title="Total Campaigns" value={campaignCount} icon="📜" color="bg-purple-900/20 border-purple-800 text-purple-400" />
@@ -50,12 +51,39 @@ export default async function AdminDashboard() {
                 <StatCard title="Active Sellers" value={activeSellersCount} icon="🏪" color="bg-emerald-900/20 border-emerald-800 text-emerald-400" />
             </div>
 
-            {/* Client Component (Table + Modal) */}
-            <AdminDashboardClient pendingSellers={pendingSellersList} />
+            {/* --- 🛠️ MANAGEMENT TOOLS (เพิ่มใหม่) --- */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* ปุ่มไปหน้า Payout Calculator */}
+                <Link href="/admin/payouts" className="p-6 rounded-xl border border-emerald-800 bg-emerald-900/20 hover:bg-emerald-900/40 transition-all group flex items-center justify-between cursor-pointer">
+                    <div>
+                        <div className="text-xs font-bold uppercase opacity-70 mb-1 tracking-wider text-emerald-400">Financial</div>
+                        <div className="text-2xl font-black text-white">Payouts Calculator 💰</div>
+                        <div className="text-xs text-slate-400 mt-1 group-hover:text-white">Calculate earnings & Export CSV</div>
+                    </div>
+                    <div className="text-4xl opacity-50 group-hover:scale-110 transition-transform">💸</div>
+                </Link>
+
+                {/* ปุ่มไปหน้า Seller Management (เต็มรูปแบบ) */}
+                <Link href="/admin/sellers" className="p-6 rounded-xl border border-blue-800 bg-blue-900/20 hover:bg-blue-900/40 transition-all group flex items-center justify-between cursor-pointer">
+                    <div>
+                        <div className="text-xs font-bold uppercase opacity-70 mb-1 tracking-wider text-blue-400">Management</div>
+                        <div className="text-2xl font-black text-white">Manage All Sellers 📋</div>
+                        <div className="text-xs text-slate-400 mt-1 group-hover:text-white">View history, Approve, or Ban users</div>
+                    </div>
+                    <div className="text-4xl opacity-50 group-hover:scale-110 transition-transform">👔</div>
+                </Link>
+            </div>
+
+            {/* --- PENDING REQUESTS (Client Component) --- */}
+            <div>
+                <h3 className="text-xl font-bold text-white mb-4">Verification Queue</h3>
+                <AdminDashboardClient pendingSellers={pendingSellersList} />
+            </div>
         </div>
     )
 }
 
+// Helper Component
 function StatCard({ title, value, icon, color, highlight = false }: any) {
     return (
         <div className={`p-6 rounded-xl border ${color} flex items-center justify-between relative overflow-hidden group hover:scale-[1.02] transition-transform`}>

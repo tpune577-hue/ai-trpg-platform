@@ -4,14 +4,13 @@ import { useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createCampaignAction, updateCampaignAction, getCampaignById } from '@/app/actions/campaign'
 import CharacterCreator from '@/components/game/CharacterCreator'
-import Link from 'next/link' // ✅ เพิ่ม Import Link
+import Link from 'next/link'
 
-// ✅ รับ Prop isApprovedSeller เข้ามา
 interface Props {
     isApprovedSeller: boolean
 }
 
-export default function CreateCampaignPage({ isApprovedSeller }: Props) {
+export default function CreateCampaignForm({ isApprovedSeller }: Props) {
     const router = useRouter()
     const searchParams = useSearchParams()
     const campaignId = searchParams.get('id')
@@ -142,7 +141,7 @@ export default function CreateCampaignPage({ isApprovedSeller }: Props) {
         setPrice(isNaN(val) ? 0 : val)
     }
 
-    // ✅ SAVE / PUBLISH
+    // ✅ SAVE / PUBLISH Logic
     const handleSave = async (isDraft: boolean) => {
         if (!title) return alert("Title is required")
 
@@ -183,10 +182,10 @@ export default function CreateCampaignPage({ isApprovedSeller }: Props) {
     const inputClass = "w-full bg-slate-900 border border-slate-700 rounded-xl p-4 text-white focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none transition-all placeholder-slate-600 text-base"
     const textareaClass = "w-full min-h-[150px] bg-slate-900 border border-slate-700 rounded-xl p-4 text-white focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none transition-all placeholder-slate-600 text-base leading-relaxed resize-y"
 
-    if (isFetching) return <div className="flex h-screen bg-slate-950 items-center justify-center text-white">Loading Campaign Data...</div>
-
     // คำนวณสถานะ Error ของ Price
     const isPriceError = !isApprovedSeller && price > 0
+
+    if (isFetching) return <div className="flex h-screen bg-slate-950 items-center justify-center text-white font-bold animate-pulse">Loading Campaign Data...</div>
 
     return (
         <div className="flex h-screen bg-slate-950 text-white overflow-hidden font-sans">
@@ -213,14 +212,14 @@ export default function CreateCampaignPage({ isApprovedSeller }: Props) {
                 <div className="p-4 border-t border-slate-800 bg-slate-900 space-y-3">
                     <button
                         onClick={() => handleSave(true)}
-                        disabled={isLoading || isPriceError} // ✅ ปิดปุ่มถ้าติด Price Error
+                        disabled={isLoading || isPriceError}
                         className="w-full bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-base py-3 rounded-xl border border-slate-700 hover:border-slate-500 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         {isLoading ? 'Saving...' : (campaignId ? '💾 Update Draft' : '💾 Save Draft')}
                     </button>
                     <button
                         onClick={() => handleSave(false)}
-                        disabled={isLoading || isPriceError} // ✅ ปิดปุ่มถ้าติด Price Error
+                        disabled={isLoading || isPriceError}
                         className="w-full bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-black font-black text-lg py-4 rounded-xl shadow-lg shadow-amber-900/20 disabled:opacity-50 transition-all active:scale-95 disabled:cursor-not-allowed"
                     >
                         {isLoading ? 'Publishing...' : '🚀 PUBLISH'}
@@ -241,7 +240,7 @@ export default function CreateCampaignPage({ isApprovedSeller }: Props) {
                                     <input value={title} onChange={e => setTitle(e.target.value)} className={inputClass} placeholder="e.g. The Curse of Strahd" style={{ fontSize: '1.25rem', fontWeight: 'bold' }} />
                                 </InputGroup>
 
-                                {/* ✅ Price Field พร้อม Seller Check */}
+                                {/* Price Field พร้อม Seller Check */}
                                 <InputGroup label="Price (Coins)">
                                     <input
                                         type="number"
@@ -251,7 +250,6 @@ export default function CreateCampaignPage({ isApprovedSeller }: Props) {
                                         className={`${inputClass} ${isPriceError ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : ''}`}
                                         placeholder="0 for Free"
                                     />
-                                    {/* แจ้งเตือนถ้าไม่ใช่ Seller */}
                                     {isPriceError && (
                                         <div className="mt-3 p-3 bg-red-900/20 border border-red-900/50 rounded-lg text-sm text-red-300">
                                             <strong>Seller Required:</strong> You must register as a Seller to charge for content.
@@ -515,7 +513,7 @@ export default function CreateCampaignPage({ isApprovedSeller }: Props) {
     )
 }
 
-// --- Helper Components --- (เหมือนเดิม)
+// --- Helper Components ---
 const SidebarBtn = ({ label, active, onClick, special }: any) => (
     <button
         onClick={onClick}

@@ -1,103 +1,100 @@
 'use server'
 
+import { auth } from "@/auth"
 import { prisma } from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
 
 // --- 1. CREATE CAMPAIGN (Save & Publish) ---
 export async function createCampaignAction(data: any) {
+    const session = await auth()
+    if (!session?.user?.email) return { error: "Unauthorized" }
+
     try {
         console.log("📝 Processing Campaign:", data.title)
-        console.log("Status:", data.isPublished ? "PUBLISHED" : "DRAFT")
 
-        // 1. Create Main Campaign Record
+        // 🛡️ 1. Seller Check: ถ้ามีการตั้งราคา ต้องเช็คว่าเป็น Seller ที่ Approved แล้วหรือไม่
+        if (data.price && data.price > 0) {
+            const user = await prisma.user.findUnique({
+                where: { email: session.user.email },
+                include: { sellerProfile: true }
+            })
+
+            if (!user?.sellerProfile || user.sellerProfile.status !== 'APPROVED') {
+                return { error: "You must be a registered seller to sell paid campaigns." }
+            }
+        }
+
+        // 2. Create Main Campaign Record
         const campaign = await prisma.campaign.create({
             data: {
                 title: data.title,
                 description: data.description,
                 price: data.price || 0,
                 coverImage: data.coverImage,
-                isPublished: data.isPublished ?? false, // ✅ รองรับ Draft
-
-                // ✅ เพิ่ม System Field (รับค่าจากหน้า Create Campaign)
+                isPublished: data.isPublished ?? false,
                 system: data.system || 'STANDARD',
-
-                // Story Details
                 storyIntro: data.storyIntro,
                 storyMid: data.storyMid,
                 storyEnd: data.storyEnd,
-
-                // Creator (Hardcoded Demo User for now)
+                // ✅ ใช้ Email ของ User ที่ Login จริงๆ แทน Demo
                 creator: {
-                    connectOrCreate: {
-                        where: { email: 'demo@gm.com' },
-                        create: { email: 'demo@gm.com', name: 'Demo GM' }
-                    }
+                    connect: { email: session.user.email }
                 }
             }
         })
 
-        // 2. Save Scenes
+        // 3. Save Related Data (Scenes, NPCs, PreGens)
         if (data.scenes?.length > 0) {
             await prisma.scene.createMany({
                 data: data.scenes.map((s: any) => ({
-                    name: s.name,
-                    imageUrl: s.imageUrl,
-                    campaignId: campaign.id
+                    name: s.name, imageUrl: s.imageUrl, campaignId: campaign.id
                 }))
             })
         }
 
-        // 3. Save NPCs
         if (data.npcs?.length > 0) {
             await prisma.npc.createMany({
                 data: data.npcs.map((n: any) => ({
-                    name: n.name,
-                    type: n.type,
-                    avatarUrl: n.avatarUrl,
-                    campaignId: campaign.id
+                    name: n.name, type: n.type, avatarUrl: n.avatarUrl, campaignId: campaign.id
                 }))
             })
         }
 
-        // 4. Save Pre-Gen Characters (Complex Logic)
         if (data.preGens?.length > 0) {
             await prisma.preGenCharacter.createMany({
                 data: data.preGens.map((c: any) => {
-                    // หา Description มาใส่ใน Bio (รองรับทั้ง Standard และ Role & Roll)
                     const bioText = c.data?.bio?.description || c.data?.description || ''
-
                     return {
                         name: c.name,
-                        avatarUrl: c.imageUrl, // Map จาก UI (imageUrl) ไป DB (avatarUrl)
+                        avatarUrl: c.imageUrl,
                         sheetType: c.sheetType || 'STANDARD',
                         bio: bioText,
-                        stats: JSON.stringify(c.data), // ✅ เก็บก้อน JSON ทั้งหมด
+                        stats: JSON.stringify(c.data),
                         campaignId: campaign.id
                     }
                 })
             })
         }
 
-        // Revalidate หน้าแรก (Dashboard) เพื่อให้ข้อมูลใหม่เด้งขึ้นมา
         revalidatePath('/')
-
         return { success: true, campaignId: campaign.id }
 
     } catch (error) {
         console.error("❌ Create Campaign Error:", error)
-        throw new Error("Failed to create campaign")
+        return { error: "Failed to create campaign" }
     }
 }
 
-// --- 2. GET CAMPAIGNS (Dashboard) ---
+// --- 2. GET CAMPAIGNS (Dashboard & Admin) ---
 export async function getCampaigns() {
     try {
         const campaigns = await prisma.campaign.findMany({
             orderBy: { createdAt: 'desc' },
             include: {
+                user: { select: { id: true, name: true, image: true, email: true } },
                 creator: { select: { name: true } },
                 _count: {
-                    select: { sessions: true, purchases: true }
+                    select: { sessions: true, purchases: true } // หมายเหตุ: purchases ในที่นี้คือนับจำนวน relation
                 }
             }
         })
@@ -108,13 +105,14 @@ export async function getCampaigns() {
     }
 }
 
-// --- 3. GET CAMPAIGN BY ID (Detail Page) ---
+// --- 3. GET CAMPAIGN BY ID ---
 export async function getCampaignById(id: string) {
     try {
         const campaign = await prisma.campaign.findUnique({
             where: { id },
             include: {
                 creator: { select: { name: true, email: true } },
+                user: { select: { id: true, name: true, image: true } },
                 scenes: true,
                 npcs: true,
                 preGens: true
@@ -127,17 +125,18 @@ export async function getCampaignById(id: string) {
     }
 }
 
-// --- 4. GET MY CAMPAIGNS (ดึงเฉพาะของฉัน) ---
+// --- 4. GET MY CAMPAIGNS ---
 export async function getMyCampaigns() {
-    try {
-        // Hardcode email ไว้ก่อนเพื่อให้ตรงกับตอน Create
-        const userEmail = 'demo@gm.com'
+    const session = await auth()
+    if (!session?.user?.email) return []
 
+    try {
+        // ✅ ใช้ Email จริงๆ ของ User
         const campaigns = await prisma.campaign.findMany({
             where: {
-                creator: { email: userEmail }
+                creator: { email: session.user.email }
             },
-            orderBy: { updatedAt: 'desc' }, // เรียงตามที่แก้ล่าสุด
+            orderBy: { updatedAt: 'desc' },
             include: {
                 _count: { select: { sessions: true, purchases: true } }
             }
@@ -149,29 +148,71 @@ export async function getMyCampaigns() {
     }
 }
 
-// --- 5. DELETE CAMPAIGN ---
+// --- 5. DELETE CAMPAIGN (Admin & Owner) ---
 export async function deleteCampaign(id: string) {
+    const session = await auth()
+    if (!session?.user) return { error: "Unauthorized" }
+
+    const isAdmin = session.user.role === 'ADMIN'
+
     try {
-        await prisma.campaign.delete({
-            where: { id }
-        })
+        if (isAdmin) {
+            await prisma.campaign.delete({ where: { id } })
+        } else {
+            // ถ้าไม่ใช่ Admin ต้องเช็คว่าเป็นเจ้าของหรือไม่
+            const campaign = await prisma.campaign.findUnique({
+                where: { id },
+                include: { creator: true }
+            })
 
-        revalidatePath('/campaign/my') // Refresh หน้า My Campaign
-        revalidatePath('/') // Refresh หน้า Marketplace
+            if (campaign?.creator?.email !== session.user.email) {
+                return { error: "You are not authorized to delete this campaign." }
+            }
 
+            await prisma.campaign.delete({ where: { id } })
+        }
+
+        revalidatePath('/admin/campaigns')
+        revalidatePath('/campaign/my')
+        revalidatePath('/')
         return { success: true }
     } catch (error) {
         console.error("Failed to delete campaign:", error)
-        throw new Error("Failed to delete campaign")
+        return { error: "Failed to delete campaign. It might have active orders." }
     }
 }
 
 // --- 6. UPDATE CAMPAIGN ---
 export async function updateCampaignAction(campaignId: string, data: any) {
+    const session = await auth()
+    if (!session?.user?.email) return { error: "Unauthorized" }
+
     try {
         console.log("📝 Updating Campaign:", campaignId)
 
-        // 1. Update Main Info
+        // 🛡️ Seller Check สำหรับการแก้ไขด้วย
+        if (data.price && data.price > 0) {
+            const user = await prisma.user.findUnique({
+                where: { email: session.user.email },
+                include: { sellerProfile: true }
+            })
+
+            if (!user?.sellerProfile || user.sellerProfile.status !== 'APPROVED') {
+                return { error: "You must be a registered seller to sell paid campaigns." }
+            }
+        }
+
+        // ตรวจสอบความเป็นเจ้าของ (ถ้าไม่ใช่ Admin)
+        if (session.user.role !== 'ADMIN') {
+            const existingCampaign = await prisma.campaign.findUnique({
+                where: { id: campaignId },
+                include: { creator: true }
+            })
+            if (existingCampaign?.creator?.email !== session.user.email) {
+                return { error: "Unauthorized" }
+            }
+        }
+
         await prisma.campaign.update({
             where: { id: campaignId },
             data: {
@@ -180,54 +221,40 @@ export async function updateCampaignAction(campaignId: string, data: any) {
                 price: data.price || 0,
                 coverImage: data.coverImage,
                 isPublished: data.isPublished,
-
-                // ✅ อัปเดต System
                 system: data.system || 'STANDARD',
-
                 storyIntro: data.storyIntro,
                 storyMid: data.storyMid,
                 storyEnd: data.storyEnd,
             }
         })
 
-        // 2. Update Scenes (ลบของเก่าแล้วสร้างใหม่ ง่ายสุดสำหรับความ Consistency)
+        // Re-create relations logic
         await prisma.scene.deleteMany({ where: { campaignId } })
         if (data.scenes?.length > 0) {
             await prisma.scene.createMany({
                 data: data.scenes.map((s: any) => ({
-                    name: s.name,
-                    imageUrl: s.imageUrl,
-                    campaignId: campaignId
+                    name: s.name, imageUrl: s.imageUrl, campaignId: campaignId
                 }))
             })
         }
 
-        // 3. Update NPCs
         await prisma.npc.deleteMany({ where: { campaignId } })
         if (data.npcs?.length > 0) {
             await prisma.npc.createMany({
                 data: data.npcs.map((n: any) => ({
-                    name: n.name,
-                    type: n.type,
-                    avatarUrl: n.avatarUrl,
-                    campaignId: campaignId
+                    name: n.name, type: n.type, avatarUrl: n.avatarUrl, campaignId: campaignId
                 }))
             })
         }
 
-        // 4. Update Pre-Gens
         await prisma.preGenCharacter.deleteMany({ where: { campaignId } })
         if (data.preGens?.length > 0) {
             await prisma.preGenCharacter.createMany({
                 data: data.preGens.map((c: any) => {
                     const bioText = c.data?.bio?.description || c.data?.description || ''
                     return {
-                        name: c.name,
-                        avatarUrl: c.imageUrl,
-                        sheetType: c.sheetType || 'STANDARD',
-                        bio: bioText,
-                        stats: JSON.stringify(c.data),
-                        campaignId: campaignId
+                        name: c.name, avatarUrl: c.imageUrl, sheetType: c.sheetType || 'STANDARD',
+                        bio: bioText, stats: JSON.stringify(c.data), campaignId: campaignId
                     }
                 })
             })
@@ -235,11 +262,46 @@ export async function updateCampaignAction(campaignId: string, data: any) {
 
         revalidatePath('/')
         revalidatePath('/campaign/my')
-
         return { success: true }
 
     } catch (error) {
         console.error("❌ Update Campaign Error:", error)
-        throw new Error("Failed to update campaign")
+        return { error: "Failed to update campaign" }
+    }
+}
+
+// --- 7. TOGGLE CAMPAIGN STATUS (Admin) ---
+export async function toggleCampaignStatus(campaignId: string, currentStatus: boolean) {
+    const session = await auth()
+    if (session?.user?.role !== 'ADMIN') return { error: "Unauthorized" }
+
+    try {
+        await prisma.campaign.update({
+            where: { id: campaignId },
+            data: { isPublished: !currentStatus }
+        })
+        revalidatePath('/admin/campaigns')
+        return { success: true }
+    } catch (error) {
+        return { error: "Failed to update status" }
+    }
+}
+
+// --- 8. REVOKE ACCESS (Admin) ---
+export async function revokeAccess(purchaseId: string) {
+    const session = await auth()
+    if (session?.user?.role !== 'ADMIN') return { error: "Unauthorized" }
+
+    try {
+        // ✅ ใช้ Purchase Table เพราะหน้า Admin Analytics Query มาจากตารางนี้
+        await prisma.purchase.delete({
+            where: { id: purchaseId }
+        })
+
+        revalidatePath('/admin/campaigns/[id]')
+        return { success: true }
+    } catch (error) {
+        console.error(error)
+        return { error: "Failed to revoke access" }
     }
 }

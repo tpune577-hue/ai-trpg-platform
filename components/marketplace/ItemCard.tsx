@@ -4,7 +4,7 @@ interface ItemCardProps {
     id: string
     title: string
     description?: string
-    type: 'ART' | 'THEME'
+    type: 'ART' | 'THEME' | 'CAMPAIGN'
     price: number
     imageUrl: string
     creatorName: string
@@ -44,7 +44,9 @@ export default function ItemCard({
                 <div className="absolute top-3 left-3">
                     <span
                         className={`px-3 py-1 text-xs font-bold uppercase tracking-wide rounded-full ${type === 'ART'
-                                ? 'bg-purple-500/90 text-white'
+                            ? 'bg-purple-500/90 text-white'
+                            : type === 'CAMPAIGN'
+                                ? 'bg-amber-500/90 text-black'
                                 : 'bg-blue-500/90 text-white'
                             }`}
                     >

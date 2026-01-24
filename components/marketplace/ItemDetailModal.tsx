@@ -9,7 +9,7 @@ interface ItemDetailModalProps {
         id: string
         title: string
         description?: string
-        type: 'ART' | 'THEME'
+        type: 'ART' | 'THEME' | 'CAMPAIGN'
         price: number
         imageUrl: string
         creatorName: string
@@ -86,7 +86,10 @@ export default function ItemDetailModal({
                         <div className="flex-1">
                             <div className="flex items-center gap-3 mb-2">
                                 <h2 className="text-3xl font-bold text-white">{item.title}</h2>
-                                <span className={`px-3 py-1 text-xs font-bold uppercase rounded-full ${item.type === 'ART' ? 'bg-purple-500 text-white' : 'bg-blue-500 text-white'}`}>
+                                <span className={`px-3 py-1 text-xs font-bold uppercase rounded-full ${item.type === 'ART' ? 'bg-purple-500 text-white' :
+                                        item.type === 'CAMPAIGN' ? 'bg-amber-500 text-black' :
+                                            'bg-blue-500 text-white'
+                                    }`}>
                                     {item.type}
                                 </span>
                             </div>

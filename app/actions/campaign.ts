@@ -91,7 +91,6 @@ export async function getCampaigns() {
         const campaigns = await prisma.campaign.findMany({
             orderBy: { createdAt: 'desc' },
             include: {
-                user: { select: { id: true, name: true, image: true, email: true } },
                 creator: { select: { name: true } },
                 _count: {
                     select: { sessions: true, purchases: true } // หมายเหตุ: purchases ในที่นี้คือนับจำนวน relation
@@ -112,7 +111,6 @@ export async function getCampaignById(id: string) {
             where: { id },
             include: {
                 creator: { select: { name: true, email: true } },
-                user: { select: { id: true, name: true, image: true } },
                 scenes: true,
                 npcs: true,
                 preGens: true

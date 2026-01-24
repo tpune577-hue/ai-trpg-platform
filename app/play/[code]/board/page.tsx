@@ -6,6 +6,9 @@ import { useGameSocket } from '@/hooks/useGameSocket'
 import { getLobbyInfo, updateGameSessionState, kickPlayer, pauseGameSession, endGameSession, updateCharacterStats } from '@/app/actions/game'
 import { addCustomAsset } from '@/app/actions/quick-add'
 
+// ✅ 1. Import VoicePanel
+import VoicePanel from '@/components/game/VoicePanel'
+
 import { GameLog } from '@/components/board/GameLog'
 import { SceneDisplay } from '@/components/board/SceneDisplay'
 import { EnhancedPartyStatus } from '@/components/board/EnhancedPartyStatus'
@@ -25,6 +28,8 @@ export default function CampaignBoardPage() {
     const [customNpcs, setCustomNpcs] = useState<any[]>([])
     const [dbPlayers, setDbPlayers] = useState<any[]>([])
     const [isLoadingData, setIsLoadingData] = useState(true)
+    // เพิ่ม State เก็บชื่อ User ปัจจุบัน (สำหรับ Voice Chat)
+    const [myIdentity, setMyIdentity] = useState<string>('')
 
     // --- GAME STATE ---
     const [gameState, setGameState] = useState<any>({
@@ -42,8 +47,8 @@ export default function CampaignBoardPage() {
     const [gmInput, setGmInput] = useState('')
     const [targetDC, setTargetDC] = useState(15)
 
-    // ✅ RESIZE STATE (สำหรับยืดหด Log)
-    const [sceneHeightPercent, setSceneHeightPercent] = useState(60) // เริ่มต้น Scene สูง 60%
+    // RESIZE STATE
+    const [sceneHeightPercent, setSceneHeightPercent] = useState(60)
     const [isResizing, setIsResizing] = useState(false)
     const boardRef = useRef<HTMLDivElement>(null)
 
@@ -87,6 +92,11 @@ export default function CampaignBoardPage() {
             const savedTasks = localStorage.getItem(`gm_tasks_${joinCode}`)
             if (savedNotes) setGmNotes(savedNotes)
             if (savedTasks) setTasks(JSON.parse(savedTasks))
+
+            // Set temporary identity if not logged in (fallback)
+            const storedId = localStorage.getItem('rnr_temp_id') || `User-${Math.floor(Math.random() * 1000)}`
+            if (!localStorage.getItem('rnr_temp_id')) localStorage.setItem('rnr_temp_id', storedId)
+            setMyIdentity(storedId)
         }
     }, [joinCode])
 
@@ -97,30 +107,24 @@ export default function CampaignBoardPage() {
         }
     }, [gmNotes, tasks, joinCode])
 
-    // ✅ RESIZE LOGIC (ทำงานเมื่อเริ่มลาก)
+    // RESIZE LOGIC
     useEffect(() => {
         const handleMouseMove = (e: MouseEvent) => {
             if (!isResizing || !boardRef.current) return
-
             const boardRect = boardRef.current.getBoundingClientRect()
             const relativeY = e.clientY - boardRect.top
             const newPercent = (relativeY / boardRect.height) * 100
-
-            // จำกัดความสูงไม่ให้น้อยกว่า 20% และไม่เกิน 80%
             setSceneHeightPercent(Math.min(80, Math.max(20, newPercent)))
         }
-
         const handleMouseUp = () => {
             setIsResizing(false)
             document.body.style.cursor = 'default'
         }
-
         if (isResizing) {
             window.addEventListener('mousemove', handleMouseMove)
             window.addEventListener('mouseup', handleMouseUp)
-            document.body.style.cursor = 'row-resize' // เปลี่ยน Cursor ทั้งหน้า
+            document.body.style.cursor = 'row-resize'
         }
-
         return () => {
             window.removeEventListener('mousemove', handleMouseMove)
             window.removeEventListener('mouseup', handleMouseUp)
@@ -154,6 +158,11 @@ export default function CampaignBoardPage() {
             const data = await getLobbyInfo(joinCode)
             if (data) {
                 setSession(data)
+                // ถ้ามี User จริง ให้ใช้ชื่อจริงใน Voice Chat
+                if (data.currentUser?.name) {
+                    setMyIdentity(data.currentUser.name)
+                }
+
                 setCampaignScenes(data.campaign?.scenes || [])
                 setCampaignNpcs(data.campaign?.npcs || [])
 
@@ -553,7 +562,7 @@ export default function CampaignBoardPage() {
             {/* CONTENT */}
             <div className="flex flex-1 pt-14 pb-24 md:pb-32 h-full w-full relative">
 
-                {/* ✅ LEFT: Board & Log with Resize */}
+                {/* LEFT: Board & Log with Resize */}
                 <div className="flex-1 flex flex-col w-full h-full min-w-0 relative" ref={boardRef}>
 
                     {/* Scene Area (Height controlled by state) */}
@@ -575,7 +584,7 @@ export default function CampaignBoardPage() {
                         )}
                     </div>
 
-                    {/* ✅ DRAG HANDLE */}
+                    {/* DRAG HANDLE */}
                     <div
                         onMouseDown={() => setIsResizing(true)}
                         className="h-2 w-full bg-slate-800 hover:bg-amber-500 cursor-row-resize flex items-center justify-center shrink-0 transition-colors z-20 group"
@@ -583,7 +592,7 @@ export default function CampaignBoardPage() {
                         <div className="w-12 h-1 bg-slate-600 rounded-full group-hover:bg-white transition-colors" />
                     </div>
 
-                    {/* Log Area (Fills remaining space) */}
+                    {/* Log Area */}
                     <div className="flex-1 bg-slate-950 border-t border-slate-800 flex flex-col min-h-0">
                         <div className="bg-slate-900 px-3 py-1 text-xs font-bold text-slate-500 uppercase flex justify-between">
                             <span>Adventure Log</span>
@@ -600,7 +609,9 @@ export default function CampaignBoardPage() {
                             <TabButton key={tab} active={activeTab === tab} onClick={() => setActiveTab(tab as any)} label={tab} />
                         ))}
                     </div>
-                    <div className="flex-1 min-h-0 p-3 overflow-y-auto custom-scrollbar pb-24">
+
+                    {/* Tab Content */}
+                    <div className="flex-1 min-h-0 p-3 overflow-y-auto custom-scrollbar">
                         {activeTab === 'PARTY' && (
                             <EnhancedPartyStatus
                                 players={partyPlayers}
@@ -697,6 +708,14 @@ export default function CampaignBoardPage() {
                                 <div className="bg-slate-950 p-2 rounded border border-slate-800"><h4 className="font-bold text-amber-500 mb-1">Ending</h4><p className="whitespace-pre-wrap">{session?.campaign?.storyEnd || '-'}</p></div>
                             </div>
                         )}
+                    </div>
+
+                    {/* ✅ 2. ใส่ VoicePanel ที่นี่ (ล่างสุดของ Sidebar) */}
+                    <div className="shrink-0 z-20 pb-24 lg:pb-0">
+                        <VoicePanel
+                            room={joinCode}
+                            username={myIdentity || 'GM'}
+                        />
                     </div>
                 </div>
             </div>

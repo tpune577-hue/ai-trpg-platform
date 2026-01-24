@@ -1,12 +1,13 @@
-// 📄 ไฟล์: prisma/schema.prisma
+// prisma/schema.prisma
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql" // *** ต้องเปลี่ยนจาก sqlite เป็น postgresql ***
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 // --- USER & AUTH (Modified for NextAuth) ---
@@ -204,6 +205,7 @@ model Purchase {
   userId      String
   campaignId  String
   purchasedAt DateTime @default(now())
+  price       Float    @default(0) // เพิ่มบรรทัดนี้
 
   user        User     @relation(fields: [userId], references: [id])
   campaign    Campaign @relation(fields: [campaignId], references: [id])

@@ -178,8 +178,41 @@ export default async function SellerListPage({ searchParams }: PageProps) {
                             <div className="space-y-2">
                                 <h4 className="text-xs text-slate-500 uppercase font-bold">Attached Documents</h4>
                                 <div className="flex gap-4">
-                                    <div className="w-32 h-24 bg-slate-800 border border-slate-600 flex items-center justify-center text-xs text-slate-500 rounded">ID Card Img</div>
-                                    <div className="w-32 h-24 bg-slate-800 border border-slate-600 flex items-center justify-center text-xs text-slate-500 rounded">Bank Book Img</div>
+                                    {/* ID Card Image */}
+                                    <div className="flex-1">
+                                        <p className="text-[10px] text-slate-500 mb-1">ID Card</p>
+                                        {selectedSeller.idCardImage ? (
+                                            <a href={selectedSeller.idCardImage} target="_blank" rel="noopener noreferrer" className="block">
+                                                <img
+                                                    src={selectedSeller.idCardImage}
+                                                    alt="ID Card"
+                                                    className="w-full h-32 object-cover rounded border border-slate-600 hover:border-amber-500 transition-colors cursor-pointer"
+                                                />
+                                            </a>
+                                        ) : (
+                                            <div className="w-full h-32 bg-slate-800 border border-slate-600 flex items-center justify-center text-xs text-slate-500 rounded">
+                                                No ID Card Image
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Book Bank Image */}
+                                    <div className="flex-1">
+                                        <p className="text-[10px] text-slate-500 mb-1">Book Bank</p>
+                                        {selectedSeller.bookBankImage ? (
+                                            <a href={selectedSeller.bookBankImage} target="_blank" rel="noopener noreferrer" className="block">
+                                                <img
+                                                    src={selectedSeller.bookBankImage}
+                                                    alt="Book Bank"
+                                                    className="w-full h-32 object-cover rounded border border-slate-600 hover:border-amber-500 transition-colors cursor-pointer"
+                                                />
+                                            </a>
+                                        ) : (
+                                            <div className="w-full h-32 bg-slate-800 border border-slate-600 flex items-center justify-center text-xs text-slate-500 rounded">
+                                                No Book Bank Image
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
                         </div>

@@ -18,7 +18,7 @@ export function ClientHome({ isLoggedIn }: ClientHomeProps) {
         e.preventDefault()
         if (!roomCode.trim()) return
         setIsJoinLoading(true)
-        router.push(`/play/${roomCode}`)
+        router.push(`/lobby/${roomCode}`)
     }
 
     return (

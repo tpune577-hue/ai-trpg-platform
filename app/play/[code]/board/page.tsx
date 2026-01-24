@@ -8,6 +8,7 @@ import { addCustomAsset } from '@/app/actions/quick-add'
 
 // ✅ 1. Import VoicePanel
 import VoicePanel from '@/components/game/VoicePanel'
+import ImageUploader from '@/components/shared/ImageUploader'
 
 import { GameLog } from '@/components/board/GameLog'
 import { SceneDisplay } from '@/components/board/SceneDisplay'
@@ -768,13 +769,16 @@ export default function CampaignBoardPage() {
                                 <label className="text-xs font-bold text-slate-400 uppercase">Name</label>
                                 <input required value={newItemName} onChange={e => setNewItemName(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-white" placeholder="e.g. Dark Cave" />
                             </div>
-                            <div>
-                                <label className="text-xs font-bold text-slate-400 uppercase">Image URL</label>
-                                <input required type="url" value={newItemUrl} onChange={e => setNewItemUrl(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-white" placeholder="https://..." />
-                            </div>
+                            <ImageUploader
+                                value={newItemUrl}
+                                onChange={setNewItemUrl}
+                                label="Image"
+                                aspectRatio={addModalType === 'SCENE' ? 'aspect-video' : 'aspect-square'}
+                                required
+                            />
                             <div className="flex gap-2 pt-2">
                                 <button type="button" onClick={() => setIsAddModalOpen(false)} className="flex-1 py-2 bg-slate-800 text-slate-300 rounded font-bold">Cancel</button>
-                                <button type="submit" disabled={isAddingItem} className="flex-1 py-2 bg-green-600 text-white rounded font-bold hover:bg-green-500">
+                                <button type="submit" disabled={isAddingItem || !newItemUrl} className="flex-1 py-2 bg-green-600 text-white rounded font-bold hover:bg-green-500 disabled:opacity-50 disabled:cursor-not-allowed">
                                     {isAddingItem ? 'Adding...' : 'Add Asset'}
                                 </button>
                             </div>

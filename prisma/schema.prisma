@@ -216,6 +216,7 @@ model GameSession {
   id              String    @id @default(cuid())
   joinCode        String    @unique 
   status          String    @default("WAITING") 
+  name            String?   @default("Untitled Session")
   
   // Current State
   currentSceneId  String?
@@ -333,4 +334,13 @@ model InventoryItem {
   quantity    Int      @default(1)
 
   @@unique([userId, productId]) 
+}
+
+model Transaction {
+  id        String   @id @default(cuid())
+  orderNo   String   @unique
+  playerId  String
+  amount    Float
+  status    String   @default("PENDING") // PENDING, SUCCESS, FAILED
+  createdAt DateTime @default(now())
 }

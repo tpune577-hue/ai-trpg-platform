@@ -1,12 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { auth } from '@/auth' // ✅ นำเข้า auth เพื่อเช็ค session
 
 export async function POST(request: NextRequest) {
     try {
+        // 1. ตรวจสอบสิทธิ์ (Authentication)
+        const session = await auth()
+        if (!session?.user?.id) {
+            return NextResponse.json(
+                { error: 'You must be logged in to create an asset' },
+                { status: 401 }
+            )
+        }
+
         const body = await request.json()
         const { title, description, type, price, imageUrl, tags } = body
 
-        // Validate required fields
+        // 2. Validate required fields
         if (!title || !type || price === undefined || !imageUrl) {
             return NextResponse.json(
                 { error: 'Missing required fields' },
@@ -14,49 +24,39 @@ export async function POST(request: NextRequest) {
             )
         }
 
-        // TEMPORARY: Get the first available user to act as creator
-        // In production, this would use the authenticated user's ID
-        let creator = await prisma.user.findFirst()
-
-        if (!creator) {
-            // Create a default user if none exists
-            try {
-                creator = await prisma.user.create({
-                    data: {
-                        email: 'demo@example.com',
-                        name: 'Demo User',
-                        role: 'CREATOR',
-                    }
-                })
-            } catch (createError) {
-                // Handle race condition or unique constraint if demo user exists but findFirst missed it (unlikely but safe)
-                creator = await prisma.user.findUnique({ where: { email: 'demo@example.com' } })
-            }
-        }
-
-        if (!creator) {
-            return NextResponse.json({ error: 'Failed to identify creator' }, { status: 500 })
-        }
-
-        // Create marketplace item
+        // 3. สร้าง Marketplace Item ผูกกับ ID ของคนที่ Login อยู่
         const item = await prisma.marketplaceItem.create({
             data: {
                 title,
                 description,
                 type,
-                price: Number(price), // Ensure price is a number/decimal
-                creatorId: creator.id,
+                price: Number(price),
+                creatorId: session.user.id, // ✅ ใช้ ID จาก Session จริง
                 isPublished: true,
+                // ✅ เก็บข้อมูลลงใน JSON ฟิลด์เดียวตาม Schema ของคุณ
                 data: JSON.stringify({
                     imageUrl,
                     tags: tags || [],
+                    createdAt: new Date().toISOString()
                 }),
             },
         })
 
-        return NextResponse.json({ success: true, item })
-    } catch (error) {
+        return NextResponse.json({
+            success: true,
+            item: {
+                ...item,
+                data: JSON.parse(item.data) // ส่งกลับไปเป็น Object ให้ Frontend ใช้ง่ายๆ
+            }
+        })
+
+    } catch (error: any) {
         console.error('Error creating marketplace item:', error)
-        return NextResponse.json({ error: 'Failed to create item' }, { status: 500 })
+
+        // จัดการ Error เฉพาะกรณี เช่น Database ล่ม
+        return NextResponse.json(
+            { error: error.message || 'Failed to create item' },
+            { status: 500 }
+        )
     }
 }

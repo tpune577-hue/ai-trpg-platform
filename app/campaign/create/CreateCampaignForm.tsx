@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { createCampaignAction, updateCampaignAction, getCampaignById } from '@/app/actions/campaign'
 import CharacterCreator from '@/components/game/CharacterCreator'
 import Link from 'next/link'
+import ImageUploader from '@/components/shared/ImageUploader'
 
 interface Props {
     isApprovedSeller: boolean
@@ -280,13 +281,13 @@ export default function CreateCampaignForm({ isApprovedSeller }: Props) {
                                 </p>
                             </InputGroup>
 
-                            <InputGroup label="Cover Image URL">
-                                <div className="flex gap-6 items-start">
-                                    <input value={coverImage} onChange={e => setCoverImage(e.target.value)} className={inputClass} placeholder="https://..." />
-                                    <div className="w-32 h-20 bg-black rounded-lg border border-slate-700 shrink-0 overflow-hidden">
-                                        {coverImage ? <img src={coverImage} className="w-full h-full object-cover" /> : <div className="flex h-full items-center justify-center text-xs text-slate-600">Preview</div>}
-                                    </div>
-                                </div>
+                            <InputGroup label="Cover Image">
+                                <ImageUploader
+                                    value={coverImage}
+                                    onChange={setCoverImage}
+                                    aspectRatio="aspect-video"
+                                    placeholder="Upload campaign cover image"
+                                />
                             </InputGroup>
                             <InputGroup label="Description / Synopsis">
                                 <textarea value={description} onChange={e => setDescription(e.target.value)} className={textareaClass} placeholder="Write a compelling summary of your adventure..." />
@@ -405,7 +406,13 @@ export default function CreateCampaignForm({ isApprovedSeller }: Props) {
 
                                             <div className="space-y-3">
                                                 <input value={scene.name} onChange={e => updateScene(scene.id, 'name', e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded px-3 py-2 text-sm font-bold text-white focus:border-amber-500 outline-none" placeholder="Scene Name" />
-                                                <input value={scene.imageUrl} onChange={e => updateScene(scene.id, 'imageUrl', e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded px-3 py-2 text-xs text-slate-400 font-mono focus:border-amber-500 outline-none" placeholder="Image URL" />
+                                                <ImageUploader
+                                                    value={scene.imageUrl}
+                                                    onChange={(url) => updateScene(scene.id, 'imageUrl', url)}
+                                                    aspectRatio="aspect-video"
+                                                    placeholder="Upload scene image"
+                                                    className="mt-2"
+                                                />
                                             </div>
                                         </div>
                                     ))}
@@ -443,7 +450,13 @@ export default function CreateCampaignForm({ isApprovedSeller }: Props) {
                                                 <select value={npc.type} onChange={e => updateNpc(npc.id, 'type', e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-slate-400 focus:border-amber-500 outline-none">
                                                     <option value="FRIENDLY">Friendly</option><option value="ENEMY">Enemy</option><option value="NEUTRAL">Neutral</option>
                                                 </select>
-                                                <input value={npc.avatarUrl} onChange={e => updateNpc(npc.id, 'avatarUrl', e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded px-2 py-1 text-[10px] text-slate-500 font-mono focus:border-amber-500 outline-none" placeholder="Avatar URL" />
+                                                <ImageUploader
+                                                    value={npc.avatarUrl}
+                                                    onChange={(url) => updateNpc(npc.id, 'avatarUrl', url)}
+                                                    aspectRatio="aspect-[4/3]"
+                                                    placeholder="Upload avatar"
+                                                    className="mt-2"
+                                                />
                                             </div>
                                         </div>
                                     ))}

@@ -3,8 +3,8 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import ItemCard from '@/components/marketplace/ItemCard'
-// import UploadModal from '@/components/marketplace/UploadModal' // ❌ เอาออกก่อนก็ได้ครับถ้าไม่ได้ใช้
 import ItemDetailModal from '@/components/marketplace/ItemDetailModal'
+import { getSellerStatus } from '@/app/actions/seller'
 
 // Type ของสินค้า
 interface MarketplaceItem {
@@ -33,15 +33,29 @@ export default function MarketplaceView({ user }: MarketplaceViewProps) {
     const [purchasedAssets, setPurchasedAssets] = useState<string[]>([])
     const [isLoading, setIsLoading] = useState(true)
 
+    // ✅ Seller status state
+    const [sellerProfile, setSellerProfile] = useState<any>(null)
+    const [isLoadingSeller, setIsLoadingSeller] = useState(true)
+
     const [typeFilter, setTypeFilter] = useState<'ALL' | 'ART' | 'THEME' | 'CAMPAIGN'>('ALL')
     const [searchQuery, setSearchQuery] = useState('')
     const [sortBy, setSortBy] = useState<'recent' | 'price-low' | 'price-high' | 'popular'>('recent')
 
     // Modals
-    // const [isUploadModalOpen, setIsUploadModalOpen] = useState(false) // ❌ ปิด State นี้ไว้ก่อน
     const [selectedItem, setSelectedItem] = useState<MarketplaceItem | null>(null)
 
-    // ... (ส่วน useEffect และ fetchItems เหมือนเดิม ไม่ต้องแก้) ...
+    // ✅ Fetch seller status
+    useEffect(() => {
+        if (user?.id) {
+            getSellerStatus(user.id).then(profile => {
+                setSellerProfile(profile)
+                setIsLoadingSeller(false)
+            })
+        } else {
+            setIsLoadingSeller(false)
+        }
+    }, [user])
+
     useEffect(() => { fetchItems() }, [])
     useEffect(() => {
         let filtered = [...items]
@@ -94,8 +108,8 @@ export default function MarketplaceView({ user }: MarketplaceViewProps) {
                             <p className="text-gray-400">Discover and purchase TRPG assets from creators</p>
                         </div>
 
-                        {/* ✅ เหลือแค่ปุ่ม Creator Studio ปุ่มเดียว */}
-                        {isCreator && (
+                        {/* ✅ Conditional Seller Registration Buttons */}
+                        {isCreator && !isLoadingSeller && (
                             <div className="flex items-center gap-3">
                                 <Link
                                     href="/campaign/my"
@@ -105,7 +119,40 @@ export default function MarketplaceView({ user }: MarketplaceViewProps) {
                                     Creator Studio
                                 </Link>
 
-                                {/* ❌ ปุ่ม Upload Asset ถูกลบออกแล้ว */}
+                                {/* No Seller Profile - Show Register Button */}
+                                {!sellerProfile && (
+                                    <Link
+                                        href="/register-seller"
+                                        className="px-5 py-3 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white rounded-lg font-bold transition-all flex items-center gap-2 shadow-lg hover:shadow-emerald-500/50"
+                                    >
+                                        <span>✨</span>
+                                        Register as Seller
+                                    </Link>
+                                )}
+
+                                {/* Pending Status - Show Disabled Button */}
+                                {sellerProfile?.status === 'PENDING' && (
+                                    <button
+                                        disabled
+                                        className="px-5 py-3 bg-slate-700 text-slate-400 rounded-lg font-bold cursor-not-allowed flex items-center gap-2 opacity-60"
+                                    >
+                                        <span>⏳</span>
+                                        Application Pending
+                                    </button>
+                                )}
+
+                                {/* Rejected Status - Show Resubmit Button */}
+                                {sellerProfile?.status === 'REJECTED' && (
+                                    <Link
+                                        href="/register-seller?resubmit=true"
+                                        className="px-5 py-3 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-white rounded-lg font-bold transition-all flex items-center gap-2 shadow-lg hover:shadow-amber-500/50"
+                                    >
+                                        <span>🔄</span>
+                                        Resubmit Application
+                                    </Link>
+                                )}
+
+                                {/* Approved Status - No extra button needed */}
                             </div>
                         )}
                     </div>

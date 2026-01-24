@@ -33,20 +33,35 @@ export async function getPublishedCampaigns() {
 }
 
 // 2. สร้างห้อง (Create Session)
-export async function createGameSession(campaignId?: string) { // ใส่ ? เพื่อให้เป็น Optional (รองรับกรณีสร้างห้องเปล่า)
-    const joinCode = Math.random().toString(36).substring(2, 8).toUpperCase()
+// app/actions/game.ts
 
-    const session = await prisma.gameSession.create({
-        data: {
-            joinCode,
-            // ถ้าส่ง campaignId มาให้ใส่ ถ้าไม่ส่ง (หรือเป็น 'CUSTOM') ให้เป็น undefined
-            campaignId: (!campaignId || campaignId === 'CUSTOM') ? undefined : campaignId,
-            status: 'WAITING',
-            isAiGm: true // Default
-        }
-    })
+// ✅ ใช้ตัวนี้แทนตัวเก่าครับ
+export async function createGameSession(campaignId?: string, roomName?: string) {
+    try {
+        // สุ่มรหัสห้อง 6 หลัก
+        const joinCode = Math.random().toString(36).substring(2, 8).toUpperCase()
 
-    return { success: true, joinCode: session.joinCode }
+        // ตั้งชื่อห้อง (ถ้าไม่มีชื่อส่งมา ให้ใช้ชื่อ Default)
+        const finalName = roomName || (campaignId === 'CUSTOM' ? "Custom Sandbox" : "Adventure Session");
+
+        console.log('📝 Creating GameSession:', { joinCode, finalName, campaignId })
+
+        const session = await prisma.gameSession.create({
+            data: {
+                joinCode,
+                name: finalName, // บันทึกชื่อห้องลง DB
+                campaignId: (!campaignId || campaignId === 'CUSTOM') ? undefined : campaignId,
+                status: 'WAITING',
+                isAiGm: true
+            }
+        })
+
+        console.log('✅ GameSession created successfully:', session.joinCode)
+        return { success: true, joinCode: session.joinCode }
+    } catch (error) {
+        console.error('❌ Error creating GameSession:', error)
+        throw error // Re-throw เพื่อให้ Frontend จับได้
+    }
 }
 
 // 3. ดึงข้อมูล Lobby & Game State (ใช้ทั้งหน้า Lobby และ Board)
@@ -370,3 +385,4 @@ export async function addTemporaryAsset(joinCode: string, type: 'SCENE' | 'NPC',
         return { success: true, asset: newNpc }
     }
 }
+

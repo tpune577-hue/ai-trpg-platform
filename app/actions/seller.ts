@@ -48,3 +48,53 @@ export async function registerSellerAction(prevState: any, formData: FormData) {
 
     redirect('/register-seller/success')
 }
+
+/**
+ * Get seller profile status for a user
+ */
+export async function getSellerStatus(userId: string) {
+    if (!userId) return null
+
+    const profile = await prisma.sellerProfile.findUnique({
+        where: { userId },
+        select: {
+            id: true,
+            status: true,
+            rejectReason: true,
+            realName: true,
+            idCardNumber: true,
+            address: true,
+            idCardImage: true,
+            bookBankImage: true,
+            bankName: true,
+            bankAccount: true,
+        }
+    })
+
+    return profile
+}
+
+/**
+ * Update seller profile (for resubmission after rejection)
+ */
+export async function updateSellerProfile(userId: string, data: {
+    realName?: string
+    idCardNumber?: string
+    address?: string
+    idCardImage?: string
+    bookBankImage?: string
+    bankName?: string
+    bankAccount?: string
+}) {
+    const profile = await prisma.sellerProfile.update({
+        where: { userId },
+        data: {
+            ...data,
+            status: 'PENDING', // Reset to pending on resubmission
+            rejectReason: null, // Clear rejection reason
+            updatedAt: new Date()
+        }
+    })
+
+    return { success: true, profile }
+}

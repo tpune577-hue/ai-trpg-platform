@@ -1,15 +1,17 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import ItemCard from '@/components/marketplace/ItemCard'
 import UploadModal from '@/components/marketplace/UploadModal'
 import ItemDetailModal from '@/components/marketplace/ItemDetailModal'
 
+// ✅ 1. เพิ่ม 'CAMPAIGN' ใน Type
 interface MarketplaceItem {
     id: string
     title: string
     description?: string
-    type: 'ART' | 'THEME'
+    type: 'ART' | 'THEME' | 'CAMPAIGN'
     price: number
     downloads: number
     rating?: number
@@ -24,8 +26,8 @@ export default function MarketplacePage() {
     const [purchasedAssets, setPurchasedAssets] = useState<string[]>([])
     const [isLoading, setIsLoading] = useState(true)
 
-    // Filters
-    const [typeFilter, setTypeFilter] = useState<'ALL' | 'ART' | 'THEME'>('ALL')
+    // ✅ 2. เพิ่ม 'CAMPAIGN' ใน State Filter
+    const [typeFilter, setTypeFilter] = useState<'ALL' | 'ART' | 'THEME' | 'CAMPAIGN'>('ALL')
     const [searchQuery, setSearchQuery] = useState('')
     const [sortBy, setSortBy] = useState<'recent' | 'price-low' | 'price-high' | 'popular'>('recent')
 
@@ -69,7 +71,7 @@ export default function MarketplacePage() {
                     return b.downloads - a.downloads
                 case 'recent':
                 default:
-                    return 0 // Already sorted by creation date from API
+                    return 0
             }
         })
 
@@ -94,7 +96,7 @@ export default function MarketplacePage() {
         if (selectedItem) {
             setPurchasedAssets([...purchasedAssets, selectedItem.id])
         }
-        fetchItems() // Refresh to update download counts
+        fetchItems()
     }
 
     return (
@@ -102,20 +104,33 @@ export default function MarketplacePage() {
             {/* Header */}
             <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 border-b border-amber-500/30">
                 <div className="max-w-7xl mx-auto px-4 py-8">
-                    <div className="flex items-center justify-between mb-6">
+                    <div className="flex flex-col md:flex-row md:items-center justify-between mb-6 gap-4">
                         <div>
                             <h1 className="text-4xl font-bold text-amber-400 mb-2">Marketplace</h1>
                             <p className="text-gray-400">Discover and purchase TRPG assets from creators</p>
                         </div>
-                        <button
-                            onClick={() => setIsUploadModalOpen(true)}
-                            className="px-6 py-3 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white rounded-lg font-semibold transition-all flex items-center gap-2"
-                        >
-                            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                                <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
-                            </svg>
-                            Upload Asset
-                        </button>
+
+                        <div className="flex items-center gap-3">
+                            {/* ปุ่ม Creator Studio */}
+                            <Link
+                                href="/campaign/my"
+                                className="px-5 py-3 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-purple-500/50 text-purple-400 hover:text-purple-300 rounded-lg font-bold transition-all flex items-center gap-2 group"
+                            >
+                                <span className="group-hover:scale-110 transition-transform">🛠️</span>
+                                Creator Studio
+                            </Link>
+
+                            {/* ปุ่ม Upload Asset (เดิม) */}
+                            <button
+                                onClick={() => setIsUploadModalOpen(true)}
+                                className="px-6 py-3 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white rounded-lg font-semibold transition-all flex items-center gap-2 shadow-lg shadow-amber-900/20"
+                            >
+                                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
+                                </svg>
+                                Upload Asset
+                            </button>
+                        </div>
                     </div>
 
                     {/* Filters */}
@@ -131,13 +146,14 @@ export default function MarketplacePage() {
                             />
                         </div>
 
-                        {/* Type Filter */}
+                        {/* ✅ 3. อัปเดตตัวเลือก Filter */}
                         <select
                             value={typeFilter}
                             onChange={(e) => setTypeFilter(e.target.value as any)}
-                            className="px-4 py-3 bg-slate-950/50 border border-slate-700 rounded-lg text-white focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 outline-none transition-all"
+                            className="px-4 py-3 bg-slate-950/50 border border-slate-700 rounded-lg text-white focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 outline-none transition-all cursor-pointer"
                         >
                             <option value="ALL">All Types</option>
+                            <option value="CAMPAIGN">Campaigns</option>
                             <option value="ART">Art</option>
                             <option value="THEME">Themes</option>
                         </select>
@@ -146,7 +162,7 @@ export default function MarketplacePage() {
                         <select
                             value={sortBy}
                             onChange={(e) => setSortBy(e.target.value as any)}
-                            className="px-4 py-3 bg-slate-950/50 border border-slate-700 rounded-lg text-white focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 outline-none transition-all"
+                            className="px-4 py-3 bg-slate-950/50 border border-slate-700 rounded-lg text-white focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 outline-none transition-all cursor-pointer"
                         >
                             <option value="recent">Most Recent</option>
                             <option value="popular">Most Popular</option>

@@ -48,15 +48,14 @@ export function ClientHome({ isLoggedIn }: { isLoggedIn: boolean }) {
                 </p>
             </div>
 
-            {/* ✅ GRID 3 BLOCKS */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full max-w-6xl">
+            {/* ✅ GRID 4 BLOCKS (ปรับเป็น 4 ช่อง) */}
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 w-full max-w-7xl">
 
                 {/* --- BLOCK 1: CREATE ROOM --- */}
                 <button
                     onClick={handleCreateRoom}
                     className="group relative bg-[#0f172a]/80 backdrop-blur-sm border border-slate-800 hover:border-[#f59e0b]/50 rounded-3xl p-8 text-left transition-all hover:shadow-[0_0_30px_rgba(88,28,135,0.25)] hover:-translate-y-1 flex flex-col h-80 overflow-hidden"
                 >
-                    {/* Secondary Glow Background */}
                     <div className="absolute inset-0 bg-gradient-to-br from-[#581c87]/0 to-[#581c87]/10 opacity-0 group-hover:opacity-100 transition-opacity" />
 
                     <div className="relative bg-gradient-to-br from-[#f59e0b]/20 to-orange-600/10 w-16 h-16 rounded-2xl flex items-center justify-center text-3xl mb-6 group-hover:scale-110 transition-transform text-[#f59e0b] border border-[#f59e0b]/20 shadow-[0_0_15px_rgba(245,158,11,0.2)]">
@@ -99,13 +98,31 @@ export function ClientHome({ isLoggedIn }: { isLoggedIn: boolean }) {
                     </form>
                 </div>
 
-                {/* --- BLOCK 3: CREATOR STUDIO --- */}
+                {/* --- BLOCK 3: MARKETPLACE (NEW) --- */}
+                <Link
+                    href="/marketplace"
+                    className="group relative bg-[#0f172a]/80 backdrop-blur-sm border border-slate-800 hover:border-emerald-500/50 rounded-3xl p-8 text-left transition-all hover:shadow-[0_0_30px_rgba(16,185,129,0.25)] hover:-translate-y-1 flex flex-col h-80 overflow-hidden"
+                >
+                    {/* Secondary Glow Background */}
+                    <div className="absolute inset-0 bg-gradient-to-br from-emerald-900/0 to-emerald-900/10 opacity-0 group-hover:opacity-100 transition-opacity" />
+
+                    <div className="relative bg-gradient-to-br from-emerald-500/20 to-teal-600/10 w-16 h-16 rounded-2xl flex items-center justify-center text-3xl mb-6 group-hover:scale-110 transition-transform text-emerald-400 border border-emerald-500/20 shadow-[0_0_15px_rgba(16,185,129,0.2)]">
+                        🛒
+                    </div>
+                    <h2 className="relative text-2xl font-bold text-white mb-2 group-hover:text-emerald-400 transition-colors">Marketplace</h2>
+                    <p className="relative text-slate-400 mb-8 leading-relaxed">Browse campaigns, maps, and assets created by the community.</p>
+
+                    <div className="relative mt-auto flex items-center text-emerald-500 font-bold text-sm tracking-wide uppercase">
+                        Go to Shop <span className="ml-2 group-hover:translate-x-1 transition-transform">→</span>
+                    </div>
+                </Link>
+
+                {/* --- BLOCK 4: CREATOR STUDIO --- */}
                 <Link
                     href="/campaign/my"
                     onClick={handleCreatorStudio}
                     className="group relative bg-[#0f172a]/80 backdrop-blur-sm border border-slate-800 hover:border-[#581c87]/50 rounded-3xl p-8 text-left transition-all hover:shadow-[0_0_30px_rgba(88,28,135,0.3)] hover:-translate-y-1 flex flex-col h-80 overflow-hidden"
                 >
-                    {/* Secondary Glow Background */}
                     <div className="absolute inset-0 bg-gradient-to-br from-[#581c87]/0 to-[#581c87]/20 opacity-0 group-hover:opacity-100 transition-opacity" />
 
                     <div className="relative bg-gradient-to-br from-[#581c87]/30 to-purple-600/10 w-16 h-16 rounded-2xl flex items-center justify-center text-3xl mb-6 group-hover:scale-110 transition-transform text-purple-300 border border-[#581c87]/40 shadow-[0_0_15px_rgba(88,28,135,0.3)]">

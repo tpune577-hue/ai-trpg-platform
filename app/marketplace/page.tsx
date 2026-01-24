@@ -6,7 +6,7 @@ import ItemCard from '@/components/marketplace/ItemCard'
 import UploadModal from '@/components/marketplace/UploadModal'
 import ItemDetailModal from '@/components/marketplace/ItemDetailModal'
 
-// ✅ 1. เพิ่ม 'CAMPAIGN' ใน Type
+// ✅ 1. เพิ่ม 'CAMPAIGN' ใน Type เพื่อให้ TypeScript รู้จัก
 interface MarketplaceItem {
     id: string
     title: string
@@ -26,7 +26,7 @@ export default function MarketplacePage() {
     const [purchasedAssets, setPurchasedAssets] = useState<string[]>([])
     const [isLoading, setIsLoading] = useState(true)
 
-    // ✅ 2. เพิ่ม 'CAMPAIGN' ใน State Filter
+    // ✅ 2. เพิ่ม 'CAMPAIGN' ใน State Filter เริ่มต้น (เลือกเป็น 'ALL' ไว้ก่อน)
     const [typeFilter, setTypeFilter] = useState<'ALL' | 'ART' | 'THEME' | 'CAMPAIGN'>('ALL')
     const [searchQuery, setSearchQuery] = useState('')
     const [sortBy, setSortBy] = useState<'recent' | 'price-low' | 'price-high' | 'popular'>('recent')
@@ -146,14 +146,14 @@ export default function MarketplacePage() {
                             />
                         </div>
 
-                        {/* ✅ 3. อัปเดตตัวเลือก Filter */}
+                        {/* ✅ 3. เพิ่ม Option 'Campaigns' ใน Dropdown */}
                         <select
                             value={typeFilter}
                             onChange={(e) => setTypeFilter(e.target.value as any)}
                             className="px-4 py-3 bg-slate-950/50 border border-slate-700 rounded-lg text-white focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 outline-none transition-all cursor-pointer"
                         >
                             <option value="ALL">All Types</option>
-                            <option value="CAMPAIGN">Campaigns</option>
+                            <option value="CAMPAIGN">Campaigns</option> {/* เพิ่มแล้ว */}
                             <option value="ART">Art</option>
                             <option value="THEME">Themes</option>
                         </select>

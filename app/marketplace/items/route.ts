@@ -1,6 +1,10 @@
+// ไฟล์: app/api/marketplace/items/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { auth } from '@/auth' // ✅ ใช้ auth จริงแทน Mock
+import { auth } from '@/auth' // ✅ ใช้ Auth จริง
+
+// บังคับให้โหลดข้อมูลใหม่เสมอ ไม่ใช้ Cache
+export const dynamic = 'force-dynamic'
 
 export async function GET(request: NextRequest) {
     try {
@@ -40,7 +44,7 @@ export async function GET(request: NextRequest) {
             price: c.price,
             downloads: c._count.purchases,
             rating: 5.0,
-            creatorName: c.creator.name || 'Unknown GM',
+            creatorName: c.creator?.name || 'Unknown GM',
             imageUrl: c.coverImage || '/images/placeholder-campaign.jpg',
             tags: [c.system],
             createdAt: c.createdAt
@@ -50,7 +54,7 @@ export async function GET(request: NextRequest) {
         const productItems = products.map((p) => {
             let imageUrl = '/images/placeholder.jpg'
             try {
-                // Parse JSON string for images (handling potential errors)
+                // Parse JSON string for images
                 const images = p.images ? JSON.parse(p.images) : []
                 if (Array.isArray(images) && images.length > 0) imageUrl = images[0]
                 else if (typeof images === 'string') imageUrl = images
@@ -59,7 +63,6 @@ export async function GET(request: NextRequest) {
             }
 
             // Map Product Type to Marketplace Type
-            // 'ITEM', 'CHARACTER_ART', 'SCENE_ART', 'AUDIO', 'RULESET'
             let marketType = 'THEME'
             if (p.type.includes('ART') || p.type === 'ITEM') marketType = 'ART'
 
@@ -69,7 +72,7 @@ export async function GET(request: NextRequest) {
                 description: p.description || '',
                 type: marketType,
                 price: p.price,
-                downloads: p._count.orderItems, // Use order count for downloads
+                downloads: p._count.orderItems,
                 rating: 4.8,
                 creatorName: p.seller?.user?.name || 'Unknown Creator',
                 imageUrl: imageUrl,
@@ -78,7 +81,7 @@ export async function GET(request: NextRequest) {
             }
         })
 
-        // 5. Combine and Sort by Date (Newest First)
+        // 5. Combine and Sort by Date
         const allItems = [...campaignItems, ...productItems].sort((a, b) =>
             new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
         )
@@ -104,7 +107,7 @@ export async function GET(request: NextRequest) {
         })
 
     } catch (error) {
-        console.error('Error fetching marketplace items:', error)
-        return NextResponse.json({ error: 'Failed to fetch items' }, { status: 500 })
+        console.error('❌ SERVER ERROR:', error)
+        return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
     }
 }

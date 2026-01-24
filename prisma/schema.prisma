@@ -43,6 +43,7 @@ model User {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  marketplaceItems MarketplaceItem[] @relation("UserMarketplaceItems") // เพิ่มบรรทัดนี้
 }
 
 // SellerProfile สำหรับ KYC และรับเงิน
@@ -345,4 +346,20 @@ model Transaction {
   amount    Float
   status    String   @default("PENDING") // PENDING, SUCCESS, FAILED
   createdAt DateTime @default(now())
+}
+
+// --- MARKETPLACE ITEM (เพิ่มเข้าไปเพื่อให้ตรงกับ API) ---
+model MarketplaceItem {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  type        String
+  price       Float    @default(0)
+  creatorId   String
+  isPublished Boolean  @default(true)
+  data        String   // เก็บ JSON String (imageUrl, tags) ตามที่คุณเขียนใน API
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  creator     User     @relation("UserMarketplaceItems", fields: [creatorId], references: [id])
 }

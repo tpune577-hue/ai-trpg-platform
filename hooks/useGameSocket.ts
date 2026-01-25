@@ -24,7 +24,7 @@ export const useGameSocket = (campaignId: string | null, options: any = {}) => {
     })
 
     useEffect(() => {
-        if (!campaignId) return
+        if (!campaignId || !supabase) return
 
         // 1. สร้าง Channel ตามรหัส Campaign
         const channelName = `campaign-${campaignId}`

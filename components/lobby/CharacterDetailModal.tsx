@@ -23,6 +23,7 @@ export default function CharacterDetailModal({
 
     // 1. Base Data
     let charData = typeof character === 'string' ? JSON.parse(character) : character
+    console.log('🔍 Debug CharData:', charData) // ✅ Debug Log
 
     // 2. Extract Stats (รองรับทั้งแบบ Object และ JSON String)
     let stats: any = {}
@@ -42,15 +43,27 @@ export default function CharacterDetailModal({
         }
     }
 
-    // 3. Unify Fields (Fallback to 0 if undefined)
+    // 3. Unify Fields (Robust Parsing)
     const description = charData.bio || charData.description || stats.description || ''
-    const abilities = stats.abilities || {}
-    const skills = stats.skills || []
-    const equipment = stats.equipment || []
+    const abilities = stats.abilities || stats.Abilities || {}
+    const skills = stats.skills || stats.Skills || []
+    const equipment = stats.equipment || stats.Equipment || []
 
-    const hp = Number(stats.hp) || stats.maxHp || 0
-    const mp = Number(stats.mp) || stats.maxMp || 0
-    const wp = Number(stats.wp) || stats.willPower || 0
+    // Helper to find value case-insensitively
+    const findVal = (obj: any, keys: string[]) => {
+        if (!obj) return 0;
+        for (const key of keys) {
+            if (obj[key] !== undefined) return Number(obj[key]);
+            const lowerKey = key.toLowerCase();
+            const foundKey = Object.keys(obj).find(k => k.toLowerCase() === lowerKey);
+            if (foundKey && obj[foundKey] !== undefined) return Number(obj[foundKey]);
+        }
+        return 0;
+    }
+
+    const hp = findVal(stats, ['hp', 'maxHp', 'HP', 'MaxHP', 'health'])
+    const mp = findVal(stats, ['mp', 'maxMp', 'MP', 'MaxMP', 'mana'])
+    const wp = findVal(stats, ['wp', 'willPower', 'WP', 'WillPower', 'will', 'san']) // Sanity/Will
 
     return (
         <div
@@ -93,6 +106,18 @@ export default function CharacterDetailModal({
 
                 {/* Content */}
                 <div className="p-6 space-y-6">
+                    {/* Description (MOVED UP) */}
+                    {description && (
+                        <div>
+                            <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-2">
+                                <span>📜</span> Background
+                            </h3>
+                            <p className="text-slate-300 leading-relaxed">
+                                {description}
+                            </p>
+                        </div>
+                    )}
+
                     {/* Stats List */}
                     <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700">
                         <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-2">

@@ -72,7 +72,7 @@ export default function GameRoom({ campaignId, currentUser }: GameRoomProps) {
         })
 
         // Listen for players joining
-        onPlayerJoined((profile) => {
+        onPlayerJoined((profile: UserProfile) => {
             console.log('Player joined:', profile.name)
             setMessages((prev) => [
                 ...prev,

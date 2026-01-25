@@ -5,6 +5,9 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { registerSellerAction } from "@/app/actions/seller"
 import ImageUploader from '@/components/shared/ImageUploader'
 
+// Force dynamic rendering to prevent prerender errors with Supabase
+export const dynamic = 'force-dynamic'
+
 function RegisterSellerForm() {
     const router = useRouter()
     const searchParams = useSearchParams()

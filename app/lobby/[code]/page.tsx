@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { getLobbyInfo, joinLobby, setPlayerReady, startGame, resumeGame, saveCharacterSheet } from '@/app/actions/game'
 import CharacterCreator from '@/components/game/CharacterCreator'
+import LobbyVoiceChat from '@/components/lobby/LobbyVoiceChat'
 
 export default function LobbyPage() {
     const { code } = useParams()
@@ -241,6 +242,14 @@ export default function LobbyPage() {
                             </div>
                         ))}
                     </div>
+
+                    {/* Voice Chat */}
+                    {playerName && (
+                        <LobbyVoiceChat
+                            roomCode={code as string}
+                            username={playerName}
+                        />
+                    )}
                 </div>
 
                 {/* RIGHT: Main Area */}

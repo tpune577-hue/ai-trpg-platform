@@ -7,6 +7,14 @@ export async function GET(
     { params }: { params: Promise<{ sessionId: string }> }
 ) {
     try {
+        // Check if Stripe is configured
+        if (!stripe) {
+            return NextResponse.json(
+                { error: 'Payment system not configured' },
+                { status: 503 }
+            )
+        }
+
         const { sessionId } = await params
 
         // Retrieve session from Stripe

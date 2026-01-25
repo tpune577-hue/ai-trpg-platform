@@ -7,6 +7,14 @@ import Stripe from 'stripe'
 
 export async function POST(req: Request) {
     try {
+        // Check if Stripe is configured
+        if (!stripe) {
+            return NextResponse.json(
+                { error: 'Payment system not configured' },
+                { status: 503 }
+            )
+        }
+
         const body = await req.text()
         const headersList = await headers()
         const signature = headersList.get('stripe-signature')

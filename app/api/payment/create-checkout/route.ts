@@ -6,6 +6,14 @@ import { stripe, generateOrderNo } from '@/lib/stripe'
 
 export async function POST(req: Request) {
     try {
+        // Check if Stripe is configured
+        if (!stripe) {
+            return NextResponse.json(
+                { error: 'Payment system not configured' },
+                { status: 503 }
+            )
+        }
+
         // 1. Check authentication
         const session = await auth()
         if (!session?.user) {

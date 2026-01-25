@@ -36,10 +36,9 @@ export default function CharacterDetailModal({
     const abilities = stats.abilities || {}
     const skills = stats.skills || []
     const equipment = stats.equipment || []
-    const hp = stats.hp
-    const ac = stats.ac
-    const speed = stats.speed
-
+    const hp = stats.hp || 0
+    const mp = stats.mp || 0
+    const wp = stats.wp || 0 // Will Power
 
     return (
         <div
@@ -82,6 +81,18 @@ export default function CharacterDetailModal({
 
                 {/* Content */}
                 <div className="p-6 space-y-6">
+                    {/* Stats List (New Layout) */}
+                    <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700">
+                        <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+                            <span>📊</span> Status
+                        </h3>
+                        <div className="space-y-3">
+                            <StatBar label="HP" value={hp} max={hp} color="red" icon="❤️" />
+                            <StatBar label="MP" value={mp} max={mp} color="blue" icon="💧" />
+                            <StatBar label="Will Power" value={wp} max={wp} color="purple" icon="🧠" />
+                        </div>
+                    </div>
+
                     {/* Description */}
                     {description && (
                         <div>
@@ -93,13 +104,6 @@ export default function CharacterDetailModal({
                             </p>
                         </div>
                     )}
-
-                    {/* Stats Grid */}
-                    <div className="grid grid-cols-3 gap-4">
-                        <StatBox label="HP" value={hp || '—'} color="red" />
-                        <StatBox label="AC" value={ac || '—'} color="blue" />
-                        <StatBox label="Speed" value={speed || '30 ft'} color="green" />
-                    </div>
 
                     {/* Ability Scores */}
                     {Object.keys(abilities).length > 0 && (
@@ -169,18 +173,33 @@ export default function CharacterDetailModal({
     )
 }
 
-// Stat Box Component
-function StatBox({ label, value, color }: { label: string; value: any; color: string }) {
+// Stat Bar Component (New List Style)
+function StatBar({ label, value, max, color, icon }: { label: string; value: number; max: number; color: string; icon: string }) {
     const colorClasses = {
-        red: 'border-red-500/30 bg-red-900/10',
-        blue: 'border-blue-500/30 bg-blue-900/10',
-        green: 'border-emerald-500/30 bg-emerald-900/10'
+        red: 'bg-red-500',
+        blue: 'bg-blue-500',
+        purple: 'bg-purple-500',
+        green: 'bg-emerald-500'
     }
 
+    // Calculate percentage (default to 100% if max is 0 to avoid div by zero)
+    const percentage = max > 0 ? Math.min((value / max) * 100, 100) : 100
+
     return (
-        <div className={`border-2 ${colorClasses[color as keyof typeof colorClasses]} rounded-xl p-4 text-center`}>
-            <div className="text-3xl font-black text-white mb-1">{value}</div>
-            <div className="text-xs text-slate-400 uppercase tracking-wider font-bold">{label}</div>
+        <div className="flex items-center gap-4">
+            <div className="w-8 text-2xl text-center">{icon}</div>
+            <div className="flex-1">
+                <div className="flex justify-between items-end mb-1">
+                    <span className="text-sm font-bold text-slate-300 uppercase tracking-wider">{label}</span>
+                    <span className="text-sm font-black text-white">{value} / {max || '?'}</span>
+                </div>
+                <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
+                    <div
+                        className={`h-full rounded-full ${colorClasses[color as keyof typeof colorClasses]}`}
+                        style={{ width: `${percentage}%` }}
+                    />
+                </div>
+            </div>
         </div>
     )
 }

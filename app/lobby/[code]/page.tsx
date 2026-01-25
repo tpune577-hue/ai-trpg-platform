@@ -202,7 +202,7 @@ export default function LobbyPage() {
     return (
         <div className="min-h-screen bg-slate-950 text-slate-200 p-4 lg:p-10">
             {/* Header */}
-            <div className={`relative flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4 border-b border-slate-800 pb-10 pt-10 px-8 -mx-4 lg:-mx-10 mt-[-16px] lg:mt-[-40px] overflow-hidden`}>
+            <div className={`relative flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4 border-b border-slate-800 pb-10 pt-10 px-8 -mx-4 lg:-mx-10 mt-[-16px] lg:mt-[-40px] overflow-hidden shadow-2xl`}>
                 {/* Background Image */}
                 {session.campaign?.coverImage && (
                     <>
@@ -218,7 +218,7 @@ export default function LobbyPage() {
                     <div className="flex justify-between items-start w-full">
                         <div>
                             <div className="flex items-center gap-3 mb-2">
-                                <h1 className="text-3xl md:text-5xl font-black text-white tracking-tight drop-shadow-lg">
+                                <h1 className="text-3xl md:text-5xl font-black text-white tracking-tight drop-shadow-lg filter drop-shadow-[0_4px_4px_rgba(0,0,0,0.8)]">
                                     {session.campaign?.title || 'Campaign Lobby'}
                                 </h1>
                                 {session.campaign?.genre && (
@@ -228,18 +228,12 @@ export default function LobbyPage() {
                                 )}
                             </div>
 
-                            {session.campaign?.description && (
-                                <p className="text-slate-300 max-w-2xl text-lg drop-shadow-md leading-relaxed mb-4">
-                                    {session.campaign.description}
-                                </p>
-                            )}
-
-                            <div className="flex items-center gap-3 text-slate-400">
+                            <div className="flex items-center gap-3 text-slate-400 mt-4">
                                 <span className="bg-black/50 backdrop-blur-md border border-slate-700 px-3 py-1 rounded text-xs font-mono font-bold text-white">
                                     CODE: {session.joinCode}
                                 </span>
                                 <span>•</span>
-                                <span className="text-xs uppercase tracking-wider font-bold text-slate-300">
+                                <span className="text-xs uppercase tracking-wider font-bold text-slate-300 shadow-black drop-shadow-md">
                                     {session.players.length} Users Connected
                                 </span>
                                 {session.status === 'PAUSED' && (
@@ -302,6 +296,18 @@ export default function LobbyPage() {
 
                 {/* RIGHT: Main Area */}
                 <div className="lg:col-span-2">
+                    {/* Campaign Description - RESTORED BUT IMPROVED */}
+                    {session.campaign?.description && (
+                        <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-6 mb-8 relative overflow-hidden group hover:border-amber-500/50 transition-colors">
+                            <div className="absolute top-0 left-0 w-1 h-full bg-amber-500 lazy-load" />
+                            <h3 className="text-sm font-bold text-amber-500 uppercase tracking-widest mb-2 flex items-center gap-2">
+                                <span>📜</span> Adventure Prologue
+                            </h3>
+                            <p className="text-slate-300 leading-relaxed text-lg font-serif italic">
+                                "{session.campaign.description}"
+                            </p>
+                        </div>
+                    )}
 
                     {/* 🟢 GM VIEW: แสดง Player Grid Status */}
                     {myRole === 'GM' && (

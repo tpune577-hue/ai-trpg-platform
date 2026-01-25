@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { getLobbyInfo, joinLobby, setPlayerReady, startGame, resumeGame, saveCharacterSheet } from '@/app/actions/game'
 import CharacterCreator from '@/components/game/CharacterCreator'
 import LobbyVoiceChat from '@/components/lobby/LobbyVoiceChat'
+import CharacterDetailModal from '@/components/lobby/CharacterDetailModal'
 
 export default function LobbyPage() {
     const { code } = useParams()
@@ -21,6 +22,7 @@ export default function LobbyPage() {
     const [loading, setLoading] = useState(true)
     const [isActionLoading, setIsActionLoading] = useState(false)
     const [isCreatingChar, setIsCreatingChar] = useState(false)
+    const [detailCharacter, setDetailCharacter] = useState<any>(null)
 
     // 1. Check LocalStorage
     useEffect(() => {
@@ -254,6 +256,37 @@ export default function LobbyPage() {
 
                 {/* RIGHT: Main Area */}
                 <div className="lg:col-span-2">
+                    {/* Campaign Description - NEW */}
+                    {session.campaign && (
+                        <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-6 mb-8">
+                            <div className="flex items-start gap-4">
+                                {session.campaign.coverImage && (
+                                    <img
+                                        src={session.campaign.coverImage}
+                                        alt={session.campaign.title}
+                                        className="w-32 h-32 rounded-xl object-cover flex-shrink-0"
+                                    />
+                                )}
+                                <div className="flex-1">
+                                    <h2 className="text-2xl font-bold text-white mb-2">
+                                        {session.campaign.title}
+                                    </h2>
+                                    {session.campaign.description && (
+                                        <p className="text-slate-400 leading-relaxed text-sm">
+                                            {session.campaign.description}
+                                        </p>
+                                    )}
+                                    {session.campaign.genre && (
+                                        <div className="mt-3 flex gap-2">
+                                            <span className="px-3 py-1 bg-amber-900/30 text-amber-400 text-xs rounded-full font-bold">
+                                                {session.campaign.genre}
+                                            </span>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     {/* 🟢 GM VIEW: แสดง Player Grid Status */}
                     {myRole === 'GM' && (
@@ -343,16 +376,34 @@ export default function LobbyPage() {
                                                 {session.campaign.preGens.map((char: any) => (
                                                     <div
                                                         key={char.id}
-                                                        onClick={() => setSelectedCharId(char.id)}
-                                                        className={`cursor-pointer rounded-xl overflow-hidden border-2 transition-all flex flex-col relative group ${selectedCharId === char.id ? 'border-emerald-500 bg-slate-800 shadow-emerald-900/20 shadow-lg scale-[1.02]' : 'border-slate-800 bg-slate-900 hover:border-slate-600'}`}
+                                                        onClick={() => setDetailCharacter(char)}
+                                                        className={`cursor-pointer rounded-xl overflow-hidden border-2 transition-all flex flex-col relative group ${selectedCharId === char.id ? 'border-emerald-500 bg-slate-800 shadow-emerald-900/20 shadow-lg' : 'border-slate-800 bg-slate-900 hover:border-amber-500'}`}
                                                     >
                                                         <div className="w-full aspect-[4/3] bg-black relative">
                                                             <img src={char.avatarUrl || '/placeholder.jpg'} className="w-full h-full object-cover" />
+
+                                                            {/* Hover Overlay */}
+                                                            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/60 transition-all flex items-center justify-center">
+                                                                <span className="opacity-0 group-hover:opacity-100 text-white font-bold text-sm transition-opacity">
+                                                                    View Details →
+                                                                </span>
+                                                            </div>
+
+                                                            {/* Sheet Type Badge */}
                                                             <div className="absolute top-2 right-2">
                                                                 <span className={`text-[10px] px-2 py-0.5 rounded uppercase font-bold tracking-wider border shadow-sm backdrop-blur-md ${char.sheetType === 'ROLE_AND_ROLL' ? 'bg-amber-900/80 text-amber-500 border-amber-500/50' : 'bg-blue-900/80 text-blue-400 border-blue-500/50'}`}>
                                                                     {char.sheetType === 'ROLE_AND_ROLL' ? 'RnR' : 'STD'}
                                                                 </span>
                                                             </div>
+
+                                                            {/* Selected Badge */}
+                                                            {selectedCharId === char.id && (
+                                                                <div className="absolute top-2 left-2">
+                                                                    <span className="text-xs px-2 py-1 bg-emerald-500 text-black font-bold rounded">
+                                                                        ✓ Selected
+                                                                    </span>
+                                                                </div>
+                                                            )}
                                                         </div>
                                                         <div className="p-3 text-center">
                                                             <h3 className={`font-bold text-sm truncate ${selectedCharId === char.id ? 'text-emerald-400' : 'text-white'}`}>{char.name}</h3>
@@ -392,6 +443,20 @@ export default function LobbyPage() {
                     onCancel={() => setIsCreatingChar(false)}
                 />
             )}
+
+            {/* Character Detail Modal */}
+            <CharacterDetailModal
+                character={detailCharacter}
+                isOpen={!!detailCharacter}
+                onClose={() => setDetailCharacter(null)}
+                onSelect={() => {
+                    if (detailCharacter) {
+                        setSelectedCharId(detailCharacter.id)
+                        setDetailCharacter(null)
+                    }
+                }}
+                isSelected={selectedCharId === detailCharacter?.id}
+            />
         </div>
     )
 }

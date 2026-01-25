@@ -18,52 +18,68 @@ export default function CharacterDetailModal({
     if (!isOpen || !character) return null
 
     // --------------------------------------------------------
-    // ✅ Logic การ parse stats ที่แม่นยำขึ้น
+    // ✅ Logic การ parse stats ที่แม่นยำขึ้น (Updated for CharacterCreator compatibility)
     // --------------------------------------------------------
 
     // 1. Base Data
-    let charData = typeof character === 'string' ? JSON.parse(character) : character
-    console.log('🔍 Debug CharData:', charData) // ✅ Debug Log
+    let charData = typeof character === 'string' ? JSON.parse(character) : character || {}
 
-    // 2. Extract Stats (รองรับทั้งแบบ Object และ JSON String)
-    let stats: any = {}
+    // Support legacy/root level stats
+    let rawStats: any = charData.stats || charData // default to charData if no stats field
 
-    // กรณีที่ stat อยู่ใน root object เลย (เช่น Custom Character)
-    if (charData.hp !== undefined) {
-        stats = { ...charData }
+    // Handle JSON string case for stats
+    if (typeof rawStats === 'string') {
+        try { rawStats = JSON.parse(rawStats) } catch (e) { console.error('Parse rawStats error', e) }
     }
-    // กรณีที่ stat อยู่ใน stats field (เช่น PreGen จาก Database)
-    else if (charData.stats) {
-        if (typeof charData.stats === 'string') {
-            try {
-                stats = JSON.parse(charData.stats)
-            } catch (e) { console.error('Parse stats error', e) }
+
+    // 2. Detect System Type
+    // Use explicit sheetType from creator, or fallback to heuristics
+    const sheetType = charData.sheetType || rawStats.sheetType || 'STANDARD'
+    const isRnR = sheetType === 'ROLE_AND_ROLL'
+
+    // 3. Extract Stats & Attributes based on System
+    let hp = 0, mp = 0, wp = 0, mental = 0
+    let displayAttributes: any = {}
+
+    if (isRnR) {
+        // --- Role & Roll ---
+        // Vitals are usually in 'vitals' object root or inside stats
+        const vitals = charData.vitals || rawStats.vitals || rawStats
+
+        hp = Number(vitals.health || vitals.maxHealth || vitals.hp || 0)
+        mental = Number(vitals.mental || vitals.maxMental || 0)
+        wp = Number(vitals.willPower || vitals.wp || 0)
+
+        // Attributes are in 'attributes' object
+        displayAttributes = charData.attributes || rawStats.attributes || {}
+    } else {
+        // --- Standard (D&D) ---
+        // Stats are inline in the stats object
+        hp = Number(rawStats.hp || rawStats.maxHp || 0)
+        mp = Number(rawStats.mp || rawStats.maxMp || 0)
+        wp = Number(rawStats.willPower || rawStats.wp || 0)
+
+        // Construct Attributes from specific keys if 'abilities' object is missing
+        if (rawStats.abilities) {
+            displayAttributes = rawStats.abilities
         } else {
-            stats = charData.stats
+            // Map standard D&D stats to attributes if explicit object missing
+            const { str, dex, int, wis, cha, con } = rawStats
+            if (str !== undefined) displayAttributes['STR'] = str
+            if (dex !== undefined) displayAttributes['DEX'] = dex
+            if (int !== undefined) displayAttributes['INT'] = int
+            if (wis !== undefined) displayAttributes['WIS'] = wis
+            if (cha !== undefined) displayAttributes['CHA'] = cha
+            if (con !== undefined) displayAttributes['CON'] = con
         }
     }
 
-    // 3. Unify Fields (Robust Parsing)
-    const description = charData.bio || charData.description || stats.description || ''
-    const abilities = stats.abilities || stats.Abilities || {}
-    const skills = stats.skills || stats.Skills || []
-    const equipment = stats.equipment || stats.Equipment || []
+    // Fallback for description
+    const description = charData.bio?.description || charData.description || rawStats.description || charData.bio || ''
 
-    // Helper to find value case-insensitively
-    const findVal = (obj: any, keys: string[]) => {
-        if (!obj) return 0;
-        for (const key of keys) {
-            if (obj[key] !== undefined) return Number(obj[key]);
-            const lowerKey = key.toLowerCase();
-            const foundKey = Object.keys(obj).find(k => k.toLowerCase() === lowerKey);
-            if (foundKey && obj[foundKey] !== undefined) return Number(obj[foundKey]);
-        }
-        return 0;
-    }
-
-    const hp = findVal(stats, ['hp', 'maxHp', 'HP', 'MaxHP', 'health'])
-    const mp = findVal(stats, ['mp', 'maxMp', 'MP', 'MaxMP', 'mana'])
-    const wp = findVal(stats, ['wp', 'willPower', 'WP', 'WillPower', 'will', 'san']) // Sanity/Will
+    // Skills/Equip (Generic)
+    const skills = charData.skills || rawStats.skills || rawStats.Skills || []
+    const equipment = charData.equipment || rawStats.equipment || rawStats.Equipment || []
 
     return (
         <div
@@ -77,8 +93,8 @@ export default function CharacterDetailModal({
                 {/* Header with Image */}
                 <div className="relative h-64 bg-black">
                     <img
-                        src={charData.avatarUrl || '/placeholder.jpg'}
-                        alt={charData.name}
+                        src={charData.avatarUrl || charData.imageUrl || '/placeholder.jpg'}
+                        alt={charData.name || 'Character'}
                         className="w-full h-full object-cover"
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-black via-black/50 to-transparent" />
@@ -95,12 +111,19 @@ export default function CharacterDetailModal({
 
                     {/* Character Name Overlay */}
                     <div className="absolute bottom-0 left-0 right-0 p-6">
-                        <h2 className="text-4xl font-black text-white mb-2">
-                            {charData.name}
-                        </h2>
-                        <p className="text-amber-400 font-bold text-lg">
-                            {charData.class} • Level {charData.level || 1}
-                        </p>
+                        <div className="flex justify-between items-end">
+                            <div>
+                                <h2 className="text-4xl font-black text-white mb-2">
+                                    {charData.name || 'Unknown'}
+                                </h2>
+                                <p className="text-amber-400 font-bold text-lg">
+                                    {charData.class || 'Adventurer'} • Level {charData.level || 1}
+                                </p>
+                            </div>
+                            <span className={`px-3 py-1 rounded text-xs font-bold border ${isRnR ? 'bg-amber-900/50 text-amber-500 border-amber-500/50' : 'bg-blue-900/50 text-blue-400 border-blue-500/50'}`}>
+                                {isRnR ? 'ROLE & ROLL' : 'STANDARD RPG'}
+                            </span>
+                        </div>
                     </div>
                 </div>
 
@@ -108,51 +131,54 @@ export default function CharacterDetailModal({
                 <div className="p-6 space-y-6">
                     {/* Description (MOVED UP) */}
                     {description && (
-                        <div>
-                            <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-2">
-                                <span>📜</span> Background
-                            </h3>
-                            <p className="text-slate-300 leading-relaxed">
-                                {description}
-                            </p>
-                        </div>
+                        typeof description === 'string' ? (
+                            <div>
+                                <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-2">
+                                    <span>📜</span> Background
+                                </h3>
+                                <p className="text-slate-300 leading-relaxed">
+                                    {description}
+                                </p>
+                            </div>
+                        ) : null
                     )}
 
-                    {/* Stats List */}
+                    {/* Stats List (Dynamic) */}
                     <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700">
                         <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-2">
                             <span>📊</span> Status
                         </h3>
                         <div className="space-y-3">
+                            {/* Common HP */}
                             <StatBar label="HP" value={hp} max={hp} color="red" icon="❤️" />
-                            <StatBar label="MP" value={mp} max={mp} color="blue" icon="💧" />
-                            <StatBar label="Will Power" value={wp} max={wp} color="purple" icon="🧠" />
+
+                            {isRnR ? (
+                                <>
+                                    {/* RnR: HP - Mental - Willpower */}
+                                    <StatBar label="Mental" value={mental} max={mental} color="blue" icon="🧠" />
+                                    <StatBar label="Will Power" value={wp} max={wp} color="purple" icon="🔥" />
+                                </>
+                            ) : (
+                                <>
+                                    {/* Standard: HP - MP - Willpower */}
+                                    <StatBar label="MP" value={mp} max={mp} color="blue" icon="💧" />
+                                    <StatBar label="Will Power" value={wp} max={wp} color="purple" icon="✨" />
+                                </>
+                            )}
                         </div>
                     </div>
 
-                    {/* Ability Scores (New List Layout) */}
-                    {Object.keys(abilities).length > 0 && (
+                    {/* Attributes / Abilities */}
+                    {Object.keys(displayAttributes).length > 0 && (
                         <div>
                             <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-2">
-                                <span>⚡</span> Attributes & Abilities
+                                <span>⚡</span> {isRnR ? 'Attributes' : 'Ability Scores'}
                             </h3>
                             <div className="bg-slate-800/30 rounded-xl border border-slate-700 divide-y divide-slate-700/50">
-                                {Object.entries(abilities).map(([key, value]) => (
-                                    <AbilityRow key={key} name={key} value={value as number} />
+                                {Object.entries(displayAttributes).map(([key, value]) => (
+                                    <AbilityRow key={key} name={key} value={value as number} isRnR={isRnR} />
                                 ))}
                             </div>
-                        </div>
-                    )}
-
-                    {/* Description */}
-                    {description && (
-                        <div>
-                            <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-2">
-                                <span>📜</span> Background
-                            </h3>
-                            <p className="text-slate-300 leading-relaxed">
-                                {description}
-                            </p>
                         </div>
                     )}
 
@@ -211,7 +237,15 @@ export default function CharacterDetailModal({
 }
 
 // Stat Bar Component 
-function StatBar({ label, value, max, color, icon }: { label: string; value: number; max: number; color: string; icon: string }) {
+function StatBar({ label, value, max, color, icon, suffix = '', isValueOnly = false }: {
+    label: string;
+    value: number;
+    max: number;
+    color: string;
+    icon: string;
+    suffix?: string;
+    isValueOnly?: boolean;
+}) {
     const colorClasses = {
         red: 'bg-red-500',
         blue: 'bg-blue-500',
@@ -219,6 +253,7 @@ function StatBar({ label, value, max, color, icon }: { label: string; value: num
         green: 'bg-emerald-500'
     }
 
+    // Calculate percentage (default to 100% if max is 0 to avoid div by zero)
     const percentage = max > 0 ? Math.min((value / max) * 100, 100) : (value > 0 ? 100 : 0)
 
     return (
@@ -227,33 +262,49 @@ function StatBar({ label, value, max, color, icon }: { label: string; value: num
             <div className="flex-1">
                 <div className="flex justify-between items-end mb-1">
                     <span className="text-sm font-bold text-slate-300 uppercase tracking-wider">{label}</span>
-                    <span className="text-sm font-black text-white">{value} / {max || '?'}</span>
+                    <span className="text-sm font-black text-white">{value}{suffix} {max > 0 && `/ ${max}`}</span>
                 </div>
-                <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
-                    <div
-                        className={`h-full rounded-full ${colorClasses[color as keyof typeof colorClasses]}`}
-                        style={{ width: `${percentage}%` }}
-                    />
-                </div>
+                {!isValueOnly && (
+                    <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
+                        <div
+                            className={`h-full rounded-full ${colorClasses[color as keyof typeof colorClasses]}`}
+                            style={{ width: `${percentage}%` }}
+                        />
+                    </div>
+                )}
             </div>
         </div>
     )
 }
 
 // Ability Row Component (List Layout, No Modifier)
-function AbilityRow({ name, value }: { name: string; value: number }) {
+function AbilityRow({ name, value, isRnR = false }: { name: string; value: number; isRnR?: boolean }) {
+    // Modifier calculation logic (Only for Standard D&D)
+    // RnR uses direct values (Attributes)
+    const modifier = Math.floor((value - 10) / 2)
+    const modifierStr = modifier >= 0 ? `+${modifier}` : `${modifier}`
+
+    // Scale for visualization
+    const maxVal = isRnR ? 6 : 20 // RnR attributes are typically 1-6, D&D is 1-20
+
     return (
         <div className="flex justify-between items-center p-3 hover:bg-white/5 transition-colors">
             <span className="font-bold text-slate-300 uppercase tracking-wider text-sm pl-2">{name}</span>
             <div className="flex items-center gap-3">
-                {/* Progress Bar visual for stat (0-20 scale) */}
+                {/* Progress Bar visual for stat */}
                 <div className="hidden sm:block w-32 h-1.5 bg-slate-800 rounded-full overflow-hidden">
                     <div
                         className="h-full bg-slate-500 rounded-full"
-                        style={{ width: `${Math.min((value / 20) * 100, 100)}%` }}
+                        style={{ width: `${Math.min((value / maxVal) * 100, 100)}%` }}
                     />
                 </div>
-                <span className="text-lg font-black text-white w-8 text-right">{value}</span>
+
+                <div className="text-right w-16">
+                    <span className="text-lg font-black text-white">{value}</span>
+                    {!isRnR && (
+                        <span className="text-xs text-amber-500 font-bold ml-2">({modifierStr})</span>
+                    )}
+                </div>
             </div>
         </div>
     )

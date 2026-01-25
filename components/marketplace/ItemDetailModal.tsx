@@ -38,21 +38,34 @@ export default function ItemDetailModal({
         setIsPurchasing(true)
 
         try {
-            const response = await fetch('/api/marketplace/purchase', {
+            // Create Stripe checkout session
+            const response = await fetch('/api/payment/create-checkout', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ itemId: item.id }),
+                body: JSON.stringify({
+                    itemType: 'MARKETPLACE_ITEM',
+                    itemId: item.id,
+                    amount: item.price,
+                    metadata: {
+                        itemName: item.title,
+                        itemDescription: item.description,
+                        itemType: item.type
+                    }
+                }),
             })
 
             if (!response.ok) {
                 const data = await response.json()
-                throw new Error(data.error || 'Purchase failed')
+                throw new Error(data.error || 'Failed to create checkout session')
             }
 
-            onPurchaseSuccess()
+            const { sessionUrl } = await response.json()
+
+            // Redirect to Stripe Checkout
+            window.location.href = sessionUrl
+
         } catch (err: any) {
             setError(err.message)
-        } finally {
             setIsPurchasing(false)
         }
     }
@@ -87,8 +100,8 @@ export default function ItemDetailModal({
                             <div className="flex items-center gap-3 mb-2">
                                 <h2 className="text-3xl font-bold text-white">{item.title}</h2>
                                 <span className={`px-3 py-1 text-xs font-bold uppercase rounded-full ${item.type === 'ART' ? 'bg-purple-500 text-white' :
-                                        item.type === 'CAMPAIGN' ? 'bg-amber-500 text-black' :
-                                            'bg-blue-500 text-white'
+                                    item.type === 'CAMPAIGN' ? 'bg-amber-500 text-black' :
+                                        'bg-blue-500 text-white'
                                     }`}>
                                     {item.type}
                                 </span>

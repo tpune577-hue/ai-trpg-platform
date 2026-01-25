@@ -44,6 +44,7 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   marketplaceItems MarketplaceItem[] @relation("UserMarketplaceItems") // เพิ่มบรรทัดนี้
+  transactions     Transaction[] // ChillPay transactions
 }
 
 // SellerProfile สำหรับ KYC และรับเงิน
@@ -339,15 +340,6 @@ model InventoryItem {
   @@unique([userId, productId]) 
 }
 
-model Transaction {
-  id        String   @id @default(cuid())
-  orderNo   String   @unique
-  playerId  String
-  amount    Float
-  status    String   @default("PENDING") // PENDING, SUCCESS, FAILED
-  createdAt DateTime @default(now())
-}
-
 // --- MARKETPLACE ITEM (เพิ่มเข้าไปเพื่อให้ตรงกับ API) ---
 model MarketplaceItem {
   id          String   @id @default(cuid())
@@ -362,4 +354,36 @@ model MarketplaceItem {
   updatedAt   DateTime @updatedAt
 
   creator     User     @relation("UserMarketplaceItems", fields: [creatorId], references: [id])
+}
+
+// Transaction Model - Polymorphic design for multiple product types
+model Transaction {
+  id            String   @id @default(cuid())
+  orderNo       String   @unique // เลขที่ออเดอร์ที่เราส่งให้ ChillPay
+  amount        Int      // จำนวนเงิน (บาท)
+  status        String   @default("PENDING") // PENDING, SUCCESS, FAILED, REFUNDED
+  
+  // User who made the purchase
+  userId        String
+  user          User     @relation(fields: [userId], references: [id])
+  
+  // 🔥 Polymorphic Fields - รองรับสินค้าหลายประเภท
+  itemType      String?  // "CAMPAIGN", "GM_QUEUE", "ASSET", "MARKETPLACE_ITEM"
+  itemId        String?  // ID ของสินค้าตามประเภท
+  
+  // Metadata (เก็บข้อมูลเพิ่มเติมเป็น JSON)
+  metadata      Json?    // { itemName, itemPrice, quantity, etc. }
+  
+  // Stripe specific fields
+  stripeSessionId     String?  @unique // Stripe Checkout Session ID
+  stripePaymentIntent String?  // Stripe Payment Intent ID
+  paymentDate         DateTime?
+  paymentMethod       String?  // "card", "promptpay", etc.
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  @@index([userId])
+  @@index([itemType, itemId])
+  @@index([status])
 }

@@ -74,27 +74,13 @@ app.prepare().then(() => {
 
             try {
                 const campaign = await prisma.campaign.findUnique({
-                    where: { id: campaignId },
-                    include: { characters: true }
+                    where: { id: campaignId }
                 })
 
                 if (campaign) {
                     // ส่ง State ปัจจุบัน
                     const currentState = parseJSON(campaign.currentState)
                     socket.emit('game:state_update', currentState)
-
-                    // ส่งข้อมูลตัวละคร (ถ้าเป็น Player)
-                    if (socket.data.user.role === 'PLAYER') {
-                        const myChar = campaign.characters.find(c => c.userId === socket.data.user.id)
-                        if (myChar) {
-                            const charData = {
-                                ...myChar,
-                                stats: parseJSON(myChar.stats),
-                                inventory: parseJSON(myChar.inventory)
-                            }
-                            socket.emit('player:character_data', charData)
-                        }
-                    }
 
                     // --- NEW API: Room Presence ---
                     const sockets = await io.in(campaignId).fetchSockets()
@@ -287,8 +273,7 @@ app.prepare().then(() => {
         try {
             // 1. ดึงข้อมูลล่าสุด
             const campaign = await prisma.campaign.findUnique({
-                where: { id: campaignId },
-                include: { characters: true }
+                where: { id: campaignId }
             })
             if (!campaign) return
 
@@ -300,21 +285,11 @@ app.prepare().then(() => {
                 currentScene: currentStateString.currentScene || "Unknown",
                 environment: currentStateString.environment || "Unknown",
                 recentEvents: currentStateString.recentEvents || [],
-                characters: campaign.characters.map(c => ({
-                    id: c.id,
-                    name: c.name,
-                    // แมพข้อมูลอื่นๆ ตามที่มีใน DB
-                    hp: 20, // ค่าสมมติถ้าไม่มีใน DB
-                    maxHp: 20,
-                    ac: 10,
-                    class: "Adventurer",
-                    level: 1
-                }))
+                characters: [] // Empty array since we don't have characters relation
             }
 
-            // หา Stats ของคนทำ Action
-            const character = campaign.characters.find(c => c.userId === user.id)
-            const actorStats = character ? parseJSON(character.stats) : { strength: 10, dexterity: 10, intelligence: 10, wisdom: 10, charisma: 10, constitution: 10 }
+            // Default actor stats
+            const actorStats = { strength: 10, dexterity: 10, intelligence: 10, wisdom: 10, charisma: 10, constitution: 10 }
 
             // 3. ให้ AI คิด (เรียก Function ตรงๆ ไม่ต้อง new Class)
             const result = await processGameTurn(

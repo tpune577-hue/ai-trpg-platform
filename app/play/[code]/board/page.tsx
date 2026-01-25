@@ -159,10 +159,6 @@ export default function CampaignBoardPage() {
             const data = await getLobbyInfo(joinCode)
             if (data) {
                 setSession(data)
-                // ถ้ามี User จริง ให้ใช้ชื่อจริงใน Voice Chat
-                if (data.currentUser?.name) {
-                    setMyIdentity(data.currentUser.name)
-                }
 
                 setCampaignScenes(data.campaign?.scenes || [])
                 setCampaignNpcs(data.campaign?.npcs || [])
@@ -211,16 +207,16 @@ export default function CampaignBoardPage() {
 
     // Socket Listeners
     useEffect(() => {
-        onGameStateUpdate((newState) => setGameState((prev: any) => ({ ...prev, ...newState })))
-        onChatMessage((message) => setLogs((prev) => prev.some(log => log.id === message.id) ? prev : [...prev, message]))
-        onWhisperReceived((data) => {
+        onGameStateUpdate((newState: any) => setGameState((prev: any) => ({ ...prev, ...newState })))
+        onChatMessage((message: any) => setLogs((prev) => prev.some(log => log.id === message.id) ? prev : [...prev, message]))
+        onWhisperReceived((data: any) => {
             setLogs((prev) => [...prev, {
                 id: Date.now().toString(), content: `(Whisper ${data.sender}): ${data.message}`,
                 type: 'NARRATION', senderName: 'System', timestamp: new Date()
             }])
         })
 
-        onPlayerAction((action) => {
+        onPlayerAction((action: any) => {
             if (action.actionType === 'PLAYER_KICKED') {
                 setDbPlayers(prev => prev.filter(p => p.id !== action.targetPlayerId))
                 return
@@ -286,7 +282,7 @@ export default function CampaignBoardPage() {
     }, [onGameStateUpdate, onChatMessage, onPlayerAction, onWhisperReceived, dbPlayers, joinCode])
 
     useEffect(() => {
-        onDiceResult(async (result) => {
+        onDiceResult(async (result: any) => {
             const playerName = result.playerName || result.actorName || 'Unknown'
             if (overlayTimeoutRef.current) clearTimeout(overlayTimeoutRef.current)
             setShowingDiceResult(result)

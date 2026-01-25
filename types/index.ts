@@ -1,4 +1,26 @@
-import { User, Campaign, Character, ChatMessage, MarketplaceItem } from '@prisma/client'
+import { User, Campaign, MarketplaceItem } from '@prisma/client'
+
+// Define Character interface since it doesn't exist in Prisma schema
+export interface Character {
+    id: string
+    name: string
+    userId: string
+    campaignId: string
+    stats: any
+    inventory: any
+    createdAt: Date
+    updatedAt: Date
+}
+
+// Define ChatMessage interface since it doesn't exist in Prisma schema
+export interface ChatMessage {
+    id: string
+    campaignId: string
+    userId: string
+    content: string
+    type: string
+    createdAt: Date
+}
 
 // Manually define Enums as String Unions for SQLite compatibility
 export type UserRole = 'GM' | 'PLAYER' | 'CREATOR'

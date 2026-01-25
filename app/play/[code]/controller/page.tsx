@@ -140,9 +140,9 @@ export default function PlayerControllerPage() {
                 } catch (e) { console.error("NPC Parse Error", e) }
 
                 if (targetSceneId) {
-                    const s = session.campaign?.scenes.find((s: any) => s.id === targetSceneId)
+                    const s = session.campaign?.scenes?.find((s: any) => s.id === targetSceneId)
                     targetSceneUrl = s?.imageUrl || ''
-                } else if (session.campaign?.scenes?.length > 0) {
+                } else if (session.campaign?.scenes && session.campaign.scenes.length > 0) {
                     targetSceneId = session.campaign.scenes[0].id
                     targetSceneUrl = session.campaign.scenes[0].imageUrl
                 }
@@ -181,7 +181,7 @@ export default function PlayerControllerPage() {
     // --- SOCKET HANDLERS ---
     useEffect(() => {
         if (onRollRequested) {
-            onRollRequested((req) => {
+            onRollRequested((req: any) => {
                 const isRnRCampaign = campaignSystem === 'ROLE_AND_ROLL'
                 const isRnRCharacter = character?.sheetType === 'ROLE_AND_ROLL'
                 if (isRnRCampaign && isRnRCharacter) {
@@ -209,7 +209,7 @@ export default function PlayerControllerPage() {
             })
         }
 
-        if (onPrivateSceneUpdate) onPrivateSceneUpdate((data) => setPrivateSceneId(data.sceneId))
+        if (onPrivateSceneUpdate) onPrivateSceneUpdate((data: any) => setPrivateSceneId(data.sceneId))
 
         const handleLog = (msg: any) => {
             setLogs((prev) => {
@@ -220,15 +220,15 @@ export default function PlayerControllerPage() {
         }
 
         if (onChatMessage) onChatMessage(handleLog)
-        if (onWhisperReceived) onWhisperReceived((data) => {
+        if (onWhisperReceived) onWhisperReceived((data: any) => {
             setLastWhisper(data)
             setTimeout(() => setLastWhisper(null), 8000)
             handleLog({ id: Date.now().toString(), content: `🤫 Whisper from ${data.sender}: "${data.message}"`, type: 'WHISPER', senderName: data.sender, timestamp: new Date() })
         })
-        if (onAnnounce) onAnnounce((data) => { setAnnouncement(data.message); setTimeout(() => setAnnouncement(''), 15000) })
+        if (onAnnounce) onAnnounce((data: any) => { setAnnouncement(data.message); setTimeout(() => setAnnouncement(''), 15000) })
 
         if (onPlayerAction) {
-            onPlayerAction((action) => {
+            onPlayerAction((action: any) => {
                 if (action.actionType === 'GM_UPDATE_SCENE') {
                     const payload = action.payload || {}
                     let newNpcs = payload.activeNpcs || []
@@ -277,7 +277,7 @@ export default function PlayerControllerPage() {
             })
         }
 
-        if (onDiceResult) onDiceResult((result) => {
+        if (onDiceResult) onDiceResult((result: any) => {
             let logMessage = result.details && Array.isArray(result.details) ? `🎲 ${result.actorName} rolled Role & Roll: ${result.total}` : `🎲 ${result.actorName} rolled ${result.total} (${result.roll}+${result.mod})`
             handleLog({ id: Date.now().toString(), content: logMessage, type: 'DICE', senderName: 'System', timestamp: new Date() })
         })
@@ -307,7 +307,7 @@ export default function PlayerControllerPage() {
         await sendPlayerAction({ actionType: 'dice_roll', checkType: rollRequest.checkType, dc: rollRequest.dc, roll, mod, willBoost, total, actorName: character?.name } as any)
         if (willBoost > 0 && character?.stats) {
             const newWill = (character.stats.willPower || 0) - willBoost
-            setCharacter(prev => ({ ...prev, stats: { ...prev.stats, willPower: newWill } }))
+            setCharacter((prev: any) => ({ ...prev, stats: { ...prev.stats, willPower: newWill } }))
             await updateCharacterStats(playerId, { willPower: newWill })
         }
         setRollRequest(null); setWillBoost(0)
@@ -319,7 +319,7 @@ export default function PlayerControllerPage() {
         setIsRnRRolling(false)
         if (willUsed > 0 && character?.stats) {
             const newWill = (character.stats.willPower || 0) - willUsed
-            setCharacter(prev => ({ ...prev, stats: { ...prev.stats, willPower: newWill } }))
+            setCharacter((prev: any) => ({ ...prev, stats: { ...prev.stats, willPower: newWill } }))
             await updateCharacterStats(playerId, { willPower: newWill })
         }
         await sendPlayerAction({ actionType: 'rnr_roll', actorName: character.name, total: totalScore, details: steps, willBoost: willUsed, description: `rolled Role & Roll check: ${totalScore} `, isRequested: isRequestedRoll } as any)

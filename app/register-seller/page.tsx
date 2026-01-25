@@ -1,11 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { registerSellerAction } from "@/app/actions/seller"
 import ImageUploader from '@/components/shared/ImageUploader'
 
-export default function RegisterSellerPage() {
+function RegisterSellerForm() {
     const router = useRouter()
     const searchParams = useSearchParams()
     const isResubmit = searchParams.get('resubmit') === 'true'
@@ -173,5 +173,13 @@ export default function RegisterSellerPage() {
                 </form>
             </div>
         </div>
+    )
+}
+
+export default function RegisterSellerPage() {
+    return (
+        <Suspense fallback={<div className="min-h-screen bg-slate-950 flex items-center justify-center text-white">Loading...</div>}>
+            <RegisterSellerForm />
+        </Suspense>
     )
 }

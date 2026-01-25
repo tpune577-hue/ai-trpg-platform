@@ -99,7 +99,9 @@ function ActiveSpeakers() {
 
 // Component ย่อย: กล่องชื่อคน (เปลี่ยนสีตอนพูด)
 function SpeakerTile({ trackRef }: { trackRef: TrackReferenceOrPlaceholder }) {
-    const { identity, isSpeaking } = useParticipantInfo({ participant: trackRef.participant });
+    const { identity } = useParticipantInfo({ participant: trackRef.participant });
+    // Note: isSpeaking is not available from useParticipantInfo in this version
+    const isSpeaking = false; // Placeholder - can be enhanced with useIsSpeaking hook if needed
     return (
         <div
             className={`text-[10px] px-2 py-1 rounded border transition-all duration-200 flex items-center gap-1

@@ -132,7 +132,7 @@ export function EnhancedPartyStatus({
                                     {player.name?.charAt(0) || '?'}
                                 </div>
                                 <div>
-                                    <div className="text-sm font-bold text-slate-200">{player.character?.name || player.name}</div>
+                                    <div className="text-sm font-bold text-slate-200">{(player as any).character?.name || player.characterName || player.name}</div>
                                     <div className="text-[10px] text-slate-500 uppercase">{player.name}</div>
                                 </div>
                             </div>
@@ -181,14 +181,15 @@ export function EnhancedPartyStatus({
                             <div className="p-3 pt-0 space-y-3 border-t border-slate-800 bg-slate-900/30">
 
                                 {/* Stats Display */}
-                                {player.stats && (() => {
+                                {(player as any).stats && (() => {
                                     // ✅ Detect character type and get correct values
-                                    const isRnR = player.character?.sheetType === 'ROLE_AND_ROLL'
-                                    const hp = isRnR ? (player.stats.vitals?.health || 0) : (player.stats.hp || 0)
-                                    const maxHp = isRnR ? (player.stats.vitals?.maxHealth || 0) : (player.stats.maxHp || 0)
-                                    const mp = isRnR ? (player.stats.vitals?.mental || 0) : (player.stats.mp || 0)
-                                    const maxMp = isRnR ? (player.stats.vitals?.maxMental || 0) : (player.stats.maxMp || 0)
-                                    const willPower = isRnR ? (player.stats.vitals?.willPower || 0) : (player.stats.willPower || player.stats.will || 0)
+                                    const isRnR = (player as any).character?.sheetType === 'ROLE_AND_ROLL'
+                                    const playerStats = (player as any).stats
+                                    const hp = isRnR ? (playerStats.vitals?.health || 0) : (playerStats.hp || 0)
+                                    const maxHp = isRnR ? (playerStats.vitals?.maxHealth || 0) : (playerStats.maxHp || 0)
+                                    const mp = isRnR ? (playerStats.vitals?.mental || 0) : (playerStats.mp || 0)
+                                    const maxMp = isRnR ? (playerStats.vitals?.maxMental || 0) : (playerStats.maxMp || 0)
+                                    const willPower = isRnR ? (playerStats.vitals?.willPower || 0) : (playerStats.willPower || playerStats.will || 0)
 
                                     return (
                                         <div className="space-y-2 mt-2">
@@ -324,7 +325,7 @@ export function EnhancedPartyStatus({
                                     {onRequestRoll && (() => {
                                         try {
                                             // ✅ เช็ค Character Type ของแต่ละ Player
-                                            const playerCharType = player.character?.sheetType || 'STANDARD'
+                                            const playerCharType = (player as any).character?.sheetType || 'STANDARD'
                                             const playerCheckOptions = playerCharType === 'ROLE_AND_ROLL' ? RNR_CHECKS : STANDARD_CHECKS
 
                                             return (

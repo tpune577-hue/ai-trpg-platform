@@ -17,10 +17,7 @@ export default function GameRoom({ campaignId, currentUser }: GameRoomProps) {
     // Initialize the socket hook
     const {
         isConnected,
-        isInRoom,
         roomInfo,
-        connectionError,
-        latency,
         sendPlayerAction,
         sendGMUpdate,
         sendChatMessage,
@@ -29,14 +26,12 @@ export default function GameRoom({ campaignId, currentUser }: GameRoomProps) {
         onGameStateUpdate,
         onChatMessage,
         onPlayerJoined,
-        onPlayerLeft,
-        onTyping,
         measureLatency,
     } = useGameSocket(campaignId, {
         sessionToken: 'DEMO_PLAYER_TOKEN',
         userProfile: currentUser,
         autoConnect: true,
-        onError: (error) => {
+        onError: (error: any) => {
             console.error('Socket error:', error)
         },
         onReconnect: () => {
@@ -66,7 +61,7 @@ export default function GameRoom({ campaignId, currentUser }: GameRoomProps) {
         })
 
         // Listen for chat messages
-        onChatMessage((message) => {
+        onChatMessage((message: any) => {
             console.log('Chat message:', message)
             setMessages((prev) => [...prev, message])
         })
@@ -84,24 +79,7 @@ export default function GameRoom({ campaignId, currentUser }: GameRoomProps) {
             ])
         })
 
-        // Listen for players leaving
-        onPlayerLeft((data) => {
-            console.log('Player left:', data.userName)
-            setMessages((prev) => [
-                ...prev,
-                {
-                    type: 'system',
-                    content: `${data.userName} left the game`,
-                    timestamp: new Date(),
-                },
-            ])
-        })
-
-        // Listen for typing indicators
-        onTyping((data) => {
-            console.log(`${data.userName} is ${data.isTyping ? 'typing' : 'not typing'}`)
-        })
-    }, [onPlayerAction, onGameStateUpdate, onChatMessage, onPlayerJoined, onPlayerLeft, onTyping])
+    }, [onPlayerAction, onGameStateUpdate, onChatMessage, onPlayerJoined])
 
     // Measure latency periodically
     useEffect(() => {
@@ -117,13 +95,8 @@ export default function GameRoom({ campaignId, currentUser }: GameRoomProps) {
     // Handle sending chat message
     const handleSendMessage = async () => {
         if (!chatInput.trim()) return
-
-        const result = await sendChatMessage(chatInput, 'TALK' as any)
-        if (result.success) {
-            setChatInput('')
-        } else {
-            console.error('Failed to send message:', result.error)
-        }
+        await sendChatMessage(chatInput)
+        setChatInput('')
     }
 
     // Handle player action (example: attack)
@@ -137,11 +110,7 @@ export default function GameRoom({ campaignId, currentUser }: GameRoomProps) {
             damage: Math.floor(Math.random() * 20) + 1, // Random damage 1-20
             description: `${currentUser.characterName || currentUser.name} attacks ${targetName}!`,
         }
-
-        const result = await sendPlayerAction(actionData)
-        if (!result.success) {
-            console.error('Failed to send action:', result.error)
-        }
+        await sendPlayerAction(actionData)
     }
 
     // Handle GM update (only for GMs)
@@ -159,11 +128,7 @@ export default function GameRoom({ campaignId, currentUser }: GameRoomProps) {
             weather: 'Rainy',
             ambience: 'Mysterious and tense',
         }
-
-        const result = await sendGMUpdate(newState)
-        if (!result.success) {
-            console.error('Failed to update game state:', result.error)
-        }
+        await sendGMUpdate(newState)
     }
 
     return (
@@ -179,8 +144,6 @@ export default function GameRoom({ campaignId, currentUser }: GameRoomProps) {
                             ) : (
                                 <span className="text-red-400">● Disconnected</span>
                             )}
-                            {isInRoom && <span className="ml-2">• In Room</span>}
-                            {latency > 0 && <span className="ml-2">• Latency: {latency}ms</span>}
                         </p>
                     </div>
                     {currentUser.role === 'GM' && (
@@ -192,9 +155,6 @@ export default function GameRoom({ campaignId, currentUser }: GameRoomProps) {
                         </button>
                     )}
                 </div>
-                {connectionError && (
-                    <div className="mt-2 p-2 bg-red-900 text-red-200 rounded">{connectionError}</div>
-                )}
             </div>
 
             {/* Main Content */}
@@ -203,7 +163,7 @@ export default function GameRoom({ campaignId, currentUser }: GameRoomProps) {
                 <div className="w-64 bg-gray-800 p-4 border-r border-gray-700 overflow-y-auto">
                     <h2 className="font-bold mb-4">Players ({roomInfo?.connectedPlayers.length || 0})</h2>
                     <div className="space-y-2">
-                        {roomInfo?.connectedPlayers.map((player) => (
+                        {roomInfo?.connectedPlayers.map((player: any) => (
                             <div
                                 key={player.id}
                                 className="p-2 bg-gray-700 rounded hover:bg-gray-600 cursor-pointer"
@@ -265,7 +225,7 @@ export default function GameRoom({ campaignId, currentUser }: GameRoomProps) {
                                 value={chatInput}
                                 onChange={(e) => {
                                     setChatInput(e.target.value)
-                                    sendTypingIndicator(e.target.value.length > 0)
+                                    sendTypingIndicator()
                                 }}
                                 onKeyPress={(e) => {
                                     if (e.key === 'Enter') {

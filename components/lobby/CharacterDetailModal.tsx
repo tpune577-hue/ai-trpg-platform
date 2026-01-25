@@ -129,20 +129,6 @@ export default function CharacterDetailModal({
 
                 {/* Content */}
                 <div className="p-6 space-y-6">
-                    {/* Description (MOVED UP) */}
-                    {description && (
-                        typeof description === 'string' ? (
-                            <div>
-                                <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-2">
-                                    <span>📜</span> Background
-                                </h3>
-                                <p className="text-slate-300 leading-relaxed">
-                                    {description}
-                                </p>
-                            </div>
-                        ) : null
-                    )}
-
                     {/* Stats List (Dynamic) */}
                     <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700">
                         <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-2">

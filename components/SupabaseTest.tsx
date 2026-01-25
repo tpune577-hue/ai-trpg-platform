@@ -15,7 +15,7 @@ export function SupabaseTest() {
                 return
             }
 
-            const { data, error } = await supabase.from('game_sessions').select('*').limit(1)
+            const { data, error } = await supabase.from('User').select('*').limit(1)
 
             if (error) {
                 console.error("Supabase Error:", error)

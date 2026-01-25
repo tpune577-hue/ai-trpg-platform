@@ -17,11 +17,29 @@ export default function CharacterDetailModal({
 }: CharacterDetailModalProps) {
     if (!isOpen || !character) return null
 
-    // Parse character data
-    const charData = typeof character === 'string' ? JSON.parse(character) : character
-    const abilities = charData.abilities || {}
-    const skills = charData.skills || []
-    const equipment = charData.equipment || []
+    // Parse character data logic
+    let charData = typeof character === 'string' ? JSON.parse(character) : character
+
+    // Handle Prisma PreGen structure (where stats are in a JSON string field)
+    let stats = charData
+    if (charData.stats && typeof charData.stats === 'string') {
+        try {
+            const parsedStats = JSON.parse(charData.stats)
+            stats = { ...charData, ...parsedStats }
+        } catch (e) {
+            console.error('Failed to parse character stats', e)
+        }
+    }
+
+    // Unify fields
+    const description = charData.bio || charData.description || stats.description || ''
+    const abilities = stats.abilities || {}
+    const skills = stats.skills || []
+    const equipment = stats.equipment || []
+    const hp = stats.hp
+    const ac = stats.ac
+    const speed = stats.speed
+
 
     return (
         <div
@@ -65,22 +83,22 @@ export default function CharacterDetailModal({
                 {/* Content */}
                 <div className="p-6 space-y-6">
                     {/* Description */}
-                    {charData.description && (
+                    {description && (
                         <div>
                             <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-2">
                                 <span>📜</span> Background
                             </h3>
                             <p className="text-slate-300 leading-relaxed">
-                                {charData.description}
+                                {description}
                             </p>
                         </div>
                     )}
 
                     {/* Stats Grid */}
                     <div className="grid grid-cols-3 gap-4">
-                        <StatBox label="HP" value={charData.hp || '—'} color="red" />
-                        <StatBox label="AC" value={charData.ac || '—'} color="blue" />
-                        <StatBox label="Speed" value={charData.speed || '30 ft'} color="green" />
+                        <StatBox label="HP" value={hp || '—'} color="red" />
+                        <StatBox label="AC" value={ac || '—'} color="blue" />
+                        <StatBox label="Speed" value={speed || '30 ft'} color="green" />
                     </div>
 
                     {/* Ability Scores */}
@@ -139,8 +157,8 @@ export default function CharacterDetailModal({
                     <button
                         onClick={onSelect}
                         className={`w-full py-4 rounded-xl font-bold text-lg transition-all ${isSelected
-                                ? 'bg-emerald-500 hover:bg-emerald-400 text-black'
-                                : 'bg-amber-500 hover:bg-amber-400 text-black'
+                            ? 'bg-emerald-500 hover:bg-emerald-400 text-black'
+                            : 'bg-amber-500 hover:bg-amber-400 text-black'
                             }`}
                     >
                         {isSelected ? '✓ Selected' : 'Select This Character'}

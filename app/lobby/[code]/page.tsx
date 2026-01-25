@@ -202,45 +202,84 @@ export default function LobbyPage() {
     return (
         <div className="min-h-screen bg-slate-950 text-slate-200 p-4 lg:p-10">
             {/* Header */}
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4 border-b border-slate-800 pb-6">
-                <div>
-                    <h1 className="text-3xl md:text-4xl font-bold text-white tracking-tight flex items-center gap-3">
-                        {session.campaign?.title || 'Campaign Lobby'}
-                        {session.status === 'PAUSED' && <span className="text-amber-500 text-sm border border-amber-500 px-2 py-0.5 rounded">RESUMING</span>}
-                    </h1>
-                    <div className="flex items-center gap-2 text-slate-400 mt-2">
-                        <span className="bg-slate-800 px-3 py-1 rounded text-xs font-mono font-bold text-white">CODE: {session.joinCode}</span>
-                        <span>•</span>
-                        <span className="text-xs uppercase tracking-wider">{session.players.length} Users Connected</span>
-                        <button onClick={handleLogout} className="ml-4 text-xs text-red-400 hover:text-red-300 underline cursor-pointer">(Log out)</button>
+            <div className={`relative flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4 border-b border-slate-800 pb-10 pt-10 px-8 -mx-4 lg:-mx-10 mt-[-16px] lg:mt-[-40px] overflow-hidden`}>
+                {/* Background Image */}
+                {session.campaign?.coverImage && (
+                    <>
+                        <div
+                            className="absolute inset-0 bg-cover bg-center z-0"
+                            style={{ backgroundImage: `url(${session.campaign.coverImage})` }}
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-b from-slate-950/80 via-slate-950/90 to-slate-950 z-0" />
+                    </>
+                )}
+
+                <div className="relative z-10 w-full">
+                    <div className="flex justify-between items-start w-full">
+                        <div>
+                            <div className="flex items-center gap-3 mb-2">
+                                <h1 className="text-3xl md:text-5xl font-black text-white tracking-tight drop-shadow-lg">
+                                    {session.campaign?.title || 'Campaign Lobby'}
+                                </h1>
+                                {session.campaign?.genre && (
+                                    <span className="px-3 py-1 bg-amber-500 text-black text-xs font-bold rounded-full uppercase tracking-wider shadow-lg">
+                                        {session.campaign.genre}
+                                    </span>
+                                )}
+                            </div>
+
+                            {session.campaign?.description && (
+                                <p className="text-slate-300 max-w-2xl text-lg drop-shadow-md leading-relaxed mb-4">
+                                    {session.campaign.description}
+                                </p>
+                            )}
+
+                            <div className="flex items-center gap-3 text-slate-400">
+                                <span className="bg-black/50 backdrop-blur-md border border-slate-700 px-3 py-1 rounded text-xs font-mono font-bold text-white">
+                                    CODE: {session.joinCode}
+                                </span>
+                                <span>•</span>
+                                <span className="text-xs uppercase tracking-wider font-bold text-slate-300">
+                                    {session.players.length} Users Connected
+                                </span>
+                                {session.status === 'PAUSED' && (
+                                    <span className="ml-2 text-amber-500 text-xs font-bold border border-amber-500 px-2 py-0.5 rounded bg-black/50">
+                                        RESUMING
+                                    </span>
+                                )}
+                            </div>
+                        </div>
+
+                        {myRole === 'GM' && (
+                            <button
+                                onClick={handleStartGame}
+                                disabled={!canStart || isActionLoading}
+                                className={`hidden md:block font-black px-8 py-4 rounded-xl shadow-xl transition-all border-2 ${canStart ? 'bg-amber-500 hover:bg-amber-400 text-black border-amber-400 hover:scale-105' : 'bg-slate-800 text-slate-500 border-slate-700 cursor-not-allowed'}`}
+                            >
+                                {isActionLoading ? 'STARTING...' : (session.status === 'PAUSED' ? 'RESUME GAME ▶️' : 'START CAMPAIGN 🚀')}
+                            </button>
+                        )}
                     </div>
                 </div>
-                {myRole === 'GM' && (
-                    <button
-                        onClick={handleStartGame}
-                        disabled={!canStart || isActionLoading}
-                        className={`w-full md:w-auto font-black px-8 py-4 rounded-xl shadow-lg transition-all ${canStart ? 'bg-amber-500 hover:bg-amber-400 text-black' : 'bg-slate-800 text-slate-500 cursor-not-allowed'}`}
-                    >
-                        {isActionLoading ? 'STARTING...' : (session.status === 'PAUSED' ? 'RESUME GAME ▶️' : 'START CAMPAIGN 🚀')}
-                    </button>
-                )}
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 {/* LEFT: Party List (Text List) */}
-                <div className="lg:col-span-1 bg-slate-900/50 border border-slate-800 rounded-2xl p-6 h-fit">
-                    <h2 className="text-lg font-bold text-white mb-4">Connected Users</h2>
+                <div className="lg:col-span-1 bg-slate-900/50 border border-slate-800 rounded-2xl p-6 h-fit backdrop-blur-sm">
+                    <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                        <span>👥</span> Connected Users
+                    </h2>
                     <div className="space-y-3">
                         {session.players.map((p: any) => (
-                            <div key={p.id} className={`flex items-center justify-between p-3 border rounded-xl transition-all ${p.isReady ? 'bg-emerald-900/10 border-emerald-900' : 'bg-slate-950 border-slate-800'}`}>
+                            <div key={p.id} className={`flex items-center justify-between p-3 border rounded-xl transition-all ${p.isReady ? 'bg-emerald-900/20 border-emerald-500/30' : 'bg-slate-950/50 border-slate-800'}`}>
                                 <div className="flex items-center gap-3">
-                                    <div className={`w-3 h-3 rounded-full ${p.role === 'GM' ? 'bg-amber-500' : p.isReady ? 'bg-emerald-500' : 'bg-slate-600'}`}></div>
+                                    <div className={`w-3 h-3 rounded-full shadow-lg ${p.role === 'GM' ? 'bg-amber-500 shadow-amber-500/50' : p.isReady ? 'bg-emerald-500 shadow-emerald-500/50' : 'bg-slate-600'}`}></div>
                                     <div>
                                         <div className="font-bold text-white leading-none">{p.name} {p.id === myPlayerId && '(You)'}</div>
-                                        <div className="text-[10px] text-slate-500 uppercase mt-1">{p.role}</div>
+                                        <div className="text-[10px] text-slate-500 uppercase mt-1 font-bold">{p.role}</div>
                                     </div>
                                 </div>
-                                {p.role === 'GM' ? <span className="text-[10px] bg-amber-900/30 text-amber-500 border border-amber-900 px-2 py-1 rounded">HOST</span> : p.isReady ? <span className="text-[10px] bg-emerald-900/30 text-emerald-500 border border-emerald-900 px-2 py-1 rounded">✅ READY</span> : <span className="text-[10px] bg-slate-800 text-slate-500 px-2 py-1 rounded animate-pulse">...waiting</span>}
+                                {p.role === 'GM' ? <span className="text-[10px] bg-amber-500 text-black font-bold px-2 py-1 rounded">HOST</span> : p.isReady ? <span className="text-[10px] bg-emerald-500 text-black font-bold px-2 py-1 rounded">READY</span> : <span className="text-[10px] bg-slate-800 text-slate-500 px-2 py-1 rounded animate-pulse">waiting...</span>}
                             </div>
                         ))}
                     </div>
@@ -252,41 +291,17 @@ export default function LobbyPage() {
                             username={playerName}
                         />
                     )}
+
+                    {/* Logout Button */}
+                    <div className="mt-6 pt-6 border-t border-slate-800 text-center">
+                        <button onClick={handleLogout} className="text-xs text-red-400 hover:text-red-300 hover:underline cursor-pointer transition-colors">
+                            Leave Lobby & Log Out
+                        </button>
+                    </div>
                 </div>
 
                 {/* RIGHT: Main Area */}
                 <div className="lg:col-span-2">
-                    {/* Campaign Description - NEW */}
-                    {session.campaign && (
-                        <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-6 mb-8">
-                            <div className="flex items-start gap-4">
-                                {session.campaign.coverImage && (
-                                    <img
-                                        src={session.campaign.coverImage}
-                                        alt={session.campaign.title}
-                                        className="w-32 h-32 rounded-xl object-cover flex-shrink-0"
-                                    />
-                                )}
-                                <div className="flex-1">
-                                    <h2 className="text-2xl font-bold text-white mb-2">
-                                        {session.campaign.title}
-                                    </h2>
-                                    {session.campaign.description && (
-                                        <p className="text-slate-400 leading-relaxed text-sm">
-                                            {session.campaign.description}
-                                        </p>
-                                    )}
-                                    {session.campaign.genre && (
-                                        <div className="mt-3 flex gap-2">
-                                            <span className="px-3 py-1 bg-amber-900/30 text-amber-400 text-xs rounded-full font-bold">
-                                                {session.campaign.genre}
-                                            </span>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        </div>
-                    )}
 
                     {/* 🟢 GM VIEW: แสดง Player Grid Status */}
                     {myRole === 'GM' && (

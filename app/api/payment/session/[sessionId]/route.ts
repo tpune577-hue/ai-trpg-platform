@@ -4,10 +4,10 @@ import { stripe } from '@/lib/stripe'
 
 export async function GET(
     req: Request,
-    { params }: { params: { sessionId: string } }
+    { params }: { params: Promise<{ sessionId: string }> }
 ) {
     try {
-        const { sessionId } = params
+        const { sessionId } = await params
 
         // Retrieve session from Stripe
         const session = await stripe.checkout.sessions.retrieve(sessionId)

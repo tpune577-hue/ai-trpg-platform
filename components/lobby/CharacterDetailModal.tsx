@@ -40,6 +40,7 @@ export default function CharacterDetailModal({
     // 3. Extract Stats & Attributes based on System
     let hp = 0, mp = 0, wp = 0, mental = 0
     let displayAttributes: any = {}
+    let displayAbilities: any = {} // ✅ New: For RnR Abilities
 
     if (isRnR) {
         // --- Role & Roll ---
@@ -52,6 +53,7 @@ export default function CharacterDetailModal({
 
         // Attributes are in 'attributes' object
         displayAttributes = charData.attributes || rawStats.attributes || {}
+        displayAbilities = charData.abilities || rawStats.abilities || {} // ✅ Extract Abilities
     } else {
         // --- Standard (D&D) ---
         // Stats are inline in the stats object
@@ -59,11 +61,10 @@ export default function CharacterDetailModal({
         mp = Number(rawStats.mp || rawStats.maxMp || 0)
         wp = Number(rawStats.willPower || rawStats.wp || 0)
 
-        // Construct Attributes from specific keys if 'abilities' object is missing
+        // Attributes
         if (rawStats.abilities) {
             displayAttributes = rawStats.abilities
         } else {
-            // Map standard D&D stats to attributes if explicit object missing
             const { str, dex, int, wis, cha, con } = rawStats
             if (str !== undefined) displayAttributes['STR'] = str
             if (dex !== undefined) displayAttributes['DEX'] = dex
@@ -77,8 +78,8 @@ export default function CharacterDetailModal({
     // Fallback for description
     const description = charData.bio?.description || charData.description || rawStats.description || charData.bio || ''
 
-    // Skills/Equip (Generic)
-    const skills = charData.skills || rawStats.skills || rawStats.Skills || []
+    // Skills (Legacy/Generic) -> For Standard, abilities might be standard skills? 
+    const legacySkills = charData.skills || rawStats.skills || rawStats.Skills || []
     const equipment = charData.equipment || rawStats.equipment || rawStats.Equipment || []
 
     return (
@@ -117,7 +118,7 @@ export default function CharacterDetailModal({
                                     {charData.name || 'Unknown'}
                                 </h2>
                                 <p className="text-amber-400 font-bold text-lg">
-                                    {charData.class || 'Adventurer'} • Level {charData.level || 1}
+                                    {charData.class || 'Adventurer'}
                                 </p>
                             </div>
                             <span className={`px-3 py-1 rounded text-xs font-bold border ${isRnR ? 'bg-amber-900/50 text-amber-500 border-amber-500/50' : 'bg-blue-900/50 text-blue-400 border-blue-500/50'}`}>
@@ -129,24 +130,34 @@ export default function CharacterDetailModal({
 
                 {/* Content */}
                 <div className="p-6 space-y-6">
-                    {/* Stats List (Dynamic) */}
+                    {/* Description */}
+                    {description && (
+                        typeof description === 'string' ? (
+                            <div>
+                                <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-2">
+                                    <span>📜</span> Background
+                                </h3>
+                                <p className="text-slate-300 leading-relaxed">
+                                    {description}
+                                </p>
+                            </div>
+                        ) : null
+                    )}
+
+                    {/* Stats List */}
                     <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700">
                         <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-2">
                             <span>📊</span> Status
                         </h3>
                         <div className="space-y-3">
-                            {/* Common HP */}
                             <StatBar label="HP" value={hp} max={hp} color="red" icon="❤️" />
-
                             {isRnR ? (
                                 <>
-                                    {/* RnR: HP - Mental - Willpower */}
                                     <StatBar label="Mental" value={mental} max={mental} color="blue" icon="🧠" />
                                     <StatBar label="Will Power" value={wp} max={wp} color="purple" icon="🔥" />
                                 </>
                             ) : (
                                 <>
-                                    {/* Standard: HP - MP - Willpower */}
                                     <StatBar label="MP" value={mp} max={mp} color="blue" icon="💧" />
                                     <StatBar label="Will Power" value={wp} max={wp} color="purple" icon="✨" />
                                 </>
@@ -154,7 +165,7 @@ export default function CharacterDetailModal({
                         </div>
                     </div>
 
-                    {/* Attributes / Abilities */}
+                    {/* Attributes */}
                     {Object.keys(displayAttributes).length > 0 && (
                         <div>
                             <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-2">
@@ -162,20 +173,34 @@ export default function CharacterDetailModal({
                             </h3>
                             <div className="bg-slate-800/30 rounded-xl border border-slate-700 divide-y divide-slate-700/50">
                                 {Object.entries(displayAttributes).map(([key, value]) => (
-                                    <AbilityRow key={key} name={key} value={value as number} isRnR={isRnR} />
+                                    <AbilityRow key={key} name={key} value={value as number} isRnR={isRnR} isAttribute={true} />
                                 ))}
                             </div>
                         </div>
                     )}
 
-                    {/* Skills */}
-                    {skills.length > 0 && (
+                    {/* RnR Abilities (Skills) */}
+                    {isRnR && Object.keys(displayAbilities).length > 0 && (
+                        <div>
+                            <h3 className="text-sm font-bold text-cyan-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+                                <span>🎯</span> Abilities
+                            </h3>
+                            <div className="bg-slate-800/30 rounded-xl border border-slate-700 divide-y divide-slate-700/50">
+                                {Object.entries(displayAbilities).map(([key, value]) => (
+                                    <AbilityRow key={key} name={key} value={value as number} isRnR={true} isAttribute={false} />
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Generic Skills (Legacy) */}
+                    {legacySkills.length > 0 && (
                         <div>
                             <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-2">
                                 <span>🎯</span> Skills
                             </h3>
                             <div className="flex flex-wrap gap-2">
-                                {skills.map((skill: string, idx: number) => (
+                                {legacySkills.map((skill: string, idx: number) => (
                                     <span
                                         key={idx}
                                         className="px-3 py-1 bg-slate-800 text-slate-300 text-sm rounded-full"
@@ -264,30 +289,41 @@ function StatBar({ label, value, max, color, icon, suffix = '', isValueOnly = fa
 }
 
 // Ability Row Component (List Layout, No Modifier)
-function AbilityRow({ name, value, isRnR = false }: { name: string; value: number; isRnR?: boolean }) {
+function AbilityRow({ name, value, isRnR = false, isAttribute = false }: { name: string; value: number; isRnR?: boolean; isAttribute?: boolean }) {
     // Modifier calculation logic (Only for Standard D&D)
     // RnR uses direct values (Attributes)
     const modifier = Math.floor((value - 10) / 2)
     const modifierStr = modifier >= 0 ? `+${modifier}` : `${modifier}`
 
     // Scale for visualization
-    const maxVal = isRnR ? 6 : 20 // RnR attributes are typically 1-6, D&D is 1-20
+    // RnR Attributes: 0-6
+    // RnR Abilities: 0-3
+    // Standard Attributes: 0-20
+    let maxVal = 20
+    if (isRnR) {
+        maxVal = isAttribute ? 6 : 3
+    }
+
+    const showModifier = !isRnR // Only show (+X) for Standard D&D
+    const showProgressBar = !isRnR // Hide bar for ALL RnR items (Attributes & Abilities)
 
     return (
         <div className="flex justify-between items-center p-3 hover:bg-white/5 transition-colors">
             <span className="font-bold text-slate-300 uppercase tracking-wider text-sm pl-2">{name}</span>
             <div className="flex items-center gap-3">
                 {/* Progress Bar visual for stat */}
-                <div className="hidden sm:block w-32 h-1.5 bg-slate-800 rounded-full overflow-hidden">
-                    <div
-                        className="h-full bg-slate-500 rounded-full"
-                        style={{ width: `${Math.min((value / maxVal) * 100, 100)}%` }}
-                    />
-                </div>
+                {showProgressBar && (
+                    <div className="hidden sm:block w-32 h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                        <div
+                            className={`h-full rounded-full ${isRnR ? 'bg-cyan-500' : 'bg-slate-500'}`}
+                            style={{ width: `${Math.min((value / maxVal) * 100, 100)}%` }}
+                        />
+                    </div>
+                )}
 
                 <div className="text-right w-16">
-                    <span className="text-lg font-black text-white">{value}</span>
-                    {!isRnR && (
+                    <span className={`text-lg font-black ${isRnR ? 'text-amber-400' : 'text-white'}`}>{value}</span>
+                    {showModifier && (
                         <span className="text-xs text-amber-500 font-bold ml-2">({modifierStr})</span>
                     )}
                 </div>

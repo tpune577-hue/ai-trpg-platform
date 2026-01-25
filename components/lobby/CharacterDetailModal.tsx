@@ -17,28 +17,40 @@ export default function CharacterDetailModal({
 }: CharacterDetailModalProps) {
     if (!isOpen || !character) return null
 
-    // Parse character data logic
+    // --------------------------------------------------------
+    // ✅ Logic การ parse stats ที่แม่นยำขึ้น
+    // --------------------------------------------------------
+
+    // 1. Base Data
     let charData = typeof character === 'string' ? JSON.parse(character) : character
 
-    // Handle Prisma PreGen structure (where stats are in a JSON string field)
-    let stats = charData
-    if (charData.stats && typeof charData.stats === 'string') {
-        try {
-            const parsedStats = JSON.parse(charData.stats)
-            stats = { ...charData, ...parsedStats }
-        } catch (e) {
-            console.error('Failed to parse character stats', e)
+    // 2. Extract Stats (รองรับทั้งแบบ Object และ JSON String)
+    let stats: any = {}
+
+    // กรณีที่ stat อยู่ใน root object เลย (เช่น Custom Character)
+    if (charData.hp !== undefined) {
+        stats = { ...charData }
+    }
+    // กรณีที่ stat อยู่ใน stats field (เช่น PreGen จาก Database)
+    else if (charData.stats) {
+        if (typeof charData.stats === 'string') {
+            try {
+                stats = JSON.parse(charData.stats)
+            } catch (e) { console.error('Parse stats error', e) }
+        } else {
+            stats = charData.stats
         }
     }
 
-    // Unify fields
+    // 3. Unify Fields (Fallback to 0 if undefined)
     const description = charData.bio || charData.description || stats.description || ''
     const abilities = stats.abilities || {}
     const skills = stats.skills || []
     const equipment = stats.equipment || []
-    const hp = stats.hp || 0
-    const mp = stats.mp || 0
-    const wp = stats.wp || 0 // Will Power
+
+    const hp = Number(stats.hp) || stats.maxHp || 0
+    const mp = Number(stats.mp) || stats.maxMp || 0
+    const wp = Number(stats.wp) || stats.willPower || 0
 
     return (
         <div
@@ -81,7 +93,7 @@ export default function CharacterDetailModal({
 
                 {/* Content */}
                 <div className="p-6 space-y-6">
-                    {/* Stats List (New Layout) */}
+                    {/* Stats List */}
                     <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700">
                         <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-2">
                             <span>📊</span> Status
@@ -93,6 +105,20 @@ export default function CharacterDetailModal({
                         </div>
                     </div>
 
+                    {/* Ability Scores (New List Layout) */}
+                    {Object.keys(abilities).length > 0 && (
+                        <div>
+                            <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+                                <span>⚡</span> Attributes & Abilities
+                            </h3>
+                            <div className="bg-slate-800/30 rounded-xl border border-slate-700 divide-y divide-slate-700/50">
+                                {Object.entries(abilities).map(([key, value]) => (
+                                    <AbilityRow key={key} name={key} value={value as number} />
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
                     {/* Description */}
                     {description && (
                         <div>
@@ -102,20 +128,6 @@ export default function CharacterDetailModal({
                             <p className="text-slate-300 leading-relaxed">
                                 {description}
                             </p>
-                        </div>
-                    )}
-
-                    {/* Ability Scores */}
-                    {Object.keys(abilities).length > 0 && (
-                        <div>
-                            <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-2">
-                                <span>⚡</span> Ability Scores
-                            </h3>
-                            <div className="grid grid-cols-6 gap-2">
-                                {Object.entries(abilities).map(([key, value]) => (
-                                    <AbilityScore key={key} name={key} value={value as number} />
-                                ))}
-                            </div>
                         </div>
                     )}
 
@@ -173,7 +185,7 @@ export default function CharacterDetailModal({
     )
 }
 
-// Stat Bar Component (New List Style)
+// Stat Bar Component 
 function StatBar({ label, value, max, color, icon }: { label: string; value: number; max: number; color: string; icon: string }) {
     const colorClasses = {
         red: 'bg-red-500',
@@ -182,8 +194,7 @@ function StatBar({ label, value, max, color, icon }: { label: string; value: num
         green: 'bg-emerald-500'
     }
 
-    // Calculate percentage (default to 100% if max is 0 to avoid div by zero)
-    const percentage = max > 0 ? Math.min((value / max) * 100, 100) : 100
+    const percentage = max > 0 ? Math.min((value / max) * 100, 100) : (value > 0 ? 100 : 0)
 
     return (
         <div className="flex items-center gap-4">
@@ -204,16 +215,21 @@ function StatBar({ label, value, max, color, icon }: { label: string; value: num
     )
 }
 
-// Ability Score Component
-function AbilityScore({ name, value }: { name: string; value: number }) {
-    const modifier = Math.floor((value - 10) / 2)
-    const modifierStr = modifier >= 0 ? `+${modifier}` : `${modifier}`
-
+// Ability Row Component (List Layout, No Modifier)
+function AbilityRow({ name, value }: { name: string; value: number }) {
     return (
-        <div className="bg-slate-800 rounded-lg p-2 text-center border border-slate-700">
-            <div className="text-[10px] text-slate-500 uppercase font-bold mb-1">{name}</div>
-            <div className="text-xl font-black text-white">{value}</div>
-            <div className="text-xs text-amber-400 font-bold">{modifierStr}</div>
+        <div className="flex justify-between items-center p-3 hover:bg-white/5 transition-colors">
+            <span className="font-bold text-slate-300 uppercase tracking-wider text-sm pl-2">{name}</span>
+            <div className="flex items-center gap-3">
+                {/* Progress Bar visual for stat (0-20 scale) */}
+                <div className="hidden sm:block w-32 h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                    <div
+                        className="h-full bg-slate-500 rounded-full"
+                        style={{ width: `${Math.min((value / 20) * 100, 100)}%` }}
+                    />
+                </div>
+                <span className="text-lg font-black text-white w-8 text-right">{value}</span>
+            </div>
         </div>
     )
 }

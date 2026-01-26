@@ -3,11 +3,12 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabaseClient' // ตรวจสอบให้แน่ใจว่า import ถูกต้อง
 import { PlayerActionData, GameStateUpdate, SocketChatMessage, UserProfile } from '@/types/socket'
-import { RealtimeChannel } from '@supabase/supabase-js'
+import { RealtimeChannel, RealtimePresenceState } from '@supabase/supabase-js'
 
 export const useGameSocket = (campaignId: string | null, options: any = {}) => {
     const [isConnected, setIsConnected] = useState(false)
     const [roomInfo, setRoomInfo] = useState<any>({ connectedPlayers: [] })
+    const [onlineUsers, setOnlineUsers] = useState<any[]>([]) // ✅ Track real-time online users
     const channelRef = useRef<RealtimeChannel | null>(null)
 
     // Event Refs เพื่อป้องกันปัญหา Closure
@@ -31,11 +32,23 @@ export const useGameSocket = (campaignId: string | null, options: any = {}) => {
         const channel = supabase.channel(channelName, {
             config: {
                 broadcast: { self: true }, // ให้ตัวเองได้รับ Event ที่ตัวเองส่งด้วย (เหมือน Pusher)
+                presence: { key: options.userId || 'anon' }, // ✅ Enable Presence
             },
         })
 
-        // 2. รับสัญญาณ (Listen for Broadcast)
+        // 2. รับสัญญาณ (Listen for Broadcast & Presence)
         channel
+            // ✅ Handle Presence Sync
+            .on('presence', { event: 'sync' }, () => {
+                const state = channel.presenceState()
+                // Map presence state to array
+                const users = Object.keys(state).map(key => {
+                    const data = state[key]?.[0] as any
+                    return { userId: key, ...data }
+                })
+                setOnlineUsers(users)
+                // console.log('🟢 Online Users Sync:', users)
+            })
             .on('broadcast', { event: 'game-event' }, ({ payload: data }) => {
                 console.log(`📡 Supabase Realtime Event [${data.actionType || data.type}]:`, data)
 
@@ -113,10 +126,18 @@ export const useGameSocket = (campaignId: string | null, options: any = {}) => {
                     eventCallbacksRef.current.onPlayerAction(data)
                 }
             })
-            .subscribe((status) => {
+            .subscribe(async (status) => {
                 if (status === 'SUBSCRIBED') {
                     console.log(`🔌 Supabase Realtime Subscribed: ${channelName}`)
                     setIsConnected(true)
+
+                    // ✅ Track Self Presence
+                    if (options.userId) {
+                        await channel.track({
+                            userId: options.userId,
+                            onlineAt: new Date().toISOString()
+                        })
+                    }
                 }
             })
 
@@ -189,6 +210,7 @@ export const useGameSocket = (campaignId: string | null, options: any = {}) => {
 
     return {
         isConnected,
+        onlineUsers, // ✅ Return Presence Data
         roomInfo,
         sendPlayerAction,
         sendGMUpdate,

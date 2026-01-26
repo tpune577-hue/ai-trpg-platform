@@ -182,6 +182,38 @@ export async function kickPlayer(playerId: string) {
     }
 }
 
+// 8.1 Leave Lobby (ลบ Player ออกจาก Lobby เมื่อออกจากห้อง)
+export async function leaveLobby(playerId: string) {
+    try {
+        // ดึงข้อมูล Player พร้อม Session
+        const player = await prisma.player.findUnique({
+            where: { id: playerId },
+            include: { session: true }
+        })
+
+        if (!player) {
+            return { success: false, error: "Player not found" }
+        }
+
+        // ✅ เฉพาะ WAITING เท่านั้นที่ลบทิ้ง (ถ้า PAUSED/ACTIVE ให้เก็บไว้สำหรับ Resume)
+        if (player.session.status === 'WAITING') {
+            await prisma.player.delete({
+                where: { id: playerId }
+            })
+            console.log(`🚪 Player ${player.name} left lobby (WAITING session)`)
+            return { success: true, removed: true }
+        } else {
+            // ถ้าเกมเริ่มแล้ว (ACTIVE/PAUSED) ไม่ลบ เก็บไว้ให้ Re-join ได้
+            console.log(`🔄 Player ${player.name} disconnected but kept in ${player.session.status} session`)
+            return { success: true, removed: false }
+        }
+    } catch (error) {
+        console.error("Leave lobby failed:", error)
+        return { success: false, error: "Failed to leave lobby" }
+    }
+}
+
+
 // 9. Pause Session (บันทึกและเปลี่ยนสถานะ)
 export async function pauseGameSession(joinCode: string) {
     await prisma.gameSession.update({

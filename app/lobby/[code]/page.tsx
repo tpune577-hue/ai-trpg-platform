@@ -1,11 +1,12 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { getLobbyInfo, joinLobby, setPlayerReady, startGame, resumeGame, saveCharacterSheet } from '@/app/actions/game'
+import { getLobbyInfo, joinLobby, setPlayerReady, startGame, resumeGame, saveCharacterSheet, leaveLobby } from '@/app/actions/game'
 import CharacterCreator from '@/components/game/CharacterCreator'
 import LobbyVoiceChat from '@/components/lobby/LobbyVoiceChat'
 import CharacterDetailModal from '@/components/lobby/CharacterDetailModal'
+import { useGameSocket } from '@/hooks/useGameSocket'
 
 export default function LobbyPage() {
     const { code } = useParams()
@@ -23,6 +24,9 @@ export default function LobbyPage() {
     const [isActionLoading, setIsActionLoading] = useState(false)
     const [isCreatingChar, setIsCreatingChar] = useState(false)
     const [detailCharacter, setDetailCharacter] = useState<any>(null)
+
+    // ✅ Use Socket for Presence
+    const { onlineUsers } = useGameSocket(code as string, { userId: myPlayerId })
 
     // 1. Check LocalStorage
     useEffect(() => {
@@ -43,6 +47,19 @@ export default function LobbyPage() {
             }
         }
     }, [code])
+
+    // ✅ Clean up on Window Close / Refresh
+    useEffect(() => {
+        const handleBeforeUnload = () => {
+            // ถ้าเป็น WAITING ให้ลบ Player ออกเลย (แต่ถ้า PAUSED/ACTIVE เก็บไว้)
+            if (myPlayerId && session?.status === 'WAITING') {
+                leaveLobby(myPlayerId)
+            }
+        }
+
+        window.addEventListener('beforeunload', handleBeforeUnload)
+        return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+    }, [myPlayerId, session?.status])
 
     // 2. Polling & Redirect Logic
     useEffect(() => {
@@ -99,7 +116,6 @@ export default function LobbyPage() {
         setIsActionLoading(true)
         try {
             // ส่ง selectedCharId ไป (ถ้าเป็น Custom ให้ส่ง null หรือ string ว่า 'CUSTOM' ก็ได้ ตาม backend รองรับ)
-            // ในที่นี้สมมติ setPlayerReady ฉลาดพอที่จะเช็คว่าถ้า charId ไม่มี แต่มี data แล้วให้ผ่าน
             await setPlayerReady(myPlayerId!, selectedCharId || 'CUSTOM')
         } catch (e) {
             alert("Error setting ready")
@@ -120,8 +136,11 @@ export default function LobbyPage() {
         }
     }
 
-    const handleLogout = () => {
+    const handleLogout = async () => {
         if (confirm("Logout and join as a new player?")) {
+            if (myPlayerId) {
+                await leaveLobby(myPlayerId)
+            }
             localStorage.removeItem(`trpg_session_${code}`)
             setMyPlayerId(null)
             setMyRole('PLAYER')
@@ -264,18 +283,30 @@ export default function LobbyPage() {
                         <span>👥</span> Connected Users
                     </h2>
                     <div className="space-y-3">
-                        {session.players.map((p: any) => (
-                            <div key={p.id} className={`flex items-center justify-between p-3 border rounded-xl transition-all ${p.isReady ? 'bg-emerald-900/20 border-emerald-500/30' : 'bg-slate-950/50 border-slate-800'}`}>
-                                <div className="flex items-center gap-3">
-                                    <div className={`w-3 h-3 rounded-full shadow-lg ${p.role === 'GM' ? 'bg-amber-500 shadow-amber-500/50' : p.isReady ? 'bg-emerald-500 shadow-emerald-500/50' : 'bg-slate-600'}`}></div>
-                                    <div>
-                                        <div className="font-bold text-white leading-none">{p.name} {p.id === myPlayerId && '(You)'}</div>
-                                        <div className="text-[10px] text-slate-500 uppercase mt-1 font-bold">{p.role}</div>
+                        {session.players.map((p: any) => {
+                            // Check if player is online
+                            const isOnline = onlineUsers.some((u: any) => u.userId === p.id)
+                            const isMe = p.id === myPlayerId
+
+                            return (
+                                <div key={p.id} className={`flex items-center justify-between p-3 border rounded-xl transition-all ${p.isReady ? 'bg-emerald-900/20 border-emerald-500/30' : 'bg-slate-950/50 border-slate-800'} ${!isOnline && !isMe ? 'opacity-50 grayscale' : ''}`}>
+                                    <div className="flex items-center gap-3">
+                                        <div className={`relative w-3 h-3 rounded-full shadow-lg ${p.role === 'GM' ? 'bg-amber-500 shadow-amber-500/50' : p.isReady ? 'bg-emerald-500 shadow-emerald-500/50' : 'bg-slate-600'} ${!isOnline ? 'bg-slate-500' : ''}`}>
+                                            {!isOnline && <div className="absolute inset-0 bg-black/50 rounded-full" />}
+                                        </div>
+                                        <div>
+                                            <div className="font-bold text-white leading-none flex items-center gap-2">
+                                                {p.name}
+                                                {isMe && '(You)'}
+                                                {!isOnline && <span className="text-[10px] text-red-400 bg-red-900/20 px-1 rounded">(Offline)</span>}
+                                            </div>
+                                            <div className="text-[10px] text-slate-500 uppercase mt-1 font-bold">{p.role}</div>
+                                        </div>
                                     </div>
+                                    {p.role === 'GM' ? <span className="text-[10px] bg-amber-500 text-black font-bold px-2 py-1 rounded">HOST</span> : p.isReady ? <span className="text-[10px] bg-emerald-500 text-black font-bold px-2 py-1 rounded">READY</span> : <span className="text-[10px] bg-slate-800 text-slate-500 px-2 py-1 rounded animate-pulse">waiting...</span>}
                                 </div>
-                                {p.role === 'GM' ? <span className="text-[10px] bg-amber-500 text-black font-bold px-2 py-1 rounded">HOST</span> : p.isReady ? <span className="text-[10px] bg-emerald-500 text-black font-bold px-2 py-1 rounded">READY</span> : <span className="text-[10px] bg-slate-800 text-slate-500 px-2 py-1 rounded animate-pulse">waiting...</span>}
-                            </div>
-                        ))}
+                            )
+                        })}
                     </div>
 
                     {/* Voice Chat */}

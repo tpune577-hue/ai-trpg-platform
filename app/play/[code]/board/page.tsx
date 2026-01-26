@@ -242,6 +242,37 @@ export default function CampaignBoardPage() {
                     setShowingDiceResult(null)
                     overlayTimeoutRef.current = null
                 }, 5000)
+
+                // ✅ Fix: Sync Willpower usage to Board immediately to prevent overwrite
+                if (action.willBoost && action.willBoost > 0) {
+                    setDbPlayers(prev => prev.map(p => {
+                        const actorName = action.actorName
+                        // Try to match by ID if available (not in payload currently?), or Name
+                        // Best if payload had actorId. But we know actorName.
+                        // Wait, rnr_roll usually doesn't have actorId in the payload shown in Controller. 
+                        // But Controller sends `actorName`. 
+                        // Let's match by character name or player name.
+
+                        // Actually, Board dbPlayers has `character.name`.
+                        if (p.character?.name === actorName || p.name === actorName) {
+                            const currentStats = p.stats || {}
+                            const oldWill = currentStats.willPower || 0
+                            const oldVitalsWill = currentStats.vitals?.willPower || 0
+
+                            // Reduce Will
+                            const newWill = Math.max(0, oldWill - action.willBoost)
+                            const newVitalsWill = Math.max(0, oldVitalsWill - action.willBoost)
+
+                            const newStats = { ...currentStats, willPower: newWill }
+                            if (currentStats.vitals) {
+                                newStats.vitals = { ...currentStats.vitals, willPower: newVitalsWill }
+                            }
+
+                            return { ...p, stats: newStats }
+                        }
+                        return p
+                    }))
+                }
             }
 
 
@@ -545,12 +576,14 @@ export default function CampaignBoardPage() {
 
         if (isRnR) {
             if (type === 'hp') {
-                const oldValue = player.stats.vitals?.health || 0
-                const max = player.stats.vitals?.maxHealth || 0
+                // ✅ Fix: Use 'hp' key for RnR Health to match Controller/CharacterCreator
+                const oldValue = player.stats.vitals?.hp || player.stats.vitals?.health || 0
+                const max = player.stats.vitals?.maxHp || player.stats.vitals?.maxHealth || 0
                 newValue = Math.max(0, Math.min(max, oldValue + delta))
                 maxValue = max
-                statsUpdate = { vitals: { ...player.stats.vitals, health: newValue } }
+                statsUpdate = { vitals: { ...player.stats.vitals, hp: newValue } }
             } else {
+                // ✅ Fix: Use 'mental' key for RnR Mental
                 const oldValue = player.stats.vitals?.mental || 0
                 const max = player.stats.vitals?.maxMental || 0
                 newValue = Math.max(0, Math.min(max, oldValue + delta))
@@ -577,6 +610,16 @@ export default function CampaignBoardPage() {
             if (p.id === playerId) return { ...p, stats: { ...p.stats, ...statsUpdate } }
             return p
         }))
+
+        // ✅ Fix: Log locally immediately for GM
+        const changeText = type.toUpperCase() + ' ' + (delta > 0 ? '+' : '') + delta
+        setLogs(prev => [...prev, {
+            id: Date.now().toString(),
+            content: `📊 GM updated ${player.name}: ${changeText}`,
+            type: 'SYSTEM',
+            senderName: 'GM',
+            timestamp: new Date()
+        }])
 
         try {
             await updateCharacterStats(playerId, statsUpdate)

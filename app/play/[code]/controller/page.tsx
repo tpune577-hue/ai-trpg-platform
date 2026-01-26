@@ -154,12 +154,16 @@ export default function PlayerControllerPage() {
                 if (myPlayer) {
                     let charData: any = {}
                     try { charData = myPlayer.characterData ? JSON.parse(myPlayer.characterData) : {} } catch (e) { console.error(e) }
+
+                    // ✅ Load Persistent Inventory
+                    setInventory(charData.inventory || [])
+
                     setCharacter({
                         name: charData.name || myPlayer.name || 'Adventurer',
                         hp: charData.hp || 20, maxHp: charData.maxHp || 20,
                         mp: charData.mp || 10, maxMp: charData.maxMp || 10,
                         avatarUrl: charData.avatarUrl || charData.imageUrl || 'https://placehold.co/100x100/333/FFF?text=Hero',
-                        stats: charData.stats || charData,
+                        stats: charData.stats || charData, // Prioritize loaded stats
                         sheetType: charData.sheetType || 'STANDARD'
                     })
                 }

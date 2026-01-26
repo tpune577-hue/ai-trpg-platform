@@ -354,6 +354,36 @@ export async function updateCharacterStats(playerId: string, statsUpdate: any) {
         throw new Error("Failed to update character stats")
     }
 }
+
+// ✅ 16. Update Player Inventory (Persist Items)
+export async function updatePlayerInventory(playerId: string, inventory: any[]) {
+    try {
+        const player = await prisma.player.findUnique({
+            where: { id: playerId }
+        })
+
+        if (!player || !player.characterData) {
+            throw new Error("Player not found")
+        }
+
+        const charData = JSON.parse(player.characterData)
+
+        // Update inventory field
+        charData.inventory = inventory
+
+        await prisma.player.update({
+            where: { id: playerId },
+            data: {
+                characterData: JSON.stringify(charData)
+            }
+        })
+
+        return { success: true }
+    } catch (error) {
+        console.error("❌ Update Inventory Failed:", error)
+        return { success: false, error: "Failed to update inventory" }
+    }
+}
 // app/actions/game.ts
 
 // ... imports

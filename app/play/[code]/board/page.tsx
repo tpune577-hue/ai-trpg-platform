@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useGameSocket } from '@/hooks/useGameSocket'
-import { getLobbyInfo, updateGameSessionState, kickPlayer, pauseGameSession, endGameSession, updateCharacterStats } from '@/app/actions/game'
+import { getLobbyInfo, updateGameSessionState, kickPlayer, pauseGameSession, endGameSession, updateCharacterStats, updatePlayerInventory } from '@/app/actions/game'
 import { addCustomAsset } from '@/app/actions/quick-add'
 
 // ✅ 1. Import VoicePanel
@@ -437,12 +437,28 @@ export default function CampaignBoardPage() {
         router.push('/')
     }
 
-    const handleGiveItem = (targetPlayerId: string, itemData: any, action: string) => {
+    const handleGiveItem = async (targetPlayerId: string, itemData: any, action: string) => {
+        // 1. Send via Socket (Real-time)
         giveItem(targetPlayerId, itemData, action as 'GIVE_CUSTOM' | 'REMOVE')
+
+        // 2. Update Local State & Persist to DB
         setPlayerInventories(prev => {
             const currentItems = prev[targetPlayerId] || []
-            if (action === 'REMOVE') return { ...prev, [targetPlayerId]: currentItems.filter((i: any) => i.id !== itemData.id) }
-            else return { ...prev, [targetPlayerId]: [...currentItems, itemData] }
+            let newItems = []
+
+            if (action === 'REMOVE') {
+                newItems = currentItems.filter((i: any) => i.id !== itemData.id)
+            } else {
+                newItems = [...currentItems, itemData]
+            }
+
+            // ✅ 3. Call Server Action to Save
+            // Note: We don't await this to keep UI snappy, but might want to handle errors
+            updatePlayerInventory(targetPlayerId, newItems).then(res => {
+                if (!res.success) console.error("Failed to save inventory for", targetPlayerId)
+            })
+
+            return { ...prev, [targetPlayerId]: newItems }
         })
     }
 

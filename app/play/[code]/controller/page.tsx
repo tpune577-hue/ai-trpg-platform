@@ -153,7 +153,13 @@ export default function PlayerControllerPage() {
                 const myPlayer = session.players?.find((p: any) => p.id === playerId)
                 if (myPlayer) {
                     let charData: any = {}
-                    try { charData = myPlayer.characterData ? JSON.parse(myPlayer.characterData) : {} } catch (e) { console.error(e) }
+                    try { charData = myPlayer.characterData ? JSON.parse(myPlayer.characterData) : {} } catch (e) { console.error("Parse Error", e) }
+
+                    console.log("🔄 [Resume] Loaded Player Data:", {
+                        playerSheetType: myPlayer.sheetType,
+                        charDataSheetType: charData.sheetType,
+                        inventoryCount: charData.inventory?.length
+                    })
 
                     // ✅ Load Persistent Inventory
                     setInventory(charData.inventory || [])
@@ -164,7 +170,7 @@ export default function PlayerControllerPage() {
                         mp: charData.mp || 10, maxMp: charData.maxMp || 10,
                         avatarUrl: charData.avatarUrl || charData.imageUrl || 'https://placehold.co/100x100/333/FFF?text=Hero',
                         stats: charData.stats || charData, // Prioritize loaded stats
-                        sheetType: charData.sheetType || 'STANDARD'
+                        sheetType: myPlayer.sheetType || charData.sheetType || 'STANDARD' // ✅ Fix: Read from top-level first
                     })
                 }
             } catch (error) { console.error("Sync Error:", error) }

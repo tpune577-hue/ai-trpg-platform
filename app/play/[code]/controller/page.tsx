@@ -13,6 +13,7 @@ import { getRnRModifiersForAction, getRnRModifiersForCheck, getRelevantAbilities
 import { LiveKitRoom, RoomAudioRenderer } from '@livekit/components-react'
 import { VoicePTTButton } from '@/components/game/LiveKitWidgets'
 import '@livekit/components-styles'
+import StatBox from '@/components/game/StatBox'
 
 export default function PlayerControllerPage() {
     const params = useParams()
@@ -155,6 +156,19 @@ export default function PlayerControllerPage() {
                     let charData: any = {}
                     try { charData = myPlayer.characterData ? JSON.parse(myPlayer.characterData) : {} } catch (e) { console.error("Parse Error", e) }
 
+                    // ✅ Fix: Merge with PreGen Data (Restore missing Attributes/Abilities)
+                    if (myPlayer.preGenId && session.campaign?.preGens) {
+                        const template = session.campaign.preGens.find((pg: any) => pg.id === myPlayer.preGenId)
+                        if (template && template.stats) {
+                            try {
+                                const baseStats = JSON.parse(template.stats)
+                                // Merge: Base Template -> Saved Data (Saved wins, but missing keys fall back to Base)
+                                charData = { ...baseStats, ...charData }
+                                console.log("✅ [Resume] Merged with PreGen Template:", template.name)
+                            } catch (e) { console.error("Template Parse Error", e) }
+                        }
+                    }
+
                     console.log("🔄 [Resume] Loaded Player Data:", {
                         playerSheetType: myPlayer.sheetType,
                         charDataSheetType: charData.sheetType,
@@ -254,8 +268,25 @@ export default function PlayerControllerPage() {
                         const statsUpdate = JSON.parse(action.description)
                         const oldStats = character?.stats || {}
                         const changes: string[] = []
+
+                        // Standard System
                         if (statsUpdate.hp !== undefined && oldStats.hp !== statsUpdate.hp) changes.push(`HP ${statsUpdate.hp - (oldStats.hp || 0)}`)
                         if (statsUpdate.mp !== undefined && oldStats.mp !== statsUpdate.mp) changes.push(`MP ${statsUpdate.mp - (oldStats.mp || 0)}`)
+                        if (statsUpdate.hp !== undefined && oldStats.hp !== statsUpdate.hp) changes.push(`HP ${statsUpdate.hp} (${statsUpdate.hp - (oldStats.hp || 0) > 0 ? '+' : ''}${statsUpdate.hp - (oldStats.hp || 0)})`)
+                        if (statsUpdate.mp !== undefined && oldStats.mp !== statsUpdate.mp) changes.push(`MP ${statsUpdate.mp} (${statsUpdate.mp - (oldStats.mp || 0) > 0 ? '+' : ''}${statsUpdate.mp - (oldStats.mp || 0)})`)
+                        if (statsUpdate.willPower !== undefined && oldStats.willPower !== statsUpdate.willPower) changes.push(`WILL ${statsUpdate.willPower} (${statsUpdate.willPower - (oldStats.willPower || 0) > 0 ? '+' : ''}${statsUpdate.willPower - (oldStats.willPower || 0)})`)
+
+                        // RnR System (Vitals)
+                        if (statsUpdate.vitals) {
+                            const oldVitals = oldStats.vitals || {}
+                            if (statsUpdate.vitals.hp !== undefined && oldVitals.hp !== statsUpdate.vitals.hp)
+                                changes.push(`HP ${statsUpdate.vitals.hp} (${statsUpdate.vitals.hp - (oldVitals.hp || 0) > 0 ? '+' : ''}${statsUpdate.vitals.hp - (oldVitals.hp || 0)})`)
+                            if (statsUpdate.vitals.mental !== undefined && oldVitals.mental !== statsUpdate.vitals.mental)
+                                changes.push(`MEN ${statsUpdate.vitals.mental} (${statsUpdate.vitals.mental - (oldVitals.mental || 0) > 0 ? '+' : ''}${statsUpdate.vitals.mental - (oldVitals.mental || 0)})`)
+                            if (statsUpdate.vitals.willPower !== undefined && oldVitals.willPower !== statsUpdate.vitals.willPower)
+                                changes.push(`WILL ${statsUpdate.vitals.willPower} (${statsUpdate.vitals.willPower - (oldVitals.willPower || 0) > 0 ? '+' : ''}${statsUpdate.vitals.willPower - (oldVitals.willPower || 0)})`)
+                        }
+
                         if (changes.length > 0) handleLog({ id: `stats-${Date.now()}`, content: `📊 GM updated: ${changes.join(', ')}`, type: 'SYSTEM', senderName: 'GM', timestamp: new Date() })
                         setCharacter((prev: any) => ({ ...prev, stats: { ...prev.stats, ...statsUpdate } }))
                     } catch (error) { console.error('Stats update error:', error) }
@@ -328,9 +359,30 @@ export default function PlayerControllerPage() {
     const handleRnRComplete = async (totalScore: number, steps: any[], willUsed: number) => {
         setIsRnRRolling(false)
         if (willUsed > 0 && character?.stats) {
-            const newWill = (character.stats.willPower || 0) - willUsed
-            setCharacter((prev: any) => ({ ...prev, stats: { ...prev.stats, willPower: newWill } }))
-            await updateCharacterStats(playerId, { willPower: newWill })
+            // ✅ Fix: Support WillPower inside Vitals (RnR) or Top-level (Standard)
+            const currentWill = character.stats.vitals?.willPower ?? character.stats.willPower ?? 0
+            const newWill = Math.max(0, currentWill - willUsed)
+
+            let statsUpdate = {}
+
+            if (character.stats.vitals?.willPower !== undefined) {
+                // Update Vitals
+                const newVitals = { ...character.stats.vitals, willPower: newWill }
+                statsUpdate = { vitals: newVitals }
+                setCharacter((prev: any) => ({
+                    ...prev,
+                    stats: {
+                        ...prev.stats,
+                        vitals: newVitals
+                    }
+                }))
+            } else {
+                // Update Standard
+                statsUpdate = { willPower: newWill }
+                setCharacter((prev: any) => ({ ...prev, stats: { ...prev.stats, willPower: newWill } }))
+            }
+
+            await updateCharacterStats(playerId, statsUpdate)
         }
         await sendPlayerAction({ actionType: 'rnr_roll', actorName: character.name, total: totalScore, details: steps, willBoost: willUsed, description: `rolled Role & Roll check: ${totalScore} `, isRequested: isRequestedRoll } as any)
         setIsRequestedRoll(false)
@@ -463,19 +515,23 @@ export default function PlayerControllerPage() {
                                 ) : (
                                     <>
                                         <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
-                                            <h3 className="text-amber-500 font-bold mb-3 text-sm uppercase">Stats</h3>
-                                            <div className="grid grid-cols-3 gap-3">
-                                                <StatDisplay label="STR" value={character?.stats?.STR || character?.stats?.str || 0} />
-                                                <StatDisplay label="DEX" value={character?.stats?.DEX || character?.stats?.dex || 0} />
-                                                <StatDisplay label="CON" value={character?.stats?.CON || character?.stats?.con || 0} />
-                                                <StatDisplay label="INT" value={character?.stats?.INT || character?.stats?.int || 0} />
-                                                <StatDisplay label="WIS" value={character?.stats?.WIS || character?.stats?.wis || 0} />
-                                                <StatDisplay label="CHA" value={character?.stats?.CHA || character?.stats?.cha || 0} />
+                                            <h3 className="text-amber-500 font-bold mb-3 text-sm uppercase flex justify-between">
+                                                <span>Stats</span>
+                                                <span className="text-[10px] text-slate-500 normal-case">Standard D20</span>
+                                            </h3>
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <StatBox label="STR" value={character?.stats?.STR || character?.stats?.str || 0} />
+                                                <StatBox label="INT" value={character?.stats?.INT || character?.stats?.int || 0} />
+                                                <StatBox label="DEX" value={character?.stats?.DEX || character?.stats?.dex || 0} />
+                                                <StatBox label="WIS" value={character?.stats?.WIS || character?.stats?.wis || 0} />
+                                                <StatBox label="CON" value={character?.stats?.CON || character?.stats?.con || 0} />
+                                                <StatBox label="CHA" value={character?.stats?.CHA || character?.stats?.cha || 0} />
                                             </div>
                                         </div>
-                                        <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
+                                        <div className="bg-slate-800 rounded-xl p-4 border border-slate-700 mt-2">
                                             <h3 className="text-purple-400 font-bold mb-2 text-sm uppercase flex items-center gap-2"><span>⚡</span> WILL Power</h3>
                                             <div className="text-3xl font-black text-white text-center">{character?.stats?.willPower || 0}</div>
+                                            <div className="text-center text-[10px] text-slate-500 mt-1">Used to boost rolls</div>
                                         </div>
                                     </>
                                 )}

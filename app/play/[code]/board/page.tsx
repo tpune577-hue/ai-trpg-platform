@@ -172,15 +172,26 @@ export default function CampaignBoardPage() {
 
                 if (data.players) {
                     setDbPlayers(data.players.map((p: any) => {
-                        const charData = p.characterData ? JSON.parse(p.characterData) : {}
+                        let charData: any = {}
+                        try { charData = p.characterData ? JSON.parse(p.characterData) : {} } catch (e) { console.error(e) }
                         return {
-                            id: p.id,
-                            name: p.name,
-                            role: p.role,
+                            ...p,
                             character: charData,
-                            stats: charData.stats || charData || {}
+                            stats: charData.stats || charData || {},
+                            // ✅ Fix: Load Persistent Inventory for GM View
+                            inventory: charData.inventory || []
                         }
                     }))
+
+                    // ✅ Also Sync Inventory Check
+                    const loadedInventories: any = {}
+                    data.players.forEach((p: any) => {
+                        try {
+                            const cData = p.characterData ? JSON.parse(p.characterData) : {}
+                            if (cData.inventory) loadedInventories[p.id] = cData.inventory
+                        } catch (e) { }
+                    })
+                    setPlayerInventories(prev => ({ ...prev, ...loadedInventories }))
                 }
 
                 const savedActiveNpcs = data.activeNpcs ? JSON.parse(data.activeNpcs) : []
@@ -231,6 +242,48 @@ export default function CampaignBoardPage() {
                     setShowingDiceResult(null)
                     overlayTimeoutRef.current = null
                 }, 5000)
+            }
+
+
+
+            // ✅ Fix: Format Stats Update Log
+            if (action.actionType === 'STATS_UPDATE') {
+                try {
+                    const statsUpdate = JSON.parse(action.description)
+                    const changes: string[] = []
+
+                    const targetPlayer = dbPlayers.find(p => p.id === action.targetPlayerId)
+                    if (targetPlayer) {
+                        const oldStats = targetPlayer.stats || {}
+                        const oldVitals = oldStats.vitals || {}
+
+                        // Standard
+                        if (statsUpdate.hp !== undefined && oldStats.hp !== statsUpdate.hp) changes.push(`HP ${statsUpdate.hp > 0 ? '+' : ''}${statsUpdate.hp}`)
+                        if (statsUpdate.mp !== undefined && oldStats.mp !== statsUpdate.mp) changes.push(`MP ${statsUpdate.mp > 0 ? '+' : ''}${statsUpdate.mp}`)
+                        if (statsUpdate.willPower !== undefined && oldStats.willPower !== statsUpdate.willPower) changes.push(`WILL ${statsUpdate.willPower > 0 ? '+' : ''}${statsUpdate.willPower}`)
+
+                        // RnR
+                        if (statsUpdate.vitals) {
+                            if (statsUpdate.vitals.hp !== undefined && oldVitals.hp !== statsUpdate.vitals.hp)
+                                changes.push(`HP ${statsUpdate.vitals.hp > 0 ? '+' : ''}${statsUpdate.vitals.hp}`)
+                            if (statsUpdate.vitals.mental !== undefined && oldVitals.mental !== statsUpdate.vitals.mental)
+                                changes.push(`MEN ${statsUpdate.vitals.mental > 0 ? '+' : ''}${statsUpdate.vitals.mental}`)
+                            if (statsUpdate.vitals.willPower !== undefined && oldVitals.willPower !== statsUpdate.vitals.willPower)
+                                changes.push(`WILL ${statsUpdate.vitals.willPower > 0 ? '+' : ''}${statsUpdate.vitals.willPower}`)
+                        }
+
+                        if (changes.length > 0) {
+                            setLogs((prev) => [...prev, {
+                                id: Date.now().toString(),
+                                content: `📊 GM updated ${targetPlayer.name}: ${changes.join(', ')}`,
+                                type: 'SYSTEM',
+                                senderName: 'GM',
+                                timestamp: new Date()
+                            }])
+                        }
+                    }
+                } catch (e) { }
+                return
             }
 
             if (action.actionType !== 'GM_UPDATE_SCENE') {

@@ -329,8 +329,36 @@ export default function PlayerControllerPage() {
                                 changes.push(`WILL ${statsUpdate.vitals.willPower} (${statsUpdate.vitals.willPower - (oldVitals.willPower || 0) > 0 ? '+' : ''}${statsUpdate.vitals.willPower - (oldVitals.willPower || 0)})`)
                         }
 
+
                         if (changes.length > 0) handleLog({ id: `stats-${Date.now()}`, content: `📊 GM updated: ${changes.join(', ')}`, type: 'SYSTEM', senderName: 'GM', timestamp: new Date() })
-                        setCharacter((prev: any) => ({ ...prev, stats: { ...prev.stats, ...statsUpdate } }))
+
+                        // ✅ SAFE DEEP MERGE: Prevent partial vitals update from wiping other fields
+                        setCharacter((prev: any) => {
+                            const newStats = { ...(prev.stats || {}) }
+
+                            // 1. Merge Standard Props
+                            Object.keys(statsUpdate).forEach(key => {
+                                if (key !== 'vitals') newStats[key] = statsUpdate[key]
+                            })
+
+                            // 2. Merge Vitals Deeply
+                            if (statsUpdate.vitals) {
+                                newStats.vitals = {
+                                    ...(newStats.vitals || {}),
+                                    ...statsUpdate.vitals
+                                }
+                            }
+
+                            // Debug Log
+                            console.log("🔄 [Controller] Stats Updated:", {
+                                received: statsUpdate,
+                                prevStats: prev.stats,
+                                newStats: newStats
+                            })
+
+                            return { ...prev, stats: newStats }
+                        })
+
                     } catch (error) { console.error('Stats update error:', error) }
                     return
                 }

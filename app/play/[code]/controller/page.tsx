@@ -521,18 +521,7 @@ export default function PlayerControllerPage() {
                                 <div className="text-[10px] text-slate-400 bg-slate-800 px-1.5 py-0.5 rounded inline-block">{playerName || 'Player'}</div>
                             </div>
                         </div>
-                        {/* HP/MP Bars */}
-                        {/* HP/MP Bars */}
-                        <div className="w-24 flex flex-col gap-1">
-                            {/* HP Bar */}
-                            <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden relative">
-                                <div className="bg-green-500 h-full transition-all duration-500" style={{ width: `${hpPercent}%` }} />
-                            </div>
-                            {/* MP/Mental Bar */}
-                            <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden relative">
-                                <div className={`h-full transition-all duration-500 ${isRnR ? 'bg-blue-400' : 'bg-blue-500'}`} style={{ width: `${mpPercent}%` }} />
-                            </div>
-                        </div>
+                        {/* HP/MP Bars REMOVED as requested */}
                     </div>
                 </div>
 
@@ -578,9 +567,9 @@ export default function PlayerControllerPage() {
                                         <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
                                             <h3 className="text-purple-400 font-bold mb-2 text-sm uppercase flex items-center gap-2"><span>⚡</span> Vitals</h3>
                                             <div className="grid grid-cols-3 gap-2 text-center">
-                                                <div><div className="text-[10px] text-slate-400">HP</div><div className="text-xl font-bold text-green-400">{character?.stats?.vitals?.health || 0}/{character?.stats?.vitals?.maxHealth || 0}</div></div>
-                                                <div><div className="text-[10px] text-slate-400">MP</div><div className="text-xl font-bold text-blue-400">{character?.stats?.vitals?.mental || 0}/{character?.stats?.vitals?.maxMental || 0}</div></div>
-                                                <div><div className="text-[10px] text-slate-400">WP</div><div className="text-xl font-bold text-purple-400">{character?.stats?.vitals?.willPower || 0}</div></div>
+                                                <div><div className="text-[10px] text-slate-400">HP</div><div className="text-xl font-bold text-green-400">{activeHp}/{activeMaxHp}</div></div>
+                                                <div><div className="text-[10px] text-slate-400">MP</div><div className="text-xl font-bold text-blue-400">{activeMp}/{activeMaxMp}</div></div>
+                                                <div><div className="text-[10px] text-slate-400">WP</div><div className="text-xl font-bold text-purple-400">{character?.stats?.vitals?.willPower ?? character?.stats?.willPower ?? 0}</div></div>
                                             </div>
                                         </div>
                                         {/* Attributes */}

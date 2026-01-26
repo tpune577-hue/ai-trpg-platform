@@ -47,7 +47,8 @@ export default function CharacterDetailModal({
         // Vitals are usually in 'vitals' object root or inside stats
         const vitals = charData.vitals || rawStats.vitals || rawStats
 
-        hp = Number(vitals.health || vitals.maxHealth || vitals.hp || 0)
+        // ✅ Fix: Use 'hp' key for RnR Health (Standardized)
+        hp = Number(vitals.hp || vitals.health || vitals.maxHp || vitals.maxHealth || 0)
         mental = Number(vitals.mental || vitals.maxMental || 0)
         wp = Number(vitals.willPower || vitals.wp || 0)
 

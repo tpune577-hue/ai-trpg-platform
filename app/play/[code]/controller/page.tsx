@@ -436,13 +436,24 @@ export default function PlayerControllerPage() {
         catch (error) { alert("Failed to submit review"); setIsSubmittingReview(false) }
     }
 
+    // ✅ LIVEKIT WRAPPER
     const activeImageUrl = (() => {
         if (privateSceneId) { const ps = campaignScenes.find(s => s.id === privateSceneId); if (ps) return ps.imageUrl }
         return gameState?.sceneImageUrl || "https://img.freepik.com/premium-photo/majestic-misty-redwood-forest-with-lush-green-ferns-sunlight-filtering-through-fog_996993-7424.jpg"
     })()
     const activeDescription = announcement || gmNarration || sceneNotification || undefined
 
-    // ✅ LIVEKIT WRAPPER
+    // ✅ Derived Stats for UI (Standard vs RnR)
+    const isRnR = character?.sheetType === 'ROLE_AND_ROLL'
+    const activeHp = isRnR ? (character?.stats?.vitals?.hp || character?.stats?.vitals?.health || 0) : (character?.stats?.hp || character?.hp || 0) // Fallback to root hp
+    const activeMaxHp = isRnR ? (character?.stats?.vitals?.maxHp || character?.stats?.vitals?.maxHealth || 10) : (character?.stats?.maxHp || character?.maxHp || 10)
+
+    // MP or Mental
+    const activeMp = isRnR ? (character?.stats?.vitals?.mental || 0) : (character?.stats?.mp || character?.mp || 0)
+    const activeMaxMp = isRnR ? (character?.stats?.vitals?.maxMental || 10) : (character?.stats?.maxMp || character?.maxMp || 10)
+
+    const hpPercent = Math.min(100, Math.max(0, (activeHp / activeMaxHp) * 100))
+    const mpPercent = Math.min(100, Math.max(0, (activeMp / activeMaxMp) * 100))
     return (
         <LiveKitRoom
             token={voiceToken}
@@ -468,9 +479,16 @@ export default function PlayerControllerPage() {
                             </div>
                         </div>
                         {/* HP/MP Bars */}
+                        {/* HP/MP Bars */}
                         <div className="w-24 flex flex-col gap-1">
-                            <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden"><div className="bg-green-500 h-full w-full" /></div>
-                            <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden"><div className="bg-blue-500 h-full w-3/4" /></div>
+                            {/* HP Bar */}
+                            <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden relative">
+                                <div className="bg-green-500 h-full transition-all duration-500" style={{ width: `${hpPercent}%` }} />
+                            </div>
+                            {/* MP/Mental Bar */}
+                            <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden relative">
+                                <div className={`h-full transition-all duration-500 ${isRnR ? 'bg-blue-400' : 'bg-blue-500'}`} style={{ width: `${mpPercent}%` }} />
+                            </div>
                         </div>
                     </div>
                 </div>

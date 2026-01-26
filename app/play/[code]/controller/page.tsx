@@ -315,8 +315,14 @@ export default function PlayerControllerPage() {
                         // RnR System (Vitals)
                         if (statsUpdate.vitals) {
                             const oldVitals = oldStats.vitals || {}
-                            if (statsUpdate.vitals.hp !== undefined && oldVitals.hp !== statsUpdate.vitals.hp)
-                                changes.push(`HP ${statsUpdate.vitals.hp} (${statsUpdate.vitals.hp - (oldVitals.hp || 0) > 0 ? '+' : ''}${statsUpdate.vitals.hp - (oldVitals.hp || 0)})`)
+                            // ✅ Fix: Check both hp AND health for diff calculation
+                            const oldHp = oldVitals.hp ?? oldVitals.health ?? 0
+
+                            if (statsUpdate.vitals.hp !== undefined) {
+                                const diff = statsUpdate.vitals.hp - oldHp
+                                if (diff !== 0) changes.push(`HP ${statsUpdate.vitals.hp} (${diff > 0 ? '+' : ''}${diff})`)
+                            }
+
                             if (statsUpdate.vitals.mental !== undefined && oldVitals.mental !== statsUpdate.vitals.mental)
                                 changes.push(`MEN ${statsUpdate.vitals.mental} (${statsUpdate.vitals.mental - (oldVitals.mental || 0) > 0 ? '+' : ''}${statsUpdate.vitals.mental - (oldVitals.mental || 0)})`)
                             if (statsUpdate.vitals.willPower !== undefined && oldVitals.willPower !== statsUpdate.vitals.willPower)

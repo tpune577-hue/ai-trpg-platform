@@ -335,11 +335,24 @@ export async function updateCharacterStats(playerId: string, statsUpdate: any) {
 
         const charData = JSON.parse(player.characterData)
 
-        // Update stats
-        charData.stats = {
-            ...charData.stats,
-            ...statsUpdate
+        // ✅ SAFE DEEP MERGE: Prevent partial vitals update from wiping other fields
+        const currentStats = charData.stats || {}
+        const newStats = { ...currentStats }
+
+        // 1. Merge Standard Props
+        Object.keys(statsUpdate).forEach(key => {
+            if (key !== 'vitals') newStats[key] = statsUpdate[key]
+        })
+
+        // 2. Merge Vitals Deeply
+        if (statsUpdate.vitals) {
+            newStats.vitals = {
+                ...(newStats.vitals || {}),
+                ...statsUpdate.vitals
+            }
         }
+
+        charData.stats = newStats
 
         await prisma.player.update({
             where: { id: playerId },

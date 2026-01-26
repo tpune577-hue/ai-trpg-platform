@@ -252,6 +252,28 @@ export default function CampaignBoardPage() {
                     const statsUpdate = JSON.parse(action.description)
                     const changes: string[] = []
 
+                    // ✅ Fix: Sync Board State immediately
+                    setDbPlayers(prev => prev.map(p => {
+                        if (p.id !== action.targetPlayerId) return p
+
+                        // Merge New Stats
+                        const currentStats = p.stats || (p.characterData ? JSON.parse(p.characterData).stats : {}) || {}
+                        const newStats = { ...currentStats, ...statsUpdate }
+
+                        // Handle Nested Vitals Merge if present
+                        if (statsUpdate.vitals && currentStats.vitals) {
+                            newStats.vitals = { ...currentStats.vitals, ...statsUpdate.vitals }
+                        } else if (statsUpdate.vitals) {
+                            newStats.vitals = statsUpdate.vitals
+                        }
+
+                        // Update characterData string as well if needed (optional for display but good for consistency)
+                        // But mainly we update the `stats` object if we parsed it separatedly?
+                        // In `fetchCampaignData`, we parsed `characterData` into `p.stats`. 
+                        // So updating `p.stats` here should reflect in UI.
+                        return { ...p, stats: newStats }
+                    }))
+
                     const targetPlayer = dbPlayers.find(p => p.id === action.targetPlayerId)
                     if (targetPlayer) {
                         const oldStats = targetPlayer.stats || {}

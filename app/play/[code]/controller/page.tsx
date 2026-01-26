@@ -157,15 +157,51 @@ export default function PlayerControllerPage() {
                     try { charData = myPlayer.characterData ? JSON.parse(myPlayer.characterData) : {} } catch (e) { console.error("Parse Error", e) }
 
                     // ✅ Fix: Merge with PreGen Data (Restore missing Attributes/Abilities)
+                    // Logic: Base Template < Saved Data. Saved Data MUST overwrite Template for dynamic values.
                     if (myPlayer.preGenId && session.campaign?.preGens) {
                         const template = session.campaign.preGens.find((pg: any) => pg.id === myPlayer.preGenId)
                         if (template && template.stats) {
                             try {
                                 const baseStats = JSON.parse(template.stats)
-                                // Merge: Base Template -> Saved Data (Saved wins, but missing keys fall back to Base)
-                                charData = { ...baseStats, ...charData }
+
+                                // ✅ Deep Merge for Stats
+                                // We want Base Stats to fill in gaps, but NOT overwrite existing saved values.
+                                // Especially dynamic values like HP, MP, WillPower, Vitals.
+                                const savedStats = charData.stats || {}
+
+                                const mergedStats = {
+                                    ...baseStats,
+                                    ...savedStats,
+                                    // Ensure Vitals are merged deeply if they exist in both
+                                    vitals: {
+                                        ...(baseStats.vitals || {}),
+                                        ...(savedStats.vitals || {})
+                                    },
+                                    // Ensure Attributes/Abilities are merged deeply
+                                    attributes: {
+                                        ...(baseStats.attributes || {}),
+                                        ...(savedStats.attributes || {})
+                                    },
+                                    abilities: {
+                                        ...(baseStats.abilities || {}),
+                                        ...(savedStats.abilities || {})
+                                    }
+                                }
+
+                                charData = {
+                                    ...charData,
+                                    stats: mergedStats,
+                                    // Persist Sheet Type if not set in Saved Data
+                                    sheetType: charData.sheetType || myPlayer.sheetType || template.sheetType || 'STANDARD'
+                                }
+
                                 console.log("✅ [Resume] Merged with PreGen Template:", template.name)
                             } catch (e) { console.error("Template Parse Error", e) }
+                        }
+                    } else {
+                        // Fallback for non-PreGen characters
+                        if (!charData.sheetType && myPlayer.sheetType) {
+                            charData.sheetType = myPlayer.sheetType
                         }
                     }
 

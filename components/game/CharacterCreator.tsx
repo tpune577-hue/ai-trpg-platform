@@ -135,9 +135,9 @@ export default function CharacterCreator({ playerId, initialName, campaignSystem
                 bio: { name: formData.name, description: formData.description },
                 vitals: {
                     willPower: formData.rr_willPower,
-                    health: formData.rr_health,
-                    mental: formData.rr_mental,
-                    maxHealth: formData.rr_health,
+                    hp: formData.rr_health,      // ✅ Map Health -> hp
+                    mental: formData.rr_mental,  // ✅ Map Mental -> mental
+                    maxHp: formData.rr_health,   // ✅ Store Max for reference
                     maxMental: formData.rr_mental
                 },
                 attributes: attributes,

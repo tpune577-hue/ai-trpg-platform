@@ -246,15 +246,11 @@ export default function CampaignBoardPage() {
                 // ✅ Fix: Sync Willpower usage to Board immediately to prevent overwrite
                 if (action.willBoost && action.willBoost > 0) {
                     setDbPlayers(prev => prev.map(p => {
-                        const actorName = action.actorName
-                        // Try to match by ID if available (not in payload currently?), or Name
-                        // Best if payload had actorId. But we know actorName.
-                        // Wait, rnr_roll usually doesn't have actorId in the payload shown in Controller. 
-                        // But Controller sends `actorName`. 
-                        // Let's match by character name or player name.
+                        // ✅ Fix: Match by ID (Reliable) or Name (Fallback)
+                        const isMatch = (action.actorId && p.id === action.actorId) ||
+                            (p.character?.name === action.actorName || p.name === action.actorName)
 
-                        // Actually, Board dbPlayers has `character.name`.
-                        if (p.character?.name === actorName || p.name === actorName) {
+                        if (isMatch) {
                             const currentStats = p.stats || {}
                             const oldWill = currentStats.willPower || 0
                             const oldVitalsWill = currentStats.vitals?.willPower || 0

@@ -454,7 +454,16 @@ export default function PlayerControllerPage() {
 
             await updateCharacterStats(playerId, statsUpdate)
         }
-        await sendPlayerAction({ actionType: 'rnr_roll', actorName: character.name, total: totalScore, details: steps, willBoost: willUsed, description: `rolled Role & Roll check: ${totalScore} `, isRequested: isRequestedRoll } as any)
+        await sendPlayerAction({
+            actionType: 'rnr_roll',
+            actorName: character.name,
+            actorId: playerId, // ✅ Fix: Send ID for reliable Board matching
+            total: totalScore,
+            details: steps,
+            willBoost: willUsed,
+            description: `rolled Role & Roll check: ${totalScore} `,
+            isRequested: isRequestedRoll
+        } as any)
         setIsRequestedRoll(false)
     }
 

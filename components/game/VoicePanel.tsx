@@ -48,7 +48,7 @@ export default function VoicePanel({ room, username }: VoicePanelProps) {
     return (
         <LiveKitRoom
             video={false} // ไม่ใช้วิดีโอ
-            audio={true}  // ใช้เสียง
+            audio={false}  // ใช้เสียง
             token={token}
             serverUrl={process.env.NEXT_PUBLIC_LIVEKIT_URL}
             data-lk-theme="default"

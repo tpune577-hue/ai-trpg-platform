@@ -107,7 +107,7 @@ export async function getLobbyInfo(joinCode: string) {
                     role: true,
                     isReady: true,
                     characterData: true,
-                    userId: true,
+                    // userId: true, // REMOVED: Field does not exist in schema
                     // inventory: true // ถ้าต้องการ Inventory ด้วยให้ใส่บรรทัดนี้
                 }
             },

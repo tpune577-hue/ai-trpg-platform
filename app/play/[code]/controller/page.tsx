@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
+import Image from 'next/image'
 import { useGameSocket } from '@/hooks/useGameSocket'
-import { getLobbyInfo, submitReview, updateCharacterStats } from '@/app/actions/game'
+import { getLobbyInfo, getLobbyAssets, submitReview, updateCharacterStats } from '@/app/actions/game'
 import { SceneDisplay } from '@/components/board/SceneDisplay'
 import { GameLog } from '@/components/board/GameLog'
 import RnRRoller from '@/components/game/RnRRoller'
@@ -127,10 +128,19 @@ export default function PlayerControllerPage() {
     useEffect(() => {
         const initGame = async () => {
             try {
-                const session = await getLobbyInfo(joinCode)
+                // Fetch basic lobby info
+                const session: any = await getLobbyInfo(joinCode)
                 if (!session) return
+
+                // ✅ Fetch heavy assets separately
+                const assets = await getLobbyAssets(joinCode)
+
                 if (session.status === 'ENDED') { setShowReviewModal(true); return }
                 if (session.campaign?.system) setCampaignSystem(session.campaign.system as any)
+
+                // Combine scenes from session (light) and assets (full)
+                const allScenes = assets.scenes || session.campaign?.scenes || []
+                setCampaignScenes(allScenes)
 
                 let targetSceneId = session.currentSceneId
                 let targetSceneUrl = ''
@@ -141,15 +151,14 @@ export default function PlayerControllerPage() {
                 } catch (e) { console.error("NPC Parse Error", e) }
 
                 if (targetSceneId) {
-                    const s = session.campaign?.scenes?.find((s: any) => s.id === targetSceneId)
+                    const s = allScenes.find((s: any) => s.id === targetSceneId)
                     targetSceneUrl = s?.imageUrl || ''
-                } else if (session.campaign?.scenes && session.campaign.scenes.length > 0) {
-                    targetSceneId = session.campaign.scenes[0].id
-                    targetSceneUrl = session.campaign.scenes[0].imageUrl
+                } else if (allScenes.length > 0) {
+                    targetSceneId = allScenes[0].id
+                    targetSceneUrl = allScenes[0].imageUrl
                 }
 
                 setGameState({ currentScene: targetSceneId, sceneImageUrl: targetSceneUrl, activeNpcs: targetNpcs })
-                setCampaignScenes(session.campaign?.scenes || [])
 
                 const myPlayer = session.players?.find((p: any) => p.id === playerId)
                 if (myPlayer) {
@@ -513,8 +522,16 @@ export default function PlayerControllerPage() {
                 <div className="bg-slate-900 border-b border-amber-500/30 flex flex-col gap-2 p-2 shrink-0 z-30 shadow-lg relative">
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                            <div className="w-10 h-10 rounded-full border-2 border-amber-500 bg-slate-800 overflow-hidden">
-                                {character && <img src={character.avatarUrl} className="w-full h-full object-cover" />}
+                            <div className="w-10 h-10 rounded-full border-2 border-amber-500 bg-slate-800 overflow-hidden relative">
+                                {character && (
+                                    <Image
+                                        src={character.avatarUrl || '/placeholder.jpg'}
+                                        alt={character.name}
+                                        fill
+                                        className="object-cover"
+                                        sizes="40px"
+                                    />
+                                )}
                             </div>
                             <div>
                                 <div className="font-bold text-amber-500 text-sm">{character?.name || 'Loading...'}</div>

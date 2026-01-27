@@ -1,7 +1,8 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
+import Image from 'next/image'
 import { getLobbyInfo, joinLobby, setPlayerReady, startGame, resumeGame, saveCharacterSheet, leaveLobby } from '@/app/actions/game'
 import CharacterCreator from '@/components/game/CharacterCreator'
 import LobbyVoiceChat from '@/components/lobby/LobbyVoiceChat'
@@ -25,8 +26,8 @@ export default function LobbyPage() {
     const [isCreatingChar, setIsCreatingChar] = useState(false)
     const [detailCharacter, setDetailCharacter] = useState<any>(null)
 
-    // ✅ Use Socket for Presence
-    const { onlineUsers } = useGameSocket(code as string, { userId: myPlayerId })
+    // ✅ Use Socket for Presence & Realtime Updates
+    const { onlineUsers, onPlayerJoined, onPlayerAction, onGameStateUpdate } = useGameSocket(code as string, { userId: myPlayerId })
 
     // 1. Check LocalStorage
     useEffect(() => {
@@ -61,32 +62,65 @@ export default function LobbyPage() {
         return () => window.removeEventListener('beforeunload', handleBeforeUnload)
     }, [myPlayerId, session?.status])
 
-    // 2. Polling & Redirect Logic
-    useEffect(() => {
-        const fetchLobby = async () => {
-            try {
-                const data = await getLobbyInfo(code as string)
-                setSession(data)
+    // 2. Fetch Data (Optimized)
+    const fetchLobby = async (isPoll = false) => {
+        try {
+            const data = await getLobbyInfo(code as string)
 
-                // ✅ Redirect เมื่อเกมเริ่ม (เช็ค Role เพื่อพาไปถูกหน้า)
-                if (data?.status === 'ACTIVE' && myPlayerId) {
-                    if (myRole === 'GM') {
-                        router.push(`/play/${code}/board`)
-                    } else {
-                        router.push(`/play/${code}/controller`)
-                    }
+            // ถ้าเป็น Poll และข้อมูลไม่เปลี่ยน ไม่ต้อง Set State (React ทำให้อยู่แล้ว แต่เช็คกันเหนียวได้)
+            setSession((prev: any) => {
+                if (isPoll && JSON.stringify(prev) === JSON.stringify(data)) return prev
+                return data
+            })
+
+            // ✅ Redirect เมื่อเกมเริ่ม (เช็ค Role เพื่อพาไปถูกหน้า)
+            if (data?.status === 'ACTIVE' && myPlayerId) {
+                if (myRole === 'GM') {
+                    router.push(`/play/${code}/board`)
+                } else {
+                    router.push(`/play/${code}/controller`)
                 }
-            } catch (err) {
-                console.error(err)
-            } finally {
-                setLoading(false)
             }
+        } catch (err) {
+            console.error(err)
+        } finally {
+            if (!isPoll) setLoading(false)
+        }
+    }
+
+    // Initial Fetch
+    useEffect(() => {
+        fetchLobby()
+    }, [code, myPlayerId, myRole, router])
+
+    // 3. Socket Event Listeners (Realtime Updates without Polling)
+    useEffect(() => {
+        if (onPlayerJoined) {
+            onPlayerJoined((profile: any) => {
+                console.log("Player Joined:", profile)
+                // Refresh full lobby info to be safe
+                fetchLobby(true)
+            })
         }
 
-        fetchLobby()
-        const interval = setInterval(fetchLobby, 3000)
+        if (onPlayerAction) {
+            onPlayerAction((action: any) => {
+                if (action.actionType === 'JOIN_GAME' || action.actionType === 'PLAYER_LEFT') {
+                    fetchLobby(true)
+                }
+                // ถ้ามี Game Started event
+                if (action.actionType === 'GAME_STARTED') {
+                    if (myRole === 'GM') router.push(`/play/${code}/board`)
+                    else router.push(`/play/${code}/controller`)
+                }
+            })
+        }
+
+        // Polling (Reduced frequency to 10s as backup)
+        const interval = setInterval(() => fetchLobby(true), 10000)
         return () => clearInterval(interval)
-    }, [code, myPlayerId, myRole, router])
+    }, [code, onPlayerJoined, onPlayerAction, myRole, router])
+
 
     // --- Handlers ---
     const handleLogin = async () => {
@@ -98,6 +132,8 @@ export default function LobbyPage() {
             setMyPlayerId(res.playerId)
             setMyRole(res.role as any)
             setStep('WAITING')
+            // Refresh Immediately
+            fetchLobby()
         } catch (e) {
             alert("Error joining lobby")
         } finally {
@@ -117,6 +153,8 @@ export default function LobbyPage() {
         try {
             // ส่ง selectedCharId ไป (ถ้าเป็น Custom ให้ส่ง null หรือ string ว่า 'CUSTOM' ก็ได้ ตาม backend รองรับ)
             await setPlayerReady(myPlayerId!, selectedCharId || 'CUSTOM')
+            // Refresh to show ready status immediately
+            fetchLobby()
         } catch (e) {
             alert("Error setting ready")
         } finally {
@@ -129,6 +167,8 @@ export default function LobbyPage() {
         try {
             if (session.status === 'PAUSED') await resumeGame(code as string)
             else await startGame(code as string)
+            // Socket will handle redirect usually, but we can double check
+            if (myRole === 'GM') router.push(`/play/${code}/board`)
         } catch (e) {
             alert("Failed to start")
         } finally {
@@ -157,6 +197,7 @@ export default function LobbyPage() {
             setIsCreatingChar(false)
             // ✅ พอ Save เสร็จ ให้เคลียร์ selection pre-gen ทิ้ง (จะได้ไม่สับสน)
             setSelectedCharId(null)
+            fetchLobby()
         } catch (e) {
             console.error(e)
             alert("Failed to save character")
@@ -225,10 +266,15 @@ export default function LobbyPage() {
                 {/* Background Image */}
                 {session.campaign?.coverImage && (
                     <>
-                        <div
-                            className="absolute inset-0 bg-cover bg-center z-0"
-                            style={{ backgroundImage: `url(${session.campaign.coverImage})` }}
-                        />
+                        <div className="absolute inset-0 z-0">
+                            <Image
+                                src={session.campaign.coverImage}
+                                alt="Campaign Cover"
+                                fill
+                                className="object-cover opacity-50"
+                                priority
+                            />
+                        </div>
                         <div className="absolute inset-0 bg-gradient-to-b from-slate-950/80 via-slate-950/90 to-slate-950 z-0" />
                     </>
                 )}
@@ -358,8 +404,14 @@ export default function LobbyPage() {
                                     {activePlayers.map((p: any) => (
                                         <div key={p.id} className={`relative bg-slate-900 rounded-xl overflow-hidden border-2 transition-all ${p.isReady ? 'border-emerald-500 shadow-lg shadow-emerald-900/20' : 'border-slate-800 opacity-80'}`}>
                                             <div className="aspect-[4/3] bg-black relative">
-                                                <img src={getPlayerImage(p)} className="w-full h-full object-cover" />
-                                                <div className="absolute top-2 right-2">
+                                                <Image
+                                                    src={getPlayerImage(p)}
+                                                    alt={p.name}
+                                                    fill
+                                                    className="object-cover"
+                                                    sizes="(max-width: 768px) 50vw, 33vw"
+                                                />
+                                                <div className="absolute top-2 right-2 z-10">
                                                     {p.isReady ? (
                                                         <span className="bg-emerald-500 text-black text-[10px] font-black px-2 py-1 rounded shadow-lg uppercase">Ready</span>
                                                     ) : (
@@ -388,7 +440,13 @@ export default function LobbyPage() {
                                 <div className="flex flex-col items-center justify-center min-h-[400px]">
                                     <div className="bg-slate-900 border-2 border-emerald-500 rounded-2xl p-1 shadow-2xl shadow-emerald-900/40 w-full max-w-sm">
                                         <div className="relative aspect-[4/3] rounded-xl overflow-hidden bg-black mb-4">
-                                            <img src={getPlayerImage(myPlayer)} className="w-full h-full object-cover" />
+                                            <Image
+                                                src={getPlayerImage(myPlayer)}
+                                                alt={myPlayer.name}
+                                                fill
+                                                className="object-cover"
+                                                priority
+                                            />
                                             <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent flex flex-col justify-end p-6">
                                                 <h2 className="text-3xl font-black text-white">{myPlayer.name}</h2>
                                                 <div className="flex items-center gap-2 mt-2">
@@ -432,7 +490,13 @@ export default function LobbyPage() {
                                                         className={`cursor-pointer rounded-xl overflow-hidden border-2 transition-all flex flex-col relative group ${selectedCharId === char.id ? 'border-emerald-500 bg-slate-800 shadow-emerald-900/20 shadow-lg' : 'border-slate-800 bg-slate-900 hover:border-amber-500'}`}
                                                     >
                                                         <div className="w-full aspect-[4/3] bg-black relative">
-                                                            <img src={char.avatarUrl || '/placeholder.jpg'} className="w-full h-full object-cover" />
+                                                            <Image
+                                                                src={char.avatarUrl || '/placeholder.jpg'}
+                                                                alt={char.name}
+                                                                fill
+                                                                className="object-cover"
+                                                                sizes="(max-width: 768px) 50vw, 33vw"
+                                                            />
 
                                                             {/* Hover Overlay */}
                                                             <div className="absolute inset-0 bg-black/0 group-hover:bg-black/60 transition-all flex items-center justify-center">
@@ -442,7 +506,7 @@ export default function LobbyPage() {
                                                             </div>
 
                                                             {/* Sheet Type Badge */}
-                                                            <div className="absolute top-2 right-2">
+                                                            <div className="absolute top-2 right-2 z-10">
                                                                 <span className={`text-[10px] px-2 py-0.5 rounded uppercase font-bold tracking-wider border shadow-sm backdrop-blur-md ${char.sheetType === 'ROLE_AND_ROLL' ? 'bg-amber-900/80 text-amber-500 border-amber-500/50' : 'bg-blue-900/80 text-blue-400 border-blue-500/50'}`}>
                                                                     {char.sheetType === 'ROLE_AND_ROLL' ? 'RnR' : 'STD'}
                                                                 </span>
@@ -450,7 +514,7 @@ export default function LobbyPage() {
 
                                                             {/* Selected Badge */}
                                                             {selectedCharId === char.id && (
-                                                                <div className="absolute top-2 left-2">
+                                                                <div className="absolute top-2 left-2 z-10">
                                                                     <span className="text-xs px-2 py-1 bg-emerald-500 text-black font-bold rounded">
                                                                         ✓ Selected
                                                                     </span>

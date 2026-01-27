@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
+import Image from 'next/image'
 import { useGameSocket } from '@/hooks/useGameSocket'
 // ✅ Import getLobbyAssets เพิ่มเข้ามา
 import { getLobbyInfo, getLobbyAssets, updateGameSessionState, kickPlayer, pauseGameSession, endGameSession, updateCharacterStats, updatePlayerInventory } from '@/app/actions/game'
@@ -755,8 +756,14 @@ export default function CampaignBoardPage() {
                                         onClick={() => changeScene(s.id, s.imageUrl)}
                                         className={`aspect-video bg-black rounded border-2 cursor-pointer relative group ${gameState.sceneImageUrl === s.imageUrl ? 'border-amber-500' : (s.isCustom ? 'border-green-600/50 hover:border-green-400' : 'border-slate-700 hover:border-slate-500')}`}
                                     >
-                                        <img src={s.imageUrl} className="w-full h-full object-cover opacity-70 group-hover:opacity-100 transition-opacity" />
-                                        <div className="absolute bottom-0 w-full bg-black/60 text-white text-[9px] p-1 truncate flex justify-between items-center">
+                                        <Image
+                                            src={s.imageUrl || '/placeholder.jpg'}
+                                            alt={s.name}
+                                            fill
+                                            className="object-cover opacity-70 group-hover:opacity-100 transition-opacity"
+                                            sizes="(max-width: 768px) 50vw, 25vw"
+                                        />
+                                        <div className="absolute bottom-0 w-full bg-black/60 text-white text-[9px] p-1 truncate flex justify-between items-center z-10">
                                             <span>{s.name}</span>
                                             {s.isCustom && <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>}
                                         </div>
@@ -781,9 +788,15 @@ export default function CampaignBoardPage() {
                                             onClick={() => toggleNpc(npc)}
                                             className={`flex items-center gap-2 p-2 rounded cursor-pointer border ${active ? 'bg-amber-900/20 border-amber-500' : (npc.isCustom ? 'border-green-900/30 hover:border-green-500/50' : 'hover:bg-slate-800 border-transparent')}`}
                                         >
-                                            <div className="relative">
-                                                <img src={displayImage} className="w-8 h-8 rounded bg-black object-cover" />
-                                                {npc.isCustom && <div className="absolute -top-1 -right-1 w-2 h-2 bg-green-500 rounded-full border border-black"></div>}
+                                            <div className="relative w-8 h-8 rounded bg-black overflow-hidden flex-shrink-0">
+                                                <Image
+                                                    src={displayImage || '/placeholder.jpg'}
+                                                    alt={npc.name}
+                                                    fill
+                                                    className="object-cover"
+                                                    sizes="32px"
+                                                />
+                                                {npc.isCustom && <div className="absolute -top-1 -right-1 w-2 h-2 bg-green-500 rounded-full border border-black z-10"></div>}
                                             </div>
                                             <span className="text-xs text-white font-bold flex-1">{npc.name}</span>
                                             {active && <span className="text-[9px] text-amber-500">ON BOARD</span>}

@@ -3,7 +3,7 @@ import { getSiteConfig } from '@/app/actions/site-settings'
 import { getPublishedCampaigns } from '@/app/actions/game'
 import Link from 'next/link'
 
-export default async function HomePage() {
+export async function ClientHome({ isLoggedIn }: { isLoggedIn: boolean }) {
     const config = await getSiteConfig()
     const campaigns = await getPublishedCampaigns()
 

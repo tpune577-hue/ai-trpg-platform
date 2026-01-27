@@ -251,6 +251,13 @@ export default function CampaignBoardPage() {
                             (p.character?.name === action.actorName || p.name === action.actorName)
 
                         if (isMatch) {
+                            console.log('⚡ [Board] Willpower Update Triggered:', {
+                                name: p.name,
+                                willBoost: action.willBoost,
+                                oldWill: p.stats?.vitals?.willPower,
+                                actionId: action.actorId,
+                                playerId: p.id
+                            })
                             const currentStats = p.stats || {}
                             const oldWill = currentStats.willPower || 0
                             const oldVitalsWill = currentStats.vitals?.willPower || 0
@@ -260,8 +267,10 @@ export default function CampaignBoardPage() {
                             const newVitalsWill = Math.max(0, oldVitalsWill - action.willBoost)
 
                             const newStats = { ...currentStats, willPower: newWill }
-                            if (currentStats.vitals) {
-                                newStats.vitals = { ...currentStats.vitals, willPower: newVitalsWill }
+
+                            // ✅ Fix: Force update vitals if exists OR character is RnR
+                            if (currentStats.vitals || p.character?.sheetType === 'ROLE_AND_ROLL') {
+                                newStats.vitals = { ...(currentStats.vitals || {}), willPower: newVitalsWill }
                             }
 
                             return { ...p, stats: newStats }

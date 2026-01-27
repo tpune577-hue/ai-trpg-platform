@@ -193,7 +193,8 @@ export function EnhancedPartyStatus({
                                     const maxHp = isRnR ? (playerStats.vitals?.maxHp ?? playerStats.vitals?.maxHealth ?? 0) : (playerStats.maxHp ?? 0)
                                     const mp = isRnR ? (playerStats.vitals?.mental ?? 0) : (playerStats.mp ?? 0)
                                     const maxMp = isRnR ? (playerStats.vitals?.maxMental ?? 0) : (playerStats.maxMp ?? 0)
-                                    const willPower = isRnR ? (playerStats.vitals?.willPower ?? 0) : (playerStats.willPower ?? playerStats.will ?? 0)
+                                    // ✅ Fix: Fallback to root willPower/will if vitals.willPower is missing (Robustness)
+                                    const willPower = isRnR ? (playerStats.vitals?.willPower ?? playerStats.willPower ?? 0) : (playerStats.willPower ?? playerStats.will ?? 0)
 
                                     return (
                                         <div className="space-y-2 mt-2">

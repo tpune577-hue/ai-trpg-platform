@@ -851,14 +851,7 @@ export default function CampaignBoardPage() {
             <div className="absolute bottom-0 w-full h-auto min-h-[80px] md:h-32 bg-slate-900 border-t border-slate-700 flex flex-col md:flex-row items-center px-4 py-2 gap-3 z-50">
                 <div className="flex gap-2 shrink-0">
                     <button onClick={handleGmRoll} className="bg-amber-600 hover:bg-amber-500 text-black px-4 py-2 rounded-lg font-black shadow-lg active:scale-95 transition-all flex items-center gap-2"><span className="text-xl">🎲</span><span className="hidden md:inline">GM Roll</span></button>
-                    <button
-                        className="bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-lg font-bold shadow-lg active:scale-95 transition-all flex items-center gap-2"
-                        onMouseDown={() => console.log('🎤 GM Push to Talk - Start')}
-                        onMouseUp={() => console.log('🎤 GM Push to Talk - End')}
-                    >
-                        <span className="text-xl">🎤</span>
-                        <span className="hidden md:inline">TALK</span>
-                    </button>
+                    {/* BUTTON REMOVED */}
                 </div>
 
                 <div className="w-full md:flex-1 flex gap-2">

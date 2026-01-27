@@ -183,14 +183,16 @@ export function EnhancedPartyStatus({
                                 {/* Stats Display */}
                                 {(player as any).stats && (() => {
                                     // ✅ Detect character type and get correct values
-                                    const isRnR = (player as any).character?.sheetType === 'ROLE_AND_ROLL'
-                                    const playerStats = (player as any).stats
-                                    // ✅ Fix: Use 'hp' key for RnR Health (Standardized)
-                                    const hp = isRnR ? (playerStats.vitals?.hp || playerStats.vitals?.health || 0) : (playerStats.hp || 0)
-                                    const maxHp = isRnR ? (playerStats.vitals?.maxHp || playerStats.vitals?.maxHealth || 0) : (playerStats.maxHp || 0)
-                                    const mp = isRnR ? (playerStats.vitals?.mental || 0) : (playerStats.mp || 0)
-                                    const maxMp = isRnR ? (playerStats.vitals?.maxMental || 0) : (playerStats.maxMp || 0)
-                                    const willPower = isRnR ? (playerStats.vitals?.willPower || 0) : (playerStats.willPower || playerStats.will || 0)
+                                    // ✅ Fix: Robust Auto-Detect Logic (Priority: RnR Vitals > Standard Root)
+                                    const hasVitals = !!(playerStats.vitals)
+                                    const isRnR = hasVitals || (player as any).character?.sheetType === 'ROLE_AND_ROLL'
+
+                                    // Use Nullish Coalescing to fallback correctly (0 is valid)
+                                    const hp = isRnR ? (playerStats.vitals?.hp ?? playerStats.vitals?.health ?? 0) : (playerStats.hp ?? 0)
+                                    const maxHp = isRnR ? (playerStats.vitals?.maxHp ?? playerStats.vitals?.maxHealth ?? 0) : (playerStats.maxHp ?? 0)
+                                    const mp = isRnR ? (playerStats.vitals?.mental ?? 0) : (playerStats.mp ?? 0)
+                                    const maxMp = isRnR ? (playerStats.vitals?.maxMental ?? 0) : (playerStats.maxMp ?? 0)
+                                    const willPower = isRnR ? (playerStats.vitals?.willPower ?? 0) : (playerStats.willPower ?? playerStats.will ?? 0)
 
                                     return (
                                         <div className="space-y-2 mt-2">

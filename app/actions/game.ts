@@ -1,10 +1,13 @@
 'use server'
 
 import { prisma } from '@/lib/prisma'
-
 import { auth } from '@/auth'
 
-// 1. ดึงข้อมูล Campaign ที่เป็นเจ้าของ (สร้างเอง หรือ ซื้อมา)
+// ==========================================
+// 1. CAMPAIGN & SESSION MANAGEMENT
+// ==========================================
+
+// ดึงข้อมูล Campaign ที่เป็นเจ้าของ (ใช้ตอนเลือกสร้างห้อง)
 export async function getPublishedCampaigns() {
     const session = await auth()
     const userId = session?.user?.id
@@ -18,30 +21,37 @@ export async function getPublishedCampaigns() {
     })
     const purchasedIds = purchases.map(p => p.campaignId)
 
-    // 1.2 Query Campaign (สร้างเอง OR ซื้อมา)
+    // 1.2 Query Campaign (เลือกเฉพาะ Field ที่จำเป็นเพื่อความเร็ว)
     return await prisma.campaign.findMany({
         where: {
-            isPublished: true, // ยังคงเอาเฉพาะที่ Publish (หรือจะเอา Draft ด้วยถ้าเป็นของตัวเอง? ตาม Requirement เอาแค่ Published ก็เซฟดี)
+            isPublished: true,
             OR: [
                 { creatorId: userId },
                 { id: { in: purchasedIds } }
             ]
         },
-        include: { creator: true },
+        select: {
+            id: true,
+            title: true,
+            description: true,
+            system: true,
+            coverImage: true,
+            updatedAt: true,
+            creator: {
+                select: { name: true, image: true }
+            }
+        },
         orderBy: { updatedAt: 'desc' }
     })
 }
 
-// 2. สร้างห้อง (Create Session)
-// app/actions/game.ts
-
-// ✅ ใช้ตัวนี้แทนตัวเก่าครับ
+// สร้างห้อง (Create Session)
 export async function createGameSession(campaignId?: string, roomName?: string) {
     try {
         // สุ่มรหัสห้อง 6 หลัก
         const joinCode = Math.random().toString(36).substring(2, 8).toUpperCase()
 
-        // ตั้งชื่อห้อง (ถ้าไม่มีชื่อส่งมา ให้ใช้ชื่อ Default)
+        // ตั้งชื่อห้อง
         const finalName = roomName || (campaignId === 'CUSTOM' ? "Custom Sandbox" : "Adventure Session");
 
         console.log('📝 Creating GameSession:', { joinCode, finalName, campaignId })
@@ -49,7 +59,8 @@ export async function createGameSession(campaignId?: string, roomName?: string) 
         const session = await prisma.gameSession.create({
             data: {
                 joinCode,
-                name: finalName, // บันทึกชื่อห้องลง DB
+                name: finalName,
+                // ถ้าเป็น CUSTOM ไม่ต้องผูก campaignId
                 campaignId: (!campaignId || campaignId === 'CUSTOM') ? undefined : campaignId,
                 status: 'WAITING',
                 isAiGm: true
@@ -60,32 +71,100 @@ export async function createGameSession(campaignId?: string, roomName?: string) 
         return { success: true, joinCode: session.joinCode }
     } catch (error) {
         console.error('❌ Error creating GameSession:', error)
-        throw error // Re-throw เพื่อให้ Frontend จับได้
+        throw error
     }
 }
 
-// 3. ดึงข้อมูล Lobby & Game State (ใช้ทั้งหน้า Lobby และ Board)
+// ==========================================
+// 2. DATA FETCHING (OPTIMIZED) 🚀
+// ==========================================
+
+// ✅ 2.1 ดึงข้อมูล Lobby เบื้องต้น (Lightweight - โหลดเร็วมาก)
+// ใช้สำหรับเปิดหน้า Lobby หรือ Board ครั้งแรก
+// ในไฟล์ app/actions/game.ts
+
+// ✅ แก้ไขฟังก์ชันนี้ให้เป็นแบบนี้ครับ
 export async function getLobbyInfo(joinCode: string) {
     const session = await prisma.gameSession.findUnique({
         where: { joinCode },
-        include: {
-            campaign: {
-                include: {
-                    preGens: true,
-                    scenes: true,
-                    npcs: true,
-                    items: true
+        select: {
+            id: true,
+            joinCode: true,
+            name: true,
+            status: true,
+            currentSceneId: true,
+            activeNpcs: true,
+            customScenes: true,
+            customNpcs: true,
+            // isAiGm: true, // 👈 ถ้าอยากให้ Error หายและใช้ตัวนี้ใน Frontend ให้ Uncomment บรรทัดนี้ (แต่จริงๆ ในโค้ดใหม่เราไม่ได้ใช้)
+
+            // 👇 สำคัญมาก! ต้องมี players ถึงจะหาย Error
+            players: {
+                orderBy: { createdAt: 'asc' },
+                select: {
+                    id: true,
+                    name: true,
+                    role: true,
+                    isReady: true,
+                    characterData: true,
+                    userId: true,
+                    // inventory: true // ถ้าต้องการ Inventory ด้วยให้ใส่บรรทัดนี้
                 }
             },
-            players: {
-                orderBy: { createdAt: 'asc' }
+
+            // 👇 ต้องมี campaign เพื่อดึง system
+            campaign: {
+                select: {
+                    id: true,
+                    title: true,
+                    system: true,
+                    coverImage: true,
+                    storyIntro: true,
+                    storyMid: true,
+                    storyEnd: true,
+                    creatorId: true,
+                    aiEnabled: true,
+                    aiName: true,
+                    aiPersonality: true,
+                    aiStyle: true,
+                }
             }
         }
     })
     return session
 }
 
-// 4. เข้าห้อง (Auto Role: คนแรก = GM, คนต่อไป = Player)
+// ✅ 2.2 ดึง Assets หนักๆ แยกต่างหาก (Lazy Load)
+// ใช้ useEffect เรียกทีหลัง เพื่อให้หน้าจอไม่ค้าง
+export async function getLobbyAssets(joinCode: string) {
+    const session = await prisma.gameSession.findUnique({
+        where: { joinCode },
+        select: {
+            campaign: {
+                select: {
+                    scenes: true,
+                    npcs: true,
+                    items: true,
+                    preGens: true
+                }
+            }
+        }
+    })
+
+    // Return แยกตาม category เพื่อให้ frontend ใช้ง่าย
+    return {
+        scenes: session?.campaign?.scenes || [],
+        npcs: session?.campaign?.npcs || [],
+        items: session?.campaign?.items || [],
+        preGens: session?.campaign?.preGens || []
+    }
+}
+
+// ==========================================
+// 3. PLAYER MANAGEMENT
+// ==========================================
+
+// เข้าห้อง (Auto Role)
 export async function joinLobby(joinCode: string, playerName: string) {
     const session = await prisma.gameSession.findUnique({
         where: { joinCode },
@@ -94,48 +173,45 @@ export async function joinLobby(joinCode: string, playerName: string) {
 
     if (!session) throw new Error("Room not found")
 
-    // 4.1 เช็คว่ามีชื่อนี้อยู่แล้วไหม (Re-join)
+    // 3.1 เช็คว่ามีชื่อนี้อยู่แล้วไหม (Re-join)
     const existingPlayer = session.players.find(p => p.name === playerName)
     if (existingPlayer) {
         return { success: true, playerId: existingPlayer.id, role: existingPlayer.role }
     }
 
-    // 4.2 เช็คว่ามี GM หรือยัง
+    // 3.2 เช็คว่ามี GM หรือยัง
     const hasGM = session.players.some(p => p.role === 'GM')
     const role = hasGM ? 'PLAYER' : 'GM'
+    const isReady = role === 'GM' // GM พร้อมเสมอ
 
-    // GM พร้อมเสมอ, Player ต้องรอเลือกตัว
-    const isReady = role === 'GM'
-
-    // 4.3 สร้าง Player ใหม่
+    // 3.3 สร้าง Player ใหม่
     const player = await prisma.player.create({
         data: {
             name: playerName,
             sessionId: session.id,
             role: role,
             isReady: isReady,
-            characterData: '{}' // เริ่มต้นว่างๆ
+            characterData: '{}'
         }
     })
 
     return { success: true, playerId: player.id, role: player.role }
 }
 
-// 5. Player เลือกตัวละครแล้วกด Ready (Pre-Gen)
+// Player เลือกตัวละคร (Pre-Gen)
 export async function setPlayerReady(playerId: string, preGenId: string) {
     const preGen = await prisma.preGenCharacter.findUnique({ where: { id: preGenId } })
     if (!preGen) throw new Error("Character Template not found")
 
-    // Parse existing stats and add character name
+    // Parse stats และใส่ชื่อตัวละครเข้าไป
     const statsData = preGen.stats ? JSON.parse(preGen.stats) : { hp: 10, maxHp: 10, mp: 10 }
-    statsData.name = preGen.name // Store character name in characterData
+    statsData.name = preGen.name
 
     await prisma.player.update({
         where: { id: playerId },
         data: {
             isReady: true,
             preGenId: preGenId,
-            // Keep original player name, don't overwrite with character name
             sheetType: preGen.sheetType,
             characterData: JSON.stringify(statsData)
         }
@@ -144,37 +220,10 @@ export async function setPlayerReady(playerId: string, preGenId: string) {
     return { success: true }
 }
 
-// 6. GM กดเริ่มเกม
-export async function startGame(joinCode: string) {
-    await prisma.gameSession.update({
-        where: { joinCode },
-        data: { status: 'ACTIVE' }
-    })
-    return { success: true }
-}
-
-// 7. บันทึกสถานะเกม (Scene, NPCs) - ใช้ตอน GM เปลี่ยนฉาก
-export async function updateGameSessionState(joinCode: string, gameState: any) {
-    const session = await prisma.gameSession.findUnique({ where: { joinCode } })
-    if (!session) throw new Error("Session not found")
-
-    await prisma.gameSession.update({
-        where: { joinCode },
-        data: {
-            currentSceneId: gameState.currentScene,
-            activeNpcs: JSON.stringify(gameState.activeNpcs || [])
-        }
-    })
-
-    return { success: true }
-}
-
-// 8. Kick Player (ลบออกจาก DB)
+// Kick Player
 export async function kickPlayer(playerId: string) {
     try {
-        await prisma.player.delete({
-            where: { id: playerId }
-        })
+        await prisma.player.delete({ where: { id: playerId } })
         return { success: true }
     } catch (error) {
         console.error("Kick failed:", error)
@@ -182,29 +231,23 @@ export async function kickPlayer(playerId: string) {
     }
 }
 
-// 8.1 Leave Lobby (ลบ Player ออกจาก Lobby เมื่อออกจากห้อง)
+// Leave Lobby (ออกจากห้อง)
 export async function leaveLobby(playerId: string) {
     try {
-        // ดึงข้อมูล Player พร้อม Session
         const player = await prisma.player.findUnique({
             where: { id: playerId },
             include: { session: true }
         })
 
-        if (!player) {
-            return { success: false, error: "Player not found" }
-        }
+        if (!player) return { success: false, error: "Player not found" }
 
-        // ✅ เฉพาะ WAITING เท่านั้นที่ลบทิ้ง (ถ้า PAUSED/ACTIVE ให้เก็บไว้สำหรับ Resume)
+        // ✅ เฉพาะ WAITING เท่านั้นที่ลบทิ้ง
         if (player.session.status === 'WAITING') {
-            await prisma.player.delete({
-                where: { id: playerId }
-            })
-            console.log(`🚪 Player ${player.name} left lobby (WAITING session)`)
+            await prisma.player.delete({ where: { id: playerId } })
+            console.log(`🚪 Player ${player.name} left lobby (WAITING)`)
             return { success: true, removed: true }
         } else {
-            // ถ้าเกมเริ่มแล้ว (ACTIVE/PAUSED) ไม่ลบ เก็บไว้ให้ Re-join ได้
-            console.log(`🔄 Player ${player.name} disconnected but kept in ${player.session.status} session`)
+            console.log(`🔄 Player ${player.name} disconnected (Game Active)`)
             return { success: true, removed: false }
         }
     } catch (error) {
@@ -213,8 +256,18 @@ export async function leaveLobby(playerId: string) {
     }
 }
 
+// ==========================================
+// 4. GAMEFLOW & STATE
+// ==========================================
 
-// 9. Pause Session (บันทึกและเปลี่ยนสถานะ)
+export async function startGame(joinCode: string) {
+    await prisma.gameSession.update({
+        where: { joinCode },
+        data: { status: 'ACTIVE' }
+    })
+    return { success: true }
+}
+
 export async function pauseGameSession(joinCode: string) {
     await prisma.gameSession.update({
         where: { joinCode },
@@ -223,21 +276,6 @@ export async function pauseGameSession(joinCode: string) {
     return { success: true }
 }
 
-// 10. ดึงรายการ Session ที่ยังเล่นไม่จบ (สำหรับหน้า Resume)
-export async function getResumableSessions() {
-    return await prisma.gameSession.findMany({
-        where: {
-            status: { in: ['ACTIVE', 'PAUSED'] }
-        },
-        include: {
-            campaign: true,
-            players: true
-        },
-        orderBy: { createdAt: 'desc' }
-    })
-}
-
-// 11. Resume Game (เปลี่ยนจาก PAUSED -> ACTIVE)
 export async function resumeGame(joinCode: string) {
     await prisma.gameSession.update({
         where: { joinCode },
@@ -246,7 +284,6 @@ export async function resumeGame(joinCode: string) {
     return { success: true }
 }
 
-// 12. End Game Session (จบเกมถาวร)
 export async function endGameSession(joinCode: string) {
     await prisma.gameSession.update({
         where: { joinCode },
@@ -255,153 +292,147 @@ export async function endGameSession(joinCode: string) {
     return { success: true }
 }
 
-// 13. ส่ง Review ให้ GM
-export async function submitReview(joinCode: string, rating: number, comment: string, reviewerName: string) {
-    const session = await prisma.gameSession.findUnique({
+// บันทึกสถานะเกม (Current Scene, Active NPCs)
+export async function updateGameSessionState(joinCode: string, gameState: any) {
+    // ตรวจสอบข้อมูลก่อนบันทึกเพื่อความปลอดภัย
+    const activeNpcsString = gameState.activeNpcs ? JSON.stringify(gameState.activeNpcs) : '[]'
+
+    await prisma.gameSession.update({
         where: { joinCode },
-        include: { campaign: true }
-    })
-
-    if (!session || !session.campaign) {
-        throw new Error("Session or Campaign not found")
-    }
-
-    const gmId = session.campaign.creatorId
-
-    await prisma.review.create({
         data: {
-            rating,
-            comment,
-            reviewerName,
-            targetUserId: gmId,
-            sessionCode: joinCode
+            currentSceneId: gameState.currentScene,
+            activeNpcs: activeNpcsString
         }
     })
-
     return { success: true }
 }
 
-// ✅ 14. บันทึกข้อมูลตัวละคร (Save Character Sheet) - Robust Version
+// ดึง Session ที่เล่นค้างไว้
+export async function getResumableSessions() {
+    return await prisma.gameSession.findMany({
+        where: { status: { in: ['ACTIVE', 'PAUSED'] } },
+        include: {
+            campaign: { select: { title: true, coverImage: true } },
+            players: { select: { name: true } }
+        },
+        orderBy: { createdAt: 'desc' }
+    })
+}
+
+// ==========================================
+// 5. CHARACTER DATA (REALTIME SAVE)
+// ==========================================
+
+// Save Character Sheet (ใช้บ่อย)
 export async function saveCharacterSheet(playerId: string, characterData: any) {
     try {
-        console.log("💾 Saving Character Sheet...");
-        console.log("👉 PlayerID:", playerId);
-        console.log("📦 Received Data:", JSON.stringify(characterData, null, 2));
-
-        // 1. ตรวจสอบและเตรียมข้อมูล (Defensive Programming)
-        // ถ้าไม่มีชื่อ ให้ใช้ชื่อ Default
         const charName = characterData.name || "Unknown Adventurer";
-
-        // ถ้าไม่มี sheetType ให้ใช้ STANDARD
         const sheetType = characterData.sheetType || "STANDARD";
-
-        // ถ้า characterData.data มีค่า ให้ใช้ตัวนั้น (Nested) ถ้าไม่มีให้ใช้ตัว characterData เอง
         const statsData = characterData.data || characterData || {};
 
-        // 2. บันทึกลง Database
         await prisma.player.update({
             where: { id: playerId },
             data: {
                 isReady: true,
-                // Keep original player name, don't overwrite
                 sheetType: sheetType,
-                // Store character name inside characterData
                 characterData: JSON.stringify({ ...statsData, name: charName })
             }
         })
-
-        console.log("✅ Save Success!");
         return { success: true }
-
     } catch (error) {
-        // Log Error ตัวจริงออกมาดูใน Terminal
-        console.error("❌ Save Character Failed (Details):", error);
-        throw new Error("Failed to save character. Check server terminal for details.")
+        console.error("❌ Save Character Failed:", error);
+        throw new Error("Failed to save character.")
     }
 }
 
-// Update character stats (e.g., WILL Power after use)
+// Update character stats (HP/MP/Will)
 export async function updateCharacterStats(playerId: string, statsUpdate: any) {
-    'use server'
-
     try {
         const player = await prisma.player.findUnique({
-            where: { id: playerId }
+            where: { id: playerId },
+            select: { characterData: true } // ดึงแค่ field นี้พอ
         })
 
-        if (!player || !player.characterData) {
-            throw new Error("Player or character data not found")
-        }
+        if (!player || !player.characterData) throw new Error("Data not found")
 
         const charData = JSON.parse(player.characterData)
-
-        // ✅ SAFE DEEP MERGE: Prevent partial vitals update from wiping other fields
         const currentStats = charData.stats || {}
         const newStats = { ...currentStats }
 
-        // 1. Merge Standard Props
+        // Merge Standard
         Object.keys(statsUpdate).forEach(key => {
             if (key !== 'vitals') newStats[key] = statsUpdate[key]
         })
 
-        // 2. Merge Vitals Deeply
+        // Merge Vitals (Deep)
         if (statsUpdate.vitals) {
-            newStats.vitals = {
-                ...(newStats.vitals || {}),
-                ...statsUpdate.vitals
-            }
+            newStats.vitals = { ...(newStats.vitals || {}), ...statsUpdate.vitals }
         }
 
         charData.stats = newStats
 
         await prisma.player.update({
             where: { id: playerId },
-            data: {
-                characterData: JSON.stringify(charData)
-            }
+            data: { characterData: JSON.stringify(charData) }
         })
 
         return { success: true }
     } catch (error) {
         console.error("❌ Update Stats Failed:", error)
-        throw new Error("Failed to update character stats")
+        return { success: false } // ไม่ throw error เพื่อไม่ให้ UI พัง แต่ return false
     }
 }
 
-// ✅ 16. Update Player Inventory (Persist Items)
+// Update Inventory
 export async function updatePlayerInventory(playerId: string, inventory: any[]) {
     try {
         const player = await prisma.player.findUnique({
-            where: { id: playerId }
+            where: { id: playerId },
+            select: { characterData: true }
         })
 
-        if (!player || !player.characterData) {
-            throw new Error("Player not found")
-        }
+        if (!player || !player.characterData) throw new Error("Player not found")
 
         const charData = JSON.parse(player.characterData)
-
-        // Update inventory field
         charData.inventory = inventory
 
         await prisma.player.update({
             where: { id: playerId },
-            data: {
-                characterData: JSON.stringify(charData)
-            }
+            data: { characterData: JSON.stringify(charData) }
         })
 
         return { success: true }
     } catch (error) {
         console.error("❌ Update Inventory Failed:", error)
-        return { success: false, error: "Failed to update inventory" }
+        return { success: false }
     }
 }
-// app/actions/game.ts
 
-// ... imports
+// ==========================================
+// 6. MISC (REVIEWS, QUICK ADD, CAMPAIGN)
+// ==========================================
 
-export async function createCampaign(data: any) { // หรือระบุ Type ให้ชัดเจน
+export async function submitReview(joinCode: string, rating: number, comment: string, reviewerName: string) {
+    const session = await prisma.gameSession.findUnique({
+        where: { joinCode },
+        select: { campaign: { select: { creatorId: true } } }
+    })
+
+    if (!session || !session.campaign) throw new Error("Session invalid")
+
+    await prisma.review.create({
+        data: {
+            rating,
+            comment,
+            reviewerName,
+            targetUserId: session.campaign.creatorId,
+            sessionCode: joinCode
+        }
+    })
+    return { success: true }
+}
+
+export async function createCampaign(data: any) {
     const session = await auth()
     if (!session?.user?.id) throw new Error("Unauthorized")
 
@@ -412,24 +443,18 @@ export async function createCampaign(data: any) { // หรือระบุ Ty
                 description: data.description,
                 system: data.system || 'STANDARD',
                 coverImage: data.coverImage,
-
-                // ... field อื่นๆ ...
                 storyIntro: data.storyIntro,
                 storyMid: data.storyMid,
                 storyEnd: data.storyEnd,
-
-                // ✅ เพิ่มส่วน AI Config
                 aiEnabled: data.aiEnabled || false,
                 aiName: data.aiName || "The Narrator",
-                aiPersonality: data.aiPersonality, // เช่น "ดุดัน, เข้มงวด"
-                aiStyle: data.aiStyle,             // เช่น "Dark Fantasy"
-                aiCustomPrompt: data.aiCustomPrompt, // Advanced Prompt
-
+                aiPersonality: data.aiPersonality,
+                aiStyle: data.aiStyle,
+                aiCustomPrompt: data.aiCustomPrompt,
                 creatorId: session.user.id,
-                isPublished: true // หรือ false ถ้าอยากให้ Draft ก่อน
+                isPublished: true
             }
         })
-
         return { success: true, campaignId: campaign.id }
     } catch (error) {
         console.error("Create Campaign Error:", error)
@@ -437,9 +462,12 @@ export async function createCampaign(data: any) { // หรือระบุ Ty
     }
 }
 
-// 15. Quick Add Temporary Assets (Scene/NPC)
+// Quick Add Temporary Assets
 export async function addTemporaryAsset(joinCode: string, type: 'SCENE' | 'NPC', data: { name: string, imageUrl: string }) {
-    const session = await prisma.gameSession.findUnique({ where: { joinCode } })
+    const session = await prisma.gameSession.findUnique({
+        where: { joinCode },
+        select: { customScenes: true, customNpcs: true } // ดึงแค่นี้พอ
+    })
     if (!session) throw new Error("Session not found")
 
     if (type === 'SCENE') {
@@ -460,4 +488,3 @@ export async function addTemporaryAsset(joinCode: string, type: 'SCENE' | 'NPC',
         return { success: true, asset: newNpc }
     }
 }
-

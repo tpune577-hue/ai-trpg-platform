@@ -3,7 +3,8 @@
 import { useEffect, useState, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useGameSocket } from '@/hooks/useGameSocket'
-import { getLobbyInfo, updateGameSessionState, kickPlayer, pauseGameSession, endGameSession, updateCharacterStats, updatePlayerInventory } from '@/app/actions/game'
+// ✅ Import getLobbyAssets เพิ่มเข้ามา
+import { getLobbyInfo, getLobbyAssets, updateGameSessionState, kickPlayer, pauseGameSession, endGameSession, updateCharacterStats, updatePlayerInventory } from '@/app/actions/game'
 import { addCustomAsset } from '@/app/actions/quick-add'
 
 // Components
@@ -29,7 +30,8 @@ export default function CampaignBoardPage() {
     const [customScenes, setCustomScenes] = useState<any[]>([])
     const [customNpcs, setCustomNpcs] = useState<any[]>([])
     const [dbPlayers, setDbPlayers] = useState<any[]>([])
-    const [isLoadingData, setIsLoadingData] = useState(true)
+    const [isLoadingData, setIsLoadingData] = useState(true) // Loading หลัก (Session)
+    const [isLoadingAssets, setIsLoadingAssets] = useState(true) // Loading รอง (Scenes/NPCs)
     const [myIdentity, setMyIdentity] = useState<string>('')
     const [playerInventories, setPlayerInventories] = useState<Record<string, any[]>>({})
 
@@ -152,15 +154,15 @@ export default function CampaignBoardPage() {
         } as any)
     }
 
-    // --- OPTIMIZED FETCH DATA ---
+    // --- 🚀 OPTIMIZED FETCH DATA (แก้ตรงนี้) ---
     const fetchCampaignData = async () => {
         try {
+            // 1. ดึงข้อมูลพื้นฐาน (เร็ว)
             const data = await getLobbyInfo(joinCode)
             if (data) {
                 setSession(data)
-                setCampaignScenes(data.campaign?.scenes || [])
-                setCampaignNpcs(data.campaign?.npcs || [])
 
+                // Parse Custom Assets (เพราะเก็บเป็น JSON string ใน session เลย)
                 if (data.customScenes) {
                     try { setCustomScenes(JSON.parse(data.customScenes)) } catch (e) { console.error("Parse Error customScenes", e) }
                 }
@@ -168,18 +170,13 @@ export default function CampaignBoardPage() {
                     try { setCustomNpcs(JSON.parse(data.customNpcs)) } catch (e) { console.error("Parse Error customNpcs", e) }
                 }
 
+                // Process Players (จากข้อมูลพื้นฐาน)
                 if (data.players) {
                     const loadedInventories: Record<string, any[]> = {}
-
-                    // ✅ Optimize: Loop เดียว จัดการทั้ง Player Struct และ Inventory
                     const formattedPlayers = data.players.map((p: any) => {
                         let charData: any = {}
                         try { charData = p.characterData ? JSON.parse(p.characterData) : {} } catch (e) { console.error(e) }
-
-                        if (charData.inventory) {
-                            loadedInventories[p.id] = charData.inventory
-                        }
-
+                        if (charData.inventory) loadedInventories[p.id] = charData.inventory
                         return {
                             ...p,
                             character: charData,
@@ -187,36 +184,54 @@ export default function CampaignBoardPage() {
                             inventory: charData.inventory || []
                         }
                     })
-
                     setDbPlayers(formattedPlayers)
                     setPlayerInventories(prev => ({ ...prev, ...loadedInventories }))
                 }
 
+                // Set Game State เบื้องต้น (ยังไม่มีรูป Scene จริง จนกว่า Assets จะมา)
                 const savedActiveNpcs = data.activeNpcs ? JSON.parse(data.activeNpcs) : []
-                let initialSceneId = data.currentSceneId
-                let initialSceneUrl = ''
-
-                const allScenesList = [...(data.campaign?.scenes || []), ...(data.customScenes ? JSON.parse(data.customScenes) : [])]
-                if (initialSceneId) {
-                    const foundScene = allScenesList.find((s: any) => s.id === initialSceneId)
-                    initialSceneUrl = foundScene?.imageUrl || ''
-                } else if (data.campaign?.scenes && data.campaign.scenes.length > 0) {
-                    initialSceneId = data.campaign.scenes[0].id
-                    initialSceneUrl = data.campaign.scenes[0].imageUrl
-                }
-
                 setGameState((prev: any) => ({
-                    ...prev, currentScene: initialSceneId, sceneImageUrl: initialSceneUrl, activeNpcs: savedActiveNpcs
+                    ...prev,
+                    currentScene: data.currentSceneId,
+                    activeNpcs: savedActiveNpcs
                 }))
+
+                // ✅ ปลดล็อคหน้าจอทันที เพื่อให้ User รู้สึกว่าเร็ว
+                setIsLoadingData(false)
+
+                // 2. ดึง Assets หนักๆ (ช้า) ทีหลัง
+                getLobbyAssets(joinCode).then((assets) => {
+                    const loadedScenes = assets.scenes || []
+                    setCampaignScenes(loadedScenes)
+                    setCampaignNpcs(assets.npcs || [])
+
+                    // อัปเดตรูปภาพ Scene เมื่อโหลดเสร็จ
+                    if (data.currentSceneId) {
+                        const allScenes = [...loadedScenes, ...(data.customScenes ? JSON.parse(data.customScenes) : [])]
+                        const foundScene = allScenes.find((s: any) => s.id === data.currentSceneId)
+                        if (foundScene) {
+                            setGameState((prev: any) => ({ ...prev, sceneImageUrl: foundScene.imageUrl }))
+                        }
+                    } else if (loadedScenes.length > 0) {
+                        setGameState((prev: any) => ({ ...prev, sceneImageUrl: loadedScenes[0].imageUrl }))
+                    }
+                    setIsLoadingAssets(false)
+                }).catch(err => {
+                    console.error("Failed to load assets", err)
+                    setIsLoadingAssets(false)
+                })
             }
-        } catch (err) { console.error(err) } finally { setIsLoadingData(false) }
+        } catch (err) {
+            console.error(err)
+            setIsLoadingData(false)
+        }
     }
 
     useEffect(() => {
         fetchCampaignData()
     }, [joinCode])
 
-    // --- SOCKET LISTENERS (CORRECTED) ---
+    // --- SOCKET LISTENERS ---
     useEffect(() => {
         onGameStateUpdate((newState: any) => setGameState((prev: any) => ({ ...prev, ...newState })))
         onChatMessage((message: any) => setLogs((prev) => prev.some(log => log.id === message.id) ? prev : [...prev, message]))
@@ -247,16 +262,12 @@ export default function CampaignBoardPage() {
                     overlayTimeoutRef.current = null
                 }, 5000)
 
-                // ✅ FIX: Logic การลด Will Power + แก้ปัญหาหาชื่อไม่เจอ (Case Insensitive)
+                // Will Power Fix
                 const boostAmount = Number(action.willBoost) || 0
                 if (boostAmount > 0) {
                     console.log(`⚡ Will Power Boost detected: -${boostAmount} for ${action.actorName}`)
-
                     setDbPlayers(prev => prev.map(p => {
-                        // 1. ฟังก์ชันช่วยทำความสะอาดชื่อ (ตัวเล็ก + ตัดช่องว่าง)
                         const clean = (s: string) => s ? s.toString().toLowerCase().trim() : ''
-
-                        // 2. เช็คว่าใช่คนนี้ไหม (เทียบ ID หรือ ชื่อแบบไม่สนตัวพิมพ์เล็กใหญ่)
                         const isMatch = (action.actorId && p.id === action.actorId) ||
                             (clean(p.character?.name) === clean(action.actorName)) ||
                             (clean(p.name) === clean(action.actorName))
@@ -264,25 +275,15 @@ export default function CampaignBoardPage() {
                         if (isMatch) {
                             const currentStats = p.stats || {}
                             const currentVitals = currentStats.vitals || {}
-
-                            // เช็คว่าเป็นระบบ RnR หรือไม่
                             const isRnR = p.character?.sheetType === 'ROLE_AND_ROLL' || !!currentVitals.willPower
-
-                            // ดึงค่า Will เดิม (ถ้าหาใน vitals ไม่เจอ ให้ไปดูตัวนอก)
                             const oldWill = isRnR
                                 ? (currentVitals.willPower ?? currentStats.willPower ?? 0)
                                 : (currentStats.willPower ?? 0)
-
-                            // คำนวณค่าใหม่
                             const newWill = Math.max(0, oldWill - boostAmount)
-
-                            // สร้าง Stats ก้อนใหม่
-                            const newStats = { ...currentStats, willPower: newWill } // อัปเดตตัวนอกเสมอ
-
+                            const newStats = { ...currentStats, willPower: newWill }
                             if (isRnR) {
-                                newStats.vitals = { ...currentVitals, willPower: newWill } // อัปเดตตัวในด้วย
+                                newStats.vitals = { ...currentVitals, willPower: newWill }
                             }
-
                             return { ...p, stats: newStats }
                         }
                         return p
@@ -298,10 +299,8 @@ export default function CampaignBoardPage() {
 
                     setDbPlayers(prev => prev.map(p => {
                         if (p.id !== action.targetPlayerId) return p
-
                         const currentStats = p.stats || (p.characterData ? JSON.parse(p.characterData).stats : {}) || {}
                         const newStats = { ...currentStats, ...statsUpdate }
-
                         if (statsUpdate.vitals && currentStats.vitals) {
                             newStats.vitals = { ...currentStats.vitals, ...statsUpdate.vitals }
                         } else if (statsUpdate.vitals) {
@@ -310,29 +309,23 @@ export default function CampaignBoardPage() {
                         return { ...p, stats: newStats }
                     }))
 
-                    // Log Logic for GM
                     const targetPlayer = dbPlayers.find(p => p.id === action.targetPlayerId)
                     if (targetPlayer) {
                         const oldStats = targetPlayer.stats || {}
                         const oldVitals = oldStats.vitals || {}
-
-                        // Helper to format log
                         const pushLog = (key: string, oldVal: any, newVal: any, label: string) => {
                             if (newVal !== undefined && oldVal !== newVal) {
                                 changes.push(`${label} ${newVal > 0 ? '+' : ''}${newVal}`)
                             }
                         }
-
                         pushLog('hp', oldStats.hp, statsUpdate.hp, 'HP')
                         pushLog('mp', oldStats.mp, statsUpdate.mp, 'MP')
                         pushLog('willPower', oldStats.willPower, statsUpdate.willPower, 'WILL')
-
                         if (statsUpdate.vitals) {
                             pushLog('hp', oldVitals.hp, statsUpdate.vitals.hp, 'HP')
                             pushLog('mental', oldVitals.mental, statsUpdate.vitals.mental, 'MEN')
                             pushLog('willPower', oldVitals.willPower, statsUpdate.vitals.willPower, 'WILL')
                         }
-
                         if (changes.length > 0) {
                             setLogs((prev) => [...prev, {
                                 id: Date.now().toString(),
@@ -347,7 +340,6 @@ export default function CampaignBoardPage() {
                 return
             }
 
-            // --- Other Actions ---
             if (action.actionType !== 'GM_UPDATE_SCENE') {
                 let content = ''
                 if (action.actorName === 'Game Master' && action.actionType === 'custom') {
@@ -549,25 +541,18 @@ export default function CampaignBoardPage() {
     }
 
     const handleGiveItem = async (targetPlayerId: string, itemData: any, action: string) => {
-        // 1. Send via Socket (Real-time)
         giveItem(targetPlayerId, itemData, action as 'GIVE_CUSTOM' | 'REMOVE')
-
-        // 2. Update Local State & Persist to DB
         setPlayerInventories(prev => {
             const currentItems = prev[targetPlayerId] || []
             let newItems = []
-
             if (action === 'REMOVE') {
                 newItems = currentItems.filter((i: any) => i.id !== itemData.id)
             } else {
                 newItems = [...currentItems, itemData]
             }
-
-            // 3. Call Server Action to Save
             updatePlayerInventory(targetPlayerId, newItems).then(res => {
                 if (!res.success) console.error("Failed to save inventory for", targetPlayerId)
             })
-
             return { ...prev, [targetPlayerId]: newItems }
         })
     }
@@ -581,13 +566,10 @@ export default function CampaignBoardPage() {
 
         if (isRnR) {
             const current = player.stats.vitals || {}
-            const key = type === 'hp' ? 'hp' : 'mental' // Map key for RnR
+            const key = type === 'hp' ? 'hp' : 'mental'
             const maxKey = type === 'hp' ? 'maxHp' : 'maxMental'
-
-            // Check alt keys if main key is missing
             const oldValue = current[key] ?? (type === 'hp' ? current.health : 0) ?? 0
             const maxValue = current[maxKey] ?? (type === 'hp' ? current.maxHealth : 0) ?? 0
-
             const newValue = Math.max(0, Math.min(maxValue, oldValue + delta))
             statsUpdate = { vitals: { ...current, [key]: newValue } }
         } else {
@@ -595,18 +577,15 @@ export default function CampaignBoardPage() {
             const maxKey = type === 'hp' ? 'maxHp' : 'maxMp'
             const oldValue = player.stats[key] || 0
             const maxValue = player.stats[maxKey] || 0
-
             const newValue = Math.max(0, Math.min(maxValue, oldValue + delta))
             statsUpdate = { [key]: newValue }
         }
 
-        // Optimistic Update
         setDbPlayers(prev => prev.map(p => {
             if (p.id === playerId) return { ...p, stats: { ...p.stats, ...statsUpdate } }
             return p
         }))
 
-        // Log Locally
         const changeText = type.toUpperCase() + ' ' + (delta > 0 ? '+' : '') + delta
         setLogs(prev => [...prev, {
             id: Date.now().toString(),
@@ -616,7 +595,6 @@ export default function CampaignBoardPage() {
             timestamp: new Date()
         }])
 
-        // Sync with Server
         try {
             await updateCharacterStats(playerId, statsUpdate)
             await sendPlayerAction({
@@ -630,11 +608,9 @@ export default function CampaignBoardPage() {
         }
     }
 
-    // Quick Add Handler
     const handleQuickAdd = async (e: React.FormEvent) => {
         e.preventDefault()
         if (!newItemName || !newItemUrl) return
-
         setIsAddingItem(true)
         try {
             const tempItem = {
@@ -646,9 +622,7 @@ export default function CampaignBoardPage() {
             }
             if (addModalType === 'SCENE') setCustomScenes(prev => [...prev, tempItem])
             else setCustomNpcs(prev => [...prev, tempItem])
-
             await addCustomAsset(session.id, addModalType, newItemName, newItemUrl)
-
             setIsAddModalOpen(false)
             setNewItemName('')
             setNewItemUrl('')
@@ -669,7 +643,15 @@ export default function CampaignBoardPage() {
     const allScenes = [...campaignScenes, ...customScenes]
     const allNpcs = [...campaignNpcs, ...customNpcs]
 
-    if (isLoadingData) return <div className="h-screen bg-slate-950 flex items-center justify-center text-amber-500 animate-pulse">Loading...</div>
+    // ✅ ใช้ Skeleton Loading แทนข้อความ Loading... ธรรมดา (ให้ดูเร็วขึ้น)
+    if (isLoadingData) {
+        return (
+            <div className="h-screen bg-slate-950 flex flex-col items-center justify-center space-y-4">
+                <div className="w-16 h-16 border-4 border-amber-500 border-t-transparent rounded-full animate-spin"></div>
+                <div className="text-amber-500 font-bold animate-pulse">Entering Session...</div>
+            </div>
+        )
+    }
 
     const currentSceneUrl = gameState?.sceneImageUrl || '/placeholder.jpg'
 
@@ -678,7 +660,10 @@ export default function CampaignBoardPage() {
 
             {/* HEADER */}
             <div className="absolute top-0 w-full h-14 bg-slate-900/90 border-b border-slate-700 flex justify-between items-center px-4 z-50 backdrop-blur-md shadow-lg">
-                <h1 className="text-amber-500 font-bold tracking-widest text-sm md:text-lg uppercase">GM Dashboard ({campaignSystem})</h1>
+                <h1 className="text-amber-500 font-bold tracking-widest text-sm md:text-lg uppercase">
+                    GM Dashboard ({campaignSystem})
+                    {isLoadingAssets && <span className="ml-2 text-xs text-slate-500 animate-pulse">(Loading Assets...)</span>}
+                </h1>
                 <div className="flex items-center gap-2">
                     <button onClick={handlePauseGame} className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1 rounded text-xs border border-slate-600">⏸ Pause</button>
                     <button onClick={handleEndSession} className="bg-red-900/50 hover:bg-red-600 text-red-200 px-3 py-1 rounded text-xs border border-red-800">🛑 END</button>

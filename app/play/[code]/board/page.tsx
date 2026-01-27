@@ -6,14 +6,15 @@ import { useGameSocket } from '@/hooks/useGameSocket'
 import { getLobbyInfo, updateGameSessionState, kickPlayer, pauseGameSession, endGameSession, updateCharacterStats, updatePlayerInventory } from '@/app/actions/game'
 import { addCustomAsset } from '@/app/actions/quick-add'
 
-// ✅ 1. Import VoicePanel
+// Components
 import VoicePanel from '@/components/game/VoicePanel'
 import ImageUploader from '@/components/shared/ImageUploader'
-
 import { GameLog } from '@/components/board/GameLog'
 import { SceneDisplay } from '@/components/board/SceneDisplay'
 import { EnhancedPartyStatus } from '@/components/board/EnhancedPartyStatus'
 import { DiceResultOverlay } from '@/components/board/DiceResultOverlay'
+
+// Utils
 import { rollD4RnR } from '@/lib/rnr-dice'
 
 export default function CampaignBoardPage() {
@@ -29,8 +30,8 @@ export default function CampaignBoardPage() {
     const [customNpcs, setCustomNpcs] = useState<any[]>([])
     const [dbPlayers, setDbPlayers] = useState<any[]>([])
     const [isLoadingData, setIsLoadingData] = useState(true)
-    // เพิ่ม State เก็บชื่อ User ปัจจุบัน (สำหรับ Voice Chat)
     const [myIdentity, setMyIdentity] = useState<string>('')
+    const [playerInventories, setPlayerInventories] = useState<Record<string, any[]>>({})
 
     // --- GAME STATE ---
     const [gameState, setGameState] = useState<any>({
@@ -40,7 +41,6 @@ export default function CampaignBoardPage() {
     })
     const [logs, setLogs] = useState<any[]>([])
     const [gmNarration, setGmNarration] = useState<string>('')
-    const [playerInventories, setPlayerInventories] = useState<Record<string, any[]>>({})
 
     // --- UI STATE ---
     const [isSidebarOpen, setIsSidebarOpen] = useState(true)
@@ -94,7 +94,6 @@ export default function CampaignBoardPage() {
             if (savedNotes) setGmNotes(savedNotes)
             if (savedTasks) setTasks(JSON.parse(savedTasks))
 
-            // Set temporary identity if not logged in (fallback)
             const storedId = localStorage.getItem('rnr_temp_id') || `User-${Math.floor(Math.random() * 1000)}`
             if (!localStorage.getItem('rnr_temp_id')) localStorage.setItem('rnr_temp_id', storedId)
             setMyIdentity(storedId)
@@ -153,13 +152,12 @@ export default function CampaignBoardPage() {
         } as any)
     }
 
-    // Fetch Data
+    // --- OPTIMIZED FETCH DATA ---
     const fetchCampaignData = async () => {
         try {
             const data = await getLobbyInfo(joinCode)
             if (data) {
                 setSession(data)
-
                 setCampaignScenes(data.campaign?.scenes || [])
                 setCampaignNpcs(data.campaign?.npcs || [])
 
@@ -171,40 +169,44 @@ export default function CampaignBoardPage() {
                 }
 
                 if (data.players) {
-                    setDbPlayers(data.players.map((p: any) => {
+                    const loadedInventories: Record<string, any[]> = {}
+
+                    // รวม Logic การ map player และ inventory ไว้ใน loop เดียว
+                    const formattedPlayers = data.players.map((p: any) => {
                         let charData: any = {}
                         try { charData = p.characterData ? JSON.parse(p.characterData) : {} } catch (e) { console.error(e) }
+
+                        // เก็บ Inventory แยกออกมา state ต่างหาก
+                        if (charData.inventory) {
+                            loadedInventories[p.id] = charData.inventory
+                        }
+
                         return {
                             ...p,
                             character: charData,
                             stats: charData.stats || charData || {},
-                            // ✅ Fix: Load Persistent Inventory for GM View
                             inventory: charData.inventory || []
                         }
-                    }))
-
-                    // ✅ Also Sync Inventory Check
-                    const loadedInventories: any = {}
-                    data.players.forEach((p: any) => {
-                        try {
-                            const cData = p.characterData ? JSON.parse(p.characterData) : {}
-                            if (cData.inventory) loadedInventories[p.id] = cData.inventory
-                        } catch (e) { }
                     })
+
+                    setDbPlayers(formattedPlayers)
                     setPlayerInventories(prev => ({ ...prev, ...loadedInventories }))
                 }
 
                 const savedActiveNpcs = data.activeNpcs ? JSON.parse(data.activeNpcs) : []
                 let initialSceneId = data.currentSceneId
                 let initialSceneUrl = ''
+
+                // หา Scene เริ่มต้น
+                const allScenesList = [...(data.campaign?.scenes || []), ...(data.customScenes ? JSON.parse(data.customScenes) : [])]
                 if (initialSceneId) {
-                    const allScenesList = [...(data.campaign?.scenes || []), ...(data.customScenes ? JSON.parse(data.customScenes) : [])]
                     const foundScene = allScenesList.find((s: any) => s.id === initialSceneId)
                     initialSceneUrl = foundScene?.imageUrl || ''
                 } else if (data.campaign?.scenes && data.campaign.scenes.length > 0) {
                     initialSceneId = data.campaign.scenes[0].id
                     initialSceneUrl = data.campaign.scenes[0].imageUrl
                 }
+
                 setGameState((prev: any) => ({
                     ...prev, currentScene: initialSceneId, sceneImageUrl: initialSceneUrl, activeNpcs: savedActiveNpcs
                 }))
@@ -216,10 +218,12 @@ export default function CampaignBoardPage() {
         fetchCampaignData()
     }, [joinCode])
 
-    // Socket Listeners
+    // --- SOCKET LISTENERS (UPDATED) ---
     useEffect(() => {
         onGameStateUpdate((newState: any) => setGameState((prev: any) => ({ ...prev, ...newState })))
+
         onChatMessage((message: any) => setLogs((prev) => prev.some(log => log.id === message.id) ? prev : [...prev, message]))
+
         onWhisperReceived((data: any) => {
             setLogs((prev) => [...prev, {
                 id: Date.now().toString(), content: `(Whisper ${data.sender}): ${data.message}`,
@@ -232,9 +236,12 @@ export default function CampaignBoardPage() {
                 setDbPlayers(prev => prev.filter(p => p.id !== action.targetPlayerId))
                 return
             }
+
             if (action.actionType === 'RNR_LIVE_UPDATE') {
                 setShowingDiceResult(action)
             }
+
+            // --- Roll Logic & Will Power Fix ---
             if (action.actionType === 'rnr_roll' || action.actionType === 'dice_roll') {
                 if (overlayTimeoutRef.current) clearTimeout(overlayTimeoutRef.current)
                 setShowingDiceResult(action)
@@ -243,45 +250,35 @@ export default function CampaignBoardPage() {
                     overlayTimeoutRef.current = null
                 }, 5000)
 
-                // ✅ Fix: Sync Willpower usage to Board immediately to prevent overwrite
-                // ใน app/play/[code]/board/page.tsx
+                // ✅ FIX: ปรับปรุง Logic การลด Will Power ให้แม่นยำ
+                const boostAmount = Number(action.willBoost) || 0
+                if (boostAmount > 0) {
+                    console.log(`⚡ Will Power Boost detected: -${boostAmount} for ${action.actorName}`)
 
-                if (action.willBoost && action.willBoost > 0) {
                     setDbPlayers(prev => prev.map(p => {
-                        // Match Player by ID or Name
                         const isMatch = (action.actorId && p.id === action.actorId) ||
-                            (p.character?.name === action.actorName || p.name === action.actorName)
+                            (p.character?.name && action.actorName && p.character.name === action.actorName) ||
+                            (p.name && action.actorName && p.name === action.actorName)
 
                         if (isMatch) {
                             const currentStats = p.stats || {}
-                            const isRnR = p.character?.sheetType === 'ROLE_AND_ROLL'
+                            const currentVitals = currentStats.vitals || {}
+                            const isRnR = !!currentVitals.willPower || p.character?.sheetType === 'ROLE_AND_ROLL'
 
-                            // Clone stats เพื่อไม่ให้กระทบค่าเดิม
-                            const newStats = { ...currentStats }
+                            const oldWillRoot = currentStats.willPower || 0
+                            const oldWillVitals = currentVitals.willPower ?? oldWillRoot
 
-                            if (isRnR) {
-                                // ✅ แก้ไข: สำหรับ RnR ต้องลดที่ vitals.willPower
-                                const currentVitals = currentStats.vitals || {}
-                                const oldWill = currentVitals.willPower ?? currentStats.willPower ?? 0
-                                const newWill = Math.max(0, oldWill - action.willBoost)
+                            const newWillRoot = Math.max(0, oldWillRoot - boostAmount)
+                            const newWillVitals = Math.max(0, oldWillVitals - boostAmount)
 
-                                newStats.vitals = {
-                                    ...currentVitals,
-                                    willPower: newWill
-                                }
-                                // อัปเดต Root Level ด้วยเพื่อความชัวร์ (เผื่อบาง UI component อ่านจาก Root)
-                                newStats.willPower = newWill
-
-                                console.log(`⚡ [Board] Reduced RnR Will: ${oldWill} -> ${newWill}`)
-                            } else {
-                                // สำหรับ Standard ลดที่ Root Level
-                                const oldWill = currentStats.willPower || 0
-                                const newWill = Math.max(0, oldWill - action.willBoost)
-                                newStats.willPower = newWill
-
-                                console.log(`⚡ [Board] Reduced Standard Will: ${oldWill} -> ${newWill}`)
+                            const newStats = {
+                                ...currentStats,
+                                willPower: newWillRoot
                             }
 
+                            if (isRnR) {
+                                newStats.vitals = { ...currentVitals, willPower: newWillVitals }
+                            }
                             return { ...p, stats: newStats }
                         }
                         return p
@@ -289,54 +286,47 @@ export default function CampaignBoardPage() {
                 }
             }
 
-
-
-            // ✅ Fix: Format Stats Update Log
+            // --- Stats Update Logic ---
             if (action.actionType === 'STATS_UPDATE') {
                 try {
                     const statsUpdate = JSON.parse(action.description)
                     const changes: string[] = []
 
-                    // ✅ Fix: Sync Board State immediately
                     setDbPlayers(prev => prev.map(p => {
                         if (p.id !== action.targetPlayerId) return p
 
-                        // Merge New Stats
                         const currentStats = p.stats || (p.characterData ? JSON.parse(p.characterData).stats : {}) || {}
                         const newStats = { ...currentStats, ...statsUpdate }
 
-                        // Handle Nested Vitals Merge if present
                         if (statsUpdate.vitals && currentStats.vitals) {
                             newStats.vitals = { ...currentStats.vitals, ...statsUpdate.vitals }
                         } else if (statsUpdate.vitals) {
                             newStats.vitals = statsUpdate.vitals
                         }
-
-                        // Update characterData string as well if needed (optional for display but good for consistency)
-                        // But mainly we update the `stats` object if we parsed it separatedly?
-                        // In `fetchCampaignData`, we parsed `characterData` into `p.stats`. 
-                        // So updating `p.stats` here should reflect in UI.
                         return { ...p, stats: newStats }
                     }))
 
+                    // Log Logic for GM
                     const targetPlayer = dbPlayers.find(p => p.id === action.targetPlayerId)
                     if (targetPlayer) {
                         const oldStats = targetPlayer.stats || {}
                         const oldVitals = oldStats.vitals || {}
 
-                        // Standard
-                        if (statsUpdate.hp !== undefined && oldStats.hp !== statsUpdate.hp) changes.push(`HP ${statsUpdate.hp > 0 ? '+' : ''}${statsUpdate.hp}`)
-                        if (statsUpdate.mp !== undefined && oldStats.mp !== statsUpdate.mp) changes.push(`MP ${statsUpdate.mp > 0 ? '+' : ''}${statsUpdate.mp}`)
-                        if (statsUpdate.willPower !== undefined && oldStats.willPower !== statsUpdate.willPower) changes.push(`WILL ${statsUpdate.willPower > 0 ? '+' : ''}${statsUpdate.willPower}`)
+                        // Helper to format log
+                        const pushLog = (key: string, oldVal: any, newVal: any, label: string) => {
+                            if (newVal !== undefined && oldVal !== newVal) {
+                                changes.push(`${label} ${newVal > 0 ? '+' : ''}${newVal}`)
+                            }
+                        }
 
-                        // RnR
+                        pushLog('hp', oldStats.hp, statsUpdate.hp, 'HP')
+                        pushLog('mp', oldStats.mp, statsUpdate.mp, 'MP')
+                        pushLog('willPower', oldStats.willPower, statsUpdate.willPower, 'WILL')
+
                         if (statsUpdate.vitals) {
-                            if (statsUpdate.vitals.hp !== undefined && oldVitals.hp !== statsUpdate.vitals.hp)
-                                changes.push(`HP ${statsUpdate.vitals.hp > 0 ? '+' : ''}${statsUpdate.vitals.hp}`)
-                            if (statsUpdate.vitals.mental !== undefined && oldVitals.mental !== statsUpdate.vitals.mental)
-                                changes.push(`MEN ${statsUpdate.vitals.mental > 0 ? '+' : ''}${statsUpdate.vitals.mental}`)
-                            if (statsUpdate.vitals.willPower !== undefined && oldVitals.willPower !== statsUpdate.vitals.willPower)
-                                changes.push(`WILL ${statsUpdate.vitals.willPower > 0 ? '+' : ''}${statsUpdate.vitals.willPower}`)
+                            pushLog('hp', oldVitals.hp, statsUpdate.vitals.hp, 'HP')
+                            pushLog('mental', oldVitals.mental, statsUpdate.vitals.mental, 'MEN')
+                            pushLog('willPower', oldVitals.willPower, statsUpdate.vitals.willPower, 'WILL')
                         }
 
                         if (changes.length > 0) {
@@ -353,6 +343,7 @@ export default function CampaignBoardPage() {
                 return
             }
 
+            // --- Other Actions ---
             if (action.actionType !== 'GM_UPDATE_SCENE') {
                 let content = ''
                 if (action.actorName === 'Game Master' && action.actionType === 'custom') {
@@ -377,10 +368,7 @@ export default function CampaignBoardPage() {
                     }
                 }
 
-                if (action.actionType !== 'RNR_LIVE_UPDATE' &&
-                    action.actionType !== 'rnr_roll' &&
-                    action.actionType !== 'dice_roll' &&
-                    action.actionType !== 'WHISPER') {
+                if (!['RNR_LIVE_UPDATE', 'rnr_roll', 'dice_roll', 'WHISPER'].includes(action.actionType)) {
                     setLogs((prev) => [...prev, {
                         id: Date.now().toString(), content,
                         type: action.actionType === 'custom' ? 'NARRATION' : 'ACTION',
@@ -461,7 +449,6 @@ export default function CampaignBoardPage() {
                 setGmInput(data.result)
             } else {
                 alert("AI didn't respond. Check console.")
-                console.error(data)
             }
         } catch (error) {
             console.error("AI Error:", error)
@@ -572,8 +559,7 @@ export default function CampaignBoardPage() {
                 newItems = [...currentItems, itemData]
             }
 
-            // ✅ 3. Call Server Action to Save
-            // Note: We don't await this to keep UI snappy, but might want to handle errors
+            // 3. Call Server Action to Save
             updatePlayerInventory(targetPlayerId, newItems).then(res => {
                 if (!res.success) console.error("Failed to save inventory for", targetPlayerId)
             })
@@ -585,47 +571,38 @@ export default function CampaignBoardPage() {
     const handleUpdateVitals = async (playerId: string, type: 'hp' | 'mp', delta: number) => {
         const player = dbPlayers.find(p => p.id === playerId)
         if (!player || !player.stats) return
+
         const isRnR = player.character?.sheetType === 'ROLE_AND_ROLL'
-        let newValue: number, maxValue: number, statsUpdate: any = {}
+        let statsUpdate: any = {}
 
         if (isRnR) {
-            if (type === 'hp') {
-                // ✅ Fix: Use 'hp' key for RnR Health to match Controller/CharacterCreator
-                const oldValue = player.stats.vitals?.hp || player.stats.vitals?.health || 0
-                const max = player.stats.vitals?.maxHp || player.stats.vitals?.maxHealth || 0
-                newValue = Math.max(0, Math.min(max, oldValue + delta))
-                maxValue = max
-                statsUpdate = { vitals: { ...player.stats.vitals, hp: newValue } }
-            } else {
-                // ✅ Fix: Use 'mental' key for RnR Mental
-                const oldValue = player.stats.vitals?.mental || 0
-                const max = player.stats.vitals?.maxMental || 0
-                newValue = Math.max(0, Math.min(max, oldValue + delta))
-                maxValue = max
-                statsUpdate = { vitals: { ...player.stats.vitals, mental: newValue } }
-            }
+            const current = player.stats.vitals || {}
+            const key = type === 'hp' ? 'hp' : 'mental' // Map key for RnR
+            const maxKey = type === 'hp' ? 'maxHp' : 'maxMental'
+
+            // Check alt keys if main key is missing
+            const oldValue = current[key] ?? (type === 'hp' ? current.health : 0) ?? 0
+            const maxValue = current[maxKey] ?? (type === 'hp' ? current.maxHealth : 0) ?? 0
+
+            const newValue = Math.max(0, Math.min(maxValue, oldValue + delta))
+            statsUpdate = { vitals: { ...current, [key]: newValue } }
         } else {
-            if (type === 'hp') {
-                const oldValue = player.stats.hp || 0
-                const max = player.stats.maxHp || 0
-                newValue = Math.max(0, Math.min(max, oldValue + delta))
-                maxValue = max
-                statsUpdate = { hp: newValue }
-            } else {
-                const oldValue = player.stats.mp || 0
-                const max = player.stats.maxMp || 0
-                newValue = Math.max(0, Math.min(max, oldValue + delta))
-                maxValue = max
-                statsUpdate = { mp: newValue }
-            }
+            const key = type
+            const maxKey = type === 'hp' ? 'maxHp' : 'maxMp'
+            const oldValue = player.stats[key] || 0
+            const maxValue = player.stats[maxKey] || 0
+
+            const newValue = Math.max(0, Math.min(maxValue, oldValue + delta))
+            statsUpdate = { [key]: newValue }
         }
 
+        // Optimistic Update
         setDbPlayers(prev => prev.map(p => {
             if (p.id === playerId) return { ...p, stats: { ...p.stats, ...statsUpdate } }
             return p
         }))
 
-        // ✅ Fix: Log locally immediately for GM
+        // Log Locally
         const changeText = type.toUpperCase() + ' ' + (delta > 0 ? '+' : '') + delta
         setLogs(prev => [...prev, {
             id: Date.now().toString(),
@@ -635,6 +612,7 @@ export default function CampaignBoardPage() {
             timestamp: new Date()
         }])
 
+        // Sync with Server
         try {
             await updateCharacterStats(playerId, statsUpdate)
             await sendPlayerAction({
@@ -855,7 +833,7 @@ export default function CampaignBoardPage() {
                         )}
                     </div>
 
-                    {/* ✅ 2. ใส่ VoicePanel ที่นี่ (ล่างสุดของ Sidebar) */}
+                    {/* Voice Panel */}
                     <div className="shrink-0 z-20 pb-24 lg:pb-0">
                         <VoicePanel
                             room={joinCode}

@@ -260,7 +260,8 @@ export default function CampaignBoardPage() {
                             })
                             const currentStats = p.stats || {}
                             const oldWill = currentStats.willPower || 0
-                            const oldVitalsWill = currentStats.vitals?.willPower || 0
+                            // ✅ Fix: Use root willPower as baseline if vitals value is missing
+                            const oldVitalsWill = currentStats.vitals?.willPower ?? currentStats.willPower ?? 0
 
                             // Reduce Will
                             const newWill = Math.max(0, oldWill - action.willBoost)

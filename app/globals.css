@@ -116,3 +116,23 @@ body {
 .glow-red {
   box-shadow: 0 0 20px rgba(239, 68, 68, 0.3);
 }
+
+/* app/globals.css */
+
+/* ... (existing code) */
+
+@layer utilities {
+  .animate-marquee {
+    animation: marquee 25s linear infinite;
+  }
+}
+
+@keyframes marquee {
+  0% {
+    transform: translateX(100%);
+  }
+
+  100% {
+    transform: translateX(-100%);
+  }
+}

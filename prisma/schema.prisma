@@ -387,15 +387,3 @@ model Transaction {
   @@index([itemType, itemId])
   @@index([status])
 }
-// prisma/schema.prisma
-
-// ... (existing models)
-
-model SiteConfig {
-  id             Int      @id @default(1) // เราจะใช้แค่ row เดียวเสมอ (id=1)
-  heroTitle      String   @default("Welcome, Traveler")
-  heroSubtitle   String   @default("Your adventure begins here. Choose your destiny.")
-  heroImageUrl   String?  // รูป Banner ใหญ่
-  announcement   String?  // ประกาศตัววิ่ง หรือ ข้อความสำคัญ
-  updatedAt      DateTime @updatedAt
-}

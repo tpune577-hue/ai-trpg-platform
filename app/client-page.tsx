@@ -1,130 +1,137 @@
-// app/page.tsx (หรือ client-page.tsx)
-import { getSiteConfig } from '@/app/actions/site-settings'
-import { getPublishedCampaigns } from '@/app/actions/game'
-import Link from 'next/link'
+'use client'
 
-export async function ClientHome({ isLoggedIn }: { isLoggedIn: boolean }) {
-    const config = await getSiteConfig()
-    const campaigns = await getPublishedCampaigns()
+import { useState } from 'react'
+import { useRouter } from 'next/navigation'
+import Link from 'next/link'
+import { SignIn } from '@/components/auth/AuthButton'
+
+interface ClientHomeProps {
+    isLoggedIn: boolean
+}
+
+export function ClientHome({ isLoggedIn }: ClientHomeProps) {
+    const router = useRouter()
+    const [roomCode, setRoomCode] = useState('')
+    const [isJoinLoading, setIsJoinLoading] = useState(false)
+
+    const handleJoin = (e: React.FormEvent) => {
+        e.preventDefault()
+        if (!roomCode.trim()) return
+        setIsJoinLoading(true)
+        router.push(`/lobby/${roomCode}`)
+    }
 
     return (
-        <main className="min-h-screen bg-[#0f172a] text-slate-200 font-sans relative overflow-hidden">
+        <main className="flex-1 flex flex-col items-center justify-center p-6 min-h-[80vh]">
 
-            {/* 1. EPIC HERO BACKGROUND */}
-            <div className="relative h-[60vh] flex items-center justify-center overflow-hidden">
-                {/* Background Image with Overlay */}
-                <div
-                    className="absolute inset-0 z-0 bg-cover bg-center transition-transform duration-1000 hover:scale-105"
-                    style={{ backgroundImage: `url(${config.heroImageUrl || '/placeholder.jpg'})` }}
-                >
-                    <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/40 to-[#0f172a]"></div>
-                </div>
-
-                {/* Hero Content */}
-                <div className="relative z-10 text-center px-4 max-w-4xl mx-auto space-y-6 animate-in fade-in zoom-in duration-1000">
-                    <h1 className="text-5xl md:text-7xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-200 via-amber-500 to-amber-200 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)] tracking-tight">
-                        {config.heroTitle}
-                    </h1>
-                    <p className="text-xl md:text-2xl text-slate-200 font-medium drop-shadow-md max-w-2xl mx-auto">
-                        {config.heroSubtitle}
-                    </p>
-
-                    {/* ปุ่ม Start แบบ RPG */}
-                    <div className="flex justify-center gap-4 mt-8">
-                        <Link href="/lobby/create" className="group relative px-8 py-4 bg-amber-600 rounded overflow-hidden shadow-[0_0_20px_rgba(245,158,11,0.5)] hover:shadow-[0_0_40px_rgba(245,158,11,0.8)] transition-all">
-                            <div className="absolute inset-0 w-full h-full bg-gradient-to-r from-transparent via-white/30 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700"></div>
-                            <span className="relative font-black text-black uppercase tracking-widest flex items-center gap-2">
-                                ⚔️ Create Room
-                            </span>
-                        </Link>
-                        <Link href="/lobby/join" className="px-8 py-4 bg-slate-800/80 backdrop-blur border border-slate-600 rounded hover:bg-slate-700 hover:border-amber-500 transition-all shadow-lg">
-                            <span className="font-bold text-amber-500 uppercase tracking-widest">🔍 Find Party</span>
-                        </Link>
-                    </div>
-                </div>
+            {/* Title */}
+            <div className="text-center mb-12">
+                <h1 className="text-5xl md:text-7xl font-black bg-gradient-to-r from-amber-400 via-orange-500 to-purple-600 bg-clip-text text-transparent drop-shadow-sm tracking-tight">
+                    SANDORY BOX
+                </h1>
+                <p className="text-slate-400 mt-4 text-lg">Choose your path, adventurer.</p>
             </div>
 
-            {/* 2. TOWN CRIER (Announcement) */}
-            {config.announcement && (
-                <div className="bg-amber-900/30 border-y border-amber-500/30 py-3 overflow-hidden relative">
-                    <div className="whitespace-nowrap animate-marquee text-amber-200 font-mono text-sm flex items-center gap-4">
-                        <span>🔔 HEAR YE! HEAR YE!</span>
-                        <span>{config.announcement}</span>
-                        <span>🔔</span>
-                        <span>{config.announcement}</span> {/* Duplicate for smooth loop */}
+            {/* ✅ 3 BOXES GRID LAYOUT */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full max-w-6xl">
+
+                {/* =========================================
+            BOX 1: CREATE ROOM (Need Login)
+           ========================================= */}
+                <div className="relative group h-80 bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden hover:border-purple-500/50 transition-all shadow-2xl">
+                    <div className={`h-full p-8 flex flex-col items-center justify-center text-center gap-4 transition-all duration-300 ${!isLoggedIn ? 'blur-sm opacity-20' : ''}`}>
+                        <div className="w-16 h-16 bg-purple-500/10 rounded-full flex items-center justify-center text-3xl">
+                            ✨
+                        </div>
+                        <h2 className="text-2xl font-bold text-white">Create Room</h2>
+                        <p className="text-slate-400 text-sm">Start a new campaign as a Game Master.</p>
+
+                        <button
+                            // ❌ ของเดิม: router.push('/play/create') 
+                            // ✅ แก้เป็น Path ที่ถูกต้องของคุณ (เช่น /lobby/create)
+                            onClick={() => router.push('/lobby/create')}
+                            className="mt-auto w-full py-3 bg-purple-600 hover:bg-purple-500 text-white rounded-lg font-bold transition-colors"
+                        >
+                            Start Adventure
+                        </button>
+                    </div>
+
+                    {/* 🔒 Lock Overlay */}
+                    {!isLoggedIn && (
+                        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-black/60 backdrop-blur-[2px] p-6 text-center">
+                            <div className="mb-3 text-purple-500"><svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg></div>
+                            <p className="text-slate-300 font-bold mb-4">Sign in to create a room</p>
+                            <SignIn />
+                        </div>
+                    )}
+                </div>
+
+                {/* =========================================
+            BOX 2: JOIN ROOM (Need Login)
+           ========================================= */}
+                <div className="relative group h-80 bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden hover:border-amber-500/50 transition-all shadow-2xl">
+                    {/* Content (จะโดนเบลอถ้าไม่ Login) */}
+                    <div className={`h-full p-8 flex flex-col items-center justify-center text-center gap-4 transition-all duration-300 ${!isLoggedIn ? 'blur-sm opacity-20' : ''}`}>
+                        <div className="w-16 h-16 bg-amber-500/10 rounded-full flex items-center justify-center text-3xl">
+                            ⚔️
+                        </div>
+                        <h2 className="text-2xl font-bold text-white">Join Room</h2>
+                        <p className="text-slate-400 text-sm">Enter code to join existing party.</p>
+
+                        <form onSubmit={handleJoin} className="mt-auto w-full flex flex-col gap-3">
+                            <input
+                                type="text"
+                                value={roomCode}
+                                onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
+                                placeholder="ROOM CODE"
+                                className="w-full bg-slate-950 border border-slate-700 rounded-lg py-2 px-4 text-center text-white font-mono focus:border-amber-500 outline-none"
+                            />
+                            <button
+                                disabled={isJoinLoading || !roomCode}
+                                className="w-full py-3 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white rounded-lg font-bold transition-colors"
+                            >
+                                {isJoinLoading ? 'Joining...' : 'Join Party'}
+                            </button>
+                        </form>
+                    </div>
+
+                    {/* 🔒 Lock Overlay */}
+                    {!isLoggedIn && (
+                        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-black/60 backdrop-blur-[2px] p-6 text-center">
+                            <div className="mb-3 text-amber-500"><svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg></div>
+                            <p className="text-slate-300 font-bold mb-4">Sign in to join a room</p>
+                            <SignIn />
+                        </div>
+                    )}
+                </div>
+
+                {/* =========================================
+            BOX 3: MARKETPLACE (Open for Everyone)
+           ========================================= */}
+                <div className="relative group h-80 bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden hover:border-emerald-500/50 transition-all shadow-2xl">
+                    {/* Content (ชัดเจนตลอดเวลา ไม่เบลอ) */}
+                    <div className="h-full p-8 flex flex-col items-center justify-center text-center gap-4">
+                        <div className="w-16 h-16 bg-emerald-500/10 rounded-full flex items-center justify-center text-3xl">
+                            🛒
+                        </div>
+                        <h2 className="text-2xl font-bold text-white">Marketplace</h2>
+                        <p className="text-slate-400 text-sm">Browse assets, maps, and character arts.</p>
+
+                        <Link
+                            href="/marketplace"
+                            className="mt-auto w-full py-3 bg-slate-800 hover:bg-emerald-600/20 border border-slate-700 hover:border-emerald-500 text-emerald-400 hover:text-emerald-300 rounded-lg font-bold transition-all flex items-center justify-center gap-2"
+                        >
+                            Browse Shop
+                        </Link>
+                    </div>
+
+                    {/* 🏷️ Badge (Optional) */}
+                    <div className="absolute top-4 right-4 bg-emerald-500/20 text-emerald-400 text-xs font-bold px-2 py-1 rounded border border-emerald-500/30">
+                        OPEN
                     </div>
                 </div>
-            )}
 
-            {/* 3. QUEST BOARD (Campaign List) */}
-            <div className="max-w-7xl mx-auto px-4 py-16 relative z-10">
-                <div className="flex items-center justify-between mb-8 border-b border-slate-700 pb-4">
-                    <h2 className="text-3xl font-bold text-amber-500 flex items-center gap-3">
-                        📜 <span className="uppercase tracking-wider">Quest Board</span>
-                    </h2>
-                    <Link href="/marketplace" className="text-xs font-bold text-slate-400 hover:text-white transition-colors uppercase">
-                        Visit Black Market →
-                    </Link>
-                </div>
-
-                {campaigns.length === 0 ? (
-                    <div className="text-center py-20 bg-slate-900/50 rounded-2xl border-2 border-dashed border-slate-700">
-                        <div className="text-6xl mb-4 opacity-50">🕸️</div>
-                        <h3 className="text-xl font-bold text-slate-400">The board is empty...</h3>
-                        <p className="text-sm text-slate-500">Be the first hero to post a quest!</p>
-                    </div>
-                ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                        {campaigns.map((camp) => (
-                            <Link href={`/campaign/${camp.id}`} key={camp.id} className="group">
-                                {/* QUEST CARD DESIGN */}
-                                <div className="bg-[#1e293b] rounded-xl overflow-hidden border border-slate-700 shadow-lg hover:shadow-amber-500/20 hover:-translate-y-1 hover:border-amber-500/50 transition-all duration-300 relative h-full flex flex-col">
-                                    {/* Pin Effect */}
-                                    <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 w-3 h-3 rounded-full bg-red-800 shadow-sm border border-red-950"></div>
-
-                                    {/* Image */}
-                                    <div className="h-48 overflow-hidden relative">
-                                        <img
-                                            src={camp.coverImage || '/placeholder.jpg'}
-                                            className="w-full h-full object-cover opacity-80 group-hover:opacity-100 group-hover:scale-110 transition-all duration-500"
-                                        />
-                                        <div className="absolute bottom-0 w-full h-1/2 bg-gradient-to-t from-[#1e293b] to-transparent"></div>
-                                        <div className="absolute top-2 right-2 bg-black/70 backdrop-blur px-2 py-1 rounded text-[10px] font-bold text-amber-500 border border-amber-500/30">
-                                            {camp.system}
-                                        </div>
-                                    </div>
-
-                                    {/* Content */}
-                                    <div className="p-5 flex-1 flex flex-col relative">
-                                        <h3 className="text-xl font-bold text-slate-100 mb-2 group-hover:text-amber-400 transition-colors line-clamp-1">
-                                            {camp.title}
-                                        </h3>
-                                        <p className="text-sm text-slate-400 mb-4 line-clamp-2 flex-1">
-                                            {camp.description}
-                                        </p>
-
-                                        <div className="flex items-center justify-between pt-4 border-t border-slate-700/50 mt-auto">
-                                            <div className="flex items-center gap-2">
-                                                <div className="w-6 h-6 rounded-full bg-slate-700 overflow-hidden">
-                                                    {camp.creator?.image && <img src={camp.creator.image} />}
-                                                </div>
-                                                <span className="text-xs text-slate-500 truncate max-w-[100px]">{camp.creator?.name || 'Unknown'}</span>
-                                            </div>
-                                            <span className="text-xs font-bold text-emerald-400 uppercase tracking-wide">
-                                                Join Quest →
-                                            </span>
-                                        </div>
-                                    </div>
-                                </div>
-                            </Link>
-                        ))}
-                    </div>
-                )}
             </div>
-
-            {/* Decorative Runes (Background) */}
-            <div className="absolute top-20 left-10 text-9xl text-white/5 font-serif select-none pointer-events-none rotate-12">⚔️</div>
-            <div className="absolute bottom-20 right-10 text-9xl text-white/5 font-serif select-none pointer-events-none -rotate-12">🐉</div>
 
         </main>
     )

@@ -127,6 +127,17 @@ export async function getLobbyInfo(joinCode: string) {
                     aiName: true,
                     aiPersonality: true,
                     aiStyle: true,
+                    description: true, // ✅ Restore Description
+                    preGens: {         // ✅ Restore PreGens (Lightweight)
+                        select: {
+                            id: true,
+                            name: true,
+                            avatarUrl: true,
+                            sheetType: true,
+                            stats: true, // Needed for Modal details
+                            bio: true
+                        }
+                    }
                 }
             }
         }

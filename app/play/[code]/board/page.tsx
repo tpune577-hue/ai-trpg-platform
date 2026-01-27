@@ -244,34 +244,42 @@ export default function CampaignBoardPage() {
                 }, 5000)
 
                 // ✅ Fix: Sync Willpower usage to Board immediately to prevent overwrite
+                // ใน app/play/[code]/board/page.tsx
+
                 if (action.willBoost && action.willBoost > 0) {
                     setDbPlayers(prev => prev.map(p => {
-                        // ✅ Fix: Match by ID (Reliable) or Name (Fallback)
+                        // Match Player by ID or Name
                         const isMatch = (action.actorId && p.id === action.actorId) ||
                             (p.character?.name === action.actorName || p.name === action.actorName)
 
                         if (isMatch) {
-                            console.log('⚡ [Board] Willpower Update Triggered:', {
-                                name: p.name,
-                                willBoost: action.willBoost,
-                                oldWill: p.stats?.vitals?.willPower,
-                                actionId: action.actorId,
-                                playerId: p.id
-                            })
                             const currentStats = p.stats || {}
-                            const oldWill = currentStats.willPower || 0
-                            // ✅ Fix: Use root willPower as baseline if vitals value is missing
-                            const oldVitalsWill = currentStats.vitals?.willPower ?? currentStats.willPower ?? 0
+                            const isRnR = p.character?.sheetType === 'ROLE_AND_ROLL'
 
-                            // Reduce Will
-                            const newWill = Math.max(0, oldWill - action.willBoost)
-                            const newVitalsWill = Math.max(0, oldVitalsWill - action.willBoost)
+                            // Clone stats เพื่อไม่ให้กระทบค่าเดิม
+                            const newStats = { ...currentStats }
 
-                            const newStats = { ...currentStats, willPower: newWill }
+                            if (isRnR) {
+                                // ✅ แก้ไข: สำหรับ RnR ต้องลดที่ vitals.willPower
+                                const currentVitals = currentStats.vitals || {}
+                                const oldWill = currentVitals.willPower ?? currentStats.willPower ?? 0
+                                const newWill = Math.max(0, oldWill - action.willBoost)
 
-                            // ✅ Fix: Force update vitals if exists OR character is RnR
-                            if (currentStats.vitals || p.character?.sheetType === 'ROLE_AND_ROLL') {
-                                newStats.vitals = { ...(currentStats.vitals || {}), willPower: newVitalsWill }
+                                newStats.vitals = {
+                                    ...currentVitals,
+                                    willPower: newWill
+                                }
+                                // อัปเดต Root Level ด้วยเพื่อความชัวร์ (เผื่อบาง UI component อ่านจาก Root)
+                                newStats.willPower = newWill
+
+                                console.log(`⚡ [Board] Reduced RnR Will: ${oldWill} -> ${newWill}`)
+                            } else {
+                                // สำหรับ Standard ลดที่ Root Level
+                                const oldWill = currentStats.willPower || 0
+                                const newWill = Math.max(0, oldWill - action.willBoost)
+                                newStats.willPower = newWill
+
+                                console.log(`⚡ [Board] Reduced Standard Will: ${oldWill} -> ${newWill}`)
                             }
 
                             return { ...p, stats: newStats }

@@ -184,6 +184,7 @@ export function EnhancedPartyStatus({
                                 {(player as any).stats && (() => {
                                     // ✅ Detect character type and get correct values
                                     // ✅ Fix: Robust Auto-Detect Logic (Priority: RnR Vitals > Standard Root)
+                                    const playerStats = (player as any).stats
                                     const hasVitals = !!(playerStats.vitals)
                                     const isRnR = hasVitals || (player as any).character?.sheetType === 'ROLE_AND_ROLL'
 

@@ -171,12 +171,11 @@ export default function CampaignBoardPage() {
                 if (data.players) {
                     const loadedInventories: Record<string, any[]> = {}
 
-                    // รวม Logic การ map player และ inventory ไว้ใน loop เดียว
+                    // ✅ Optimize: Loop เดียว จัดการทั้ง Player Struct และ Inventory
                     const formattedPlayers = data.players.map((p: any) => {
                         let charData: any = {}
                         try { charData = p.characterData ? JSON.parse(p.characterData) : {} } catch (e) { console.error(e) }
 
-                        // เก็บ Inventory แยกออกมา state ต่างหาก
                         if (charData.inventory) {
                             loadedInventories[p.id] = charData.inventory
                         }
@@ -197,7 +196,6 @@ export default function CampaignBoardPage() {
                 let initialSceneId = data.currentSceneId
                 let initialSceneUrl = ''
 
-                // หา Scene เริ่มต้น
                 const allScenesList = [...(data.campaign?.scenes || []), ...(data.customScenes ? JSON.parse(data.customScenes) : [])]
                 if (initialSceneId) {
                     const foundScene = allScenesList.find((s: any) => s.id === initialSceneId)
@@ -218,10 +216,9 @@ export default function CampaignBoardPage() {
         fetchCampaignData()
     }, [joinCode])
 
-    // --- SOCKET LISTENERS (UPDATED) ---
+    // --- SOCKET LISTENERS (CORRECTED) ---
     useEffect(() => {
         onGameStateUpdate((newState: any) => setGameState((prev: any) => ({ ...prev, ...newState })))
-
         onChatMessage((message: any) => setLogs((prev) => prev.some(log => log.id === message.id) ? prev : [...prev, message]))
 
         onWhisperReceived((data: any) => {
@@ -250,35 +247,42 @@ export default function CampaignBoardPage() {
                     overlayTimeoutRef.current = null
                 }, 5000)
 
-                // ✅ FIX: ปรับปรุง Logic การลด Will Power ให้แม่นยำ
+                // ✅ FIX: Logic การลด Will Power + แก้ปัญหาหาชื่อไม่เจอ (Case Insensitive)
                 const boostAmount = Number(action.willBoost) || 0
                 if (boostAmount > 0) {
                     console.log(`⚡ Will Power Boost detected: -${boostAmount} for ${action.actorName}`)
 
                     setDbPlayers(prev => prev.map(p => {
+                        // 1. ฟังก์ชันช่วยทำความสะอาดชื่อ (ตัวเล็ก + ตัดช่องว่าง)
+                        const clean = (s: string) => s ? s.toString().toLowerCase().trim() : ''
+
+                        // 2. เช็คว่าใช่คนนี้ไหม (เทียบ ID หรือ ชื่อแบบไม่สนตัวพิมพ์เล็กใหญ่)
                         const isMatch = (action.actorId && p.id === action.actorId) ||
-                            (p.character?.name && action.actorName && p.character.name === action.actorName) ||
-                            (p.name && action.actorName && p.name === action.actorName)
+                            (clean(p.character?.name) === clean(action.actorName)) ||
+                            (clean(p.name) === clean(action.actorName))
 
                         if (isMatch) {
                             const currentStats = p.stats || {}
                             const currentVitals = currentStats.vitals || {}
-                            const isRnR = !!currentVitals.willPower || p.character?.sheetType === 'ROLE_AND_ROLL'
 
-                            const oldWillRoot = currentStats.willPower || 0
-                            const oldWillVitals = currentVitals.willPower ?? oldWillRoot
+                            // เช็คว่าเป็นระบบ RnR หรือไม่
+                            const isRnR = p.character?.sheetType === 'ROLE_AND_ROLL' || !!currentVitals.willPower
 
-                            const newWillRoot = Math.max(0, oldWillRoot - boostAmount)
-                            const newWillVitals = Math.max(0, oldWillVitals - boostAmount)
+                            // ดึงค่า Will เดิม (ถ้าหาใน vitals ไม่เจอ ให้ไปดูตัวนอก)
+                            const oldWill = isRnR
+                                ? (currentVitals.willPower ?? currentStats.willPower ?? 0)
+                                : (currentStats.willPower ?? 0)
 
-                            const newStats = {
-                                ...currentStats,
-                                willPower: newWillRoot
-                            }
+                            // คำนวณค่าใหม่
+                            const newWill = Math.max(0, oldWill - boostAmount)
+
+                            // สร้าง Stats ก้อนใหม่
+                            const newStats = { ...currentStats, willPower: newWill } // อัปเดตตัวนอกเสมอ
 
                             if (isRnR) {
-                                newStats.vitals = { ...currentVitals, willPower: newWillVitals }
+                                newStats.vitals = { ...currentVitals, willPower: newWill } // อัปเดตตัวในด้วย
                             }
+
                             return { ...p, stats: newStats }
                         }
                         return p
@@ -286,7 +290,7 @@ export default function CampaignBoardPage() {
                 }
             }
 
-            // --- Stats Update Logic ---
+            // --- Stats Update Logic (HP/MP) ---
             if (action.actionType === 'STATS_UPDATE') {
                 try {
                     const statsUpdate = JSON.parse(action.description)

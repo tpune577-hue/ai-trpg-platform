@@ -1,102 +1,72 @@
-// prisma/schema.prisma
-
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider  = "postgresql" // *** ต้องเปลี่ยนจาก sqlite เป็น postgresql ***
+  provider  = "postgresql"
   url       = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
 }
 
-// --- USER & AUTH (Modified for NextAuth) ---
 model User {
-  id            String    @id @default(cuid())
-  name          String?
-  email         String?   @unique
-  emailVerified DateTime?
-  image         String?   // รูป Profile จาก Google
-  
-  // Role: "USER", "GM", "ADMIN"
-  role          String    @default("USER")
-
-  // ✅ Ban feature
-  bannedUntil   DateTime? 
-  banReason     String?   
-
-  // NextAuth Relations
-  accounts      Account[]
-  sessions      Session[]
-
-  // App Specific Relations
-  createdCampaigns Campaign[] 
-  ownedCampaigns   Purchase[] 
-  receivedReviews  Review[]
-  
-  // Seller Profile (สำหรับรับเงิน/ขายของ)
-  sellerProfile    SellerProfile?
-
-  // ✅ Marketplace Relations
-  orders           Order[]
+  id               String            @id @default(cuid())
+  name             String?
+  email            String?           @unique
+  emailVerified    DateTime?
+  image            String?
+  role             String            @default("USER")
+  bannedUntil      DateTime?
+  banReason        String?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  accounts         Account[]
+  createdCampaigns Campaign[]
   inventory        InventoryItem[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  marketplaceItems MarketplaceItem[] @relation("UserMarketplaceItems") // เพิ่มบรรทัดนี้
-  transactions     Transaction[] // ChillPay transactions
+  marketplaceItems MarketplaceItem[] @relation("UserMarketplaceItems")
+  orders           Order[]
+  ownedCampaigns   Purchase[]
+  receivedReviews  Review[]
+  sellerProfile    SellerProfile?
+  sessions         Session[]
+  transactions     Transaction[]
 }
 
-// SellerProfile สำหรับ KYC และรับเงิน
 model SellerProfile {
   id            String    @id @default(cuid())
   userId        String    @unique
-  user          User      @relation(fields: [userId], references: [id])
-
-  // ข้อมูลส่วนตัว (KYC)
-  realName      String?   
-  idCardNumber  String?   
-  address       String?   
-  
-  // หลักฐาน (เก็บ URL รูปภาพ)
-  idCardImage   String?   
+  realName      String?
+  idCardNumber  String?
+  address       String?
+  idCardImage   String?
   bookBankImage String?
-
-  // ข้อมูลธนาคาร
-  bankName      String?   
-  bankAccount   String?   
-
-  // สถานะการตรวจสอบ: "PENDING", "APPROVED", "REJECTED"
-  status        String    @default("PENDING") 
-  rejectReason  String?   
-
-  products      Product[]
-
+  bankName      String?
+  bankAccount   String?
+  status        String    @default("PENDING")
+  rejectReason  String?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
+  products      Product[]
+  user          User      @relation(fields: [userId], references: [id])
 }
 
-// ✅ Model มาตรฐานสำหรับ NextAuth (Account)
 model Account {
-  id                 String  @id @default(cuid())
-  userId             String
-  type               String
-  provider           String
-  providerAccountId  String
-  refresh_token      String? 
-  access_token       String? 
-  expires_at         Int?
-  token_type         String?
-  scope              String?
-  id_token           String? 
-  session_state      String?
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerAccountId])
 }
 
-// ✅ Model มาตรฐานสำหรับ NextAuth (Session)
 model Session {
   id           String   @id @default(cuid())
   sessionToken String   @unique
@@ -105,7 +75,6 @@ model Session {
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
-// ✅ Model มาตรฐานสำหรับ NextAuth (VerificationToken)
 model VerificationToken {
   identifier String
   token      String   @unique
@@ -114,53 +83,36 @@ model VerificationToken {
   @@unique([identifier, token])
 }
 
-// --- CAMPAIGN TEMPLATE (สินค้า/ต้นฉบับ) ---
 model Campaign {
-  id          String   @id @default(cuid())
-  
-  // Basic Info
-  title       String
-  description String? 
-  coverImage  String?
-  tags        String? 
-  
-  // Game System: "STANDARD", "ROLE_AND_ROLL"
-  system      String   @default("STANDARD") 
-
-  // Story Details
-  storyIntro  String? 
-  storyMid    String? 
-  storyEnd    String? 
-
-  // AI Game Master Configuration
-  aiEnabled      Boolean  @default(false)
-  aiName         String?  @default("The Narrator")
-  aiPersonality  String?  
-  aiStyle        String?  
-  aiCustomPrompt String?  
-
-  // Marketplace Fields
-  isPublished Boolean  @default(false)
-  price       Int      @default(0) 
-  
-  // Assets
-  scenes      Scene[]
-  npcs        Npc[]
-  items       Item[]
-  preGens     PreGenCharacter[] 
-  
-  // Relations
-  creatorId   String
-  creator     User      @relation(fields: [creatorId], references: [id])
-  purchases   Purchase[]
-  sessions    GameSession[]
-  reviews     Review[] 
-
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @default(now()) @updatedAt
+  id             String            @id @default(cuid())
+  title          String
+  description    String?
+  coverImage     String?
+  tags           String?
+  system         String            @default("STANDARD")
+  storyIntro     String?
+  storyMid       String?
+  storyEnd       String?
+  aiEnabled      Boolean           @default(false)
+  aiName         String?           @default("The Narrator")
+  aiPersonality  String?
+  aiStyle        String?
+  aiCustomPrompt String?
+  isPublished    Boolean           @default(false)
+  price          Int               @default(0)
+  creatorId      String
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @default(now()) @updatedAt
+  creator        User              @relation(fields: [creatorId], references: [id])
+  sessions       GameSession[]
+  items          Item[]
+  npcs           Npc[]
+  preGens        PreGenCharacter[]
+  purchases      Purchase[]
+  reviews        Review[]
+  scenes         Scene[]
 }
 
-// --- ASSETS ---
 model Scene {
   id          String   @id @default(cuid())
   name        String
@@ -171,76 +123,63 @@ model Scene {
 }
 
 model Npc {
-  id          String   @id @default(cuid())
-  name        String
-  avatarUrl   String
-  type        String    // FRIENDLY, ENEMY, NEUTRAL
-  stats       String?   // JSON string { hp: 10, str: 10 ... }
-  campaignId  String
-  campaign    Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  id         String   @id @default(cuid())
+  name       String
+  avatarUrl  String
+  type       String
+  stats      String?
+  campaignId String
+  campaign   Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
 }
 
 model Item {
   id          String   @id @default(cuid())
   name        String
   description String?
-  type        String    // WEAPON, POTION, KEY_ITEM
+  type        String
   icon        String?
   campaignId  String
   campaign    Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
 }
 
 model PreGenCharacter {
-  id          String   @id @default(cuid())
-  name        String
-  bio         String?
-  avatarUrl   String?
-  sheetType   String   @default("STANDARD")
-  stats       String?   // JSON string
-  campaignId  String
-  campaign    Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  id         String   @id @default(cuid())
+  name       String
+  bio        String?
+  avatarUrl  String?
+  sheetType  String   @default("STANDARD")
+  stats      String?
+  campaignId String
+  campaign   Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
 }
 
-// --- MARKETPLACE TRANSACTION ---
 model Purchase {
   id          String   @id @default(cuid())
   userId      String
   campaignId  String
   purchasedAt DateTime @default(now())
-  price       Float    @default(0) // เพิ่มบรรทัดนี้
-
-  user        User     @relation(fields: [userId], references: [id])
+  price       Float    @default(0)
   campaign    Campaign @relation(fields: [campaignId], references: [id])
+  user        User     @relation(fields: [userId], references: [id])
 
-  @@unique([userId, campaignId]) 
+  @@unique([userId, campaignId])
 }
 
-// --- GAME SESSION (ห้องเล่นจริง) ---
 model GameSession {
-  id              String    @id @default(cuid())
-  joinCode        String    @unique 
-  status          String    @default("WAITING") 
-  name            String?   @default("Untitled Session")
-  
-  // Current State
-  currentSceneId  String?
-  activeNpcs      String?   // JSON Array String (NPC ที่กำลังโชว์)
-  
-  // Lobby Settings
-  isAiGm          Boolean  @default(false)
-
-  // ✅ Quick Add Assets (ใช้ Custom แทน Temp เพื่อความชัดเจน)
-  customScenes    String?  // JSON Array: [{ id, name, imageUrl }]
-  customNpcs      String?  // JSON Array: [{ id, name, imageUrl }]
-
-  // Campaign 
-  campaignId      String?
-  campaign        Campaign? @relation(fields: [campaignId], references: [id])
-  
-  players         Player[]
-  
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @default(now()) @updatedAt
+  id             String    @id @default(cuid())
+  joinCode       String    @unique
+  status         String    @default("WAITING")
+  name           String?   @default("Untitled Session")
+  currentSceneId String?
+  activeNpcs     String?
+  isAiGm         Boolean   @default(false)
+  customScenes   String?
+  customNpcs     String?
+  campaignId     String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @default(now()) @updatedAt
+  campaign       Campaign? @relation(fields: [campaignId], references: [id])
+  players        Player[]
 }
 
 model Player {
@@ -249,98 +188,76 @@ model Player {
   role          String      @default("PLAYER")
   isReady       Boolean     @default(false)
   sheetType     String      @default("STANDARD")
-  
-  characterData String?      
+  characterData String?
   preGenId      String?
-  
   sessionId     String
+  createdAt     DateTime    @default(now())
   session       GameSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-
-  createdAt     DateTime    @default(now()) 
 }
 
-// --- REVIEWS & FEEDBACK ---
 model Review {
-  id            String   @id @default(cuid())
-  reviewType    String   @default("GM") // 'GM' or 'CAMPAIGN'
-  rating        Int      
-  comment       String?
-  reviewerName  String   
-  
-  targetUserId  String?
-  targetUser    User?    @relation(fields: [targetUserId], references: [id])
-  
-  campaignId    String?
-  campaign      Campaign? @relation(fields: [campaignId], references: [id])
-
-  sessionCode   String?
-
-  createdAt     DateTime @default(now())
+  id           String    @id @default(cuid())
+  reviewType   String    @default("GM")
+  rating       Int
+  comment      String?
+  reviewerName String
+  targetUserId String?
+  campaignId   String?
+  sessionCode  String?
+  createdAt    DateTime  @default(now())
+  campaign     Campaign? @relation(fields: [campaignId], references: [id])
+  targetUser   User?     @relation(fields: [targetUserId], references: [id])
 }
-
-// --- MARKETPLACE & ASSETS (For Individual Items/Products) ---
 
 model Product {
-  id          String   @id @default(cuid())
-  sellerId    String
-  seller      SellerProfile @relation(fields: [sellerId], references: [id])
-  
-  name        String
-  description String?  
-  price       Int      @default(0) 
-  
-  type        String   @default("ITEM") 
-  images      String?  
-  fileUrl     String?  
-  
-  isPublished Boolean  @default(false)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  orderItems  OrderItem[]
-  inventoryItems InventoryItem[] 
+  id             String          @id @default(cuid())
+  sellerId       String
+  name           String
+  description    String?
+  price          Int             @default(0)
+  type           String          @default("ITEM")
+  images         String?
+  fileUrl        String?
+  isPublished    Boolean         @default(false)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  inventoryItems InventoryItem[]
+  orderItems     OrderItem[]
+  seller         SellerProfile   @relation(fields: [sellerId], references: [id])
 }
 
 model Order {
-  id        String    @id @default(cuid())
+  id        String      @id @default(cuid())
   userId    String
-  user      User      @relation(fields: [userId], references: [id])
-  
   total     Int
-  status    String    @default("COMPLETED")
-  
+  status    String      @default("COMPLETED")
+  createdAt DateTime    @default(now())
+  user      User        @relation(fields: [userId], references: [id])
   items     OrderItem[]
-  
-  createdAt DateTime  @default(now())
 }
 
 model OrderItem {
   id        String  @id @default(cuid())
   orderId   String
-  order     Order   @relation(fields: [orderId], references: [id])
-  
   productId String
+  price     Int
+  order     Order   @relation(fields: [orderId], references: [id])
   product   Product @relation(fields: [productId], references: [id])
-  
-  price     Int     
 }
 
 model InventoryItem {
-  id          String   @id @default(cuid())
-  userId      String
-  user        User     @relation(fields: [userId], references: [id])
-  
-  productId   String
-  product     Product  @relation(fields: [productId], references: [id])
-  
-  acquiredAt  DateTime @default(now())
-  customName  String?
-  quantity    Int      @default(1)
+  id         String   @id @default(cuid())
+  userId     String
+  productId  String
+  acquiredAt DateTime @default(now())
+  customName String?
+  quantity   Int      @default(1)
+  product    Product  @relation(fields: [productId], references: [id])
+  user       User     @relation(fields: [userId], references: [id])
 
-  @@unique([userId, productId]) 
+  @@unique([userId, productId])
 }
 
-// --- MARKETPLACE ITEM (เพิ่มเข้าไปเพื่อให้ตรงกับ API) ---
 model MarketplaceItem {
   id          String   @id @default(cuid())
   title       String
@@ -349,41 +266,39 @@ model MarketplaceItem {
   price       Float    @default(0)
   creatorId   String
   isPublished Boolean  @default(true)
-  data        String   // เก็บ JSON String (imageUrl, tags) ตามที่คุณเขียนใน API
+  data        String
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
-
   creator     User     @relation("UserMarketplaceItems", fields: [creatorId], references: [id])
 }
 
-// Transaction Model - Polymorphic design for multiple product types
 model Transaction {
-  id            String   @id @default(cuid())
-  orderNo       String   @unique // เลขที่ออเดอร์ที่เราส่งให้ ChillPay
-  amount        Int      // จำนวนเงิน (บาท)
-  status        String   @default("PENDING") // PENDING, SUCCESS, FAILED, REFUNDED
-  
-  // User who made the purchase
-  userId        String
-  user          User     @relation(fields: [userId], references: [id])
-  
-  // 🔥 Polymorphic Fields - รองรับสินค้าหลายประเภท
-  itemType      String?  // "CAMPAIGN", "GM_QUEUE", "ASSET", "MARKETPLACE_ITEM"
-  itemId        String?  // ID ของสินค้าตามประเภท
-  
-  // Metadata (เก็บข้อมูลเพิ่มเติมเป็น JSON)
-  metadata      Json?    // { itemName, itemPrice, quantity, etc. }
-  
-  // Stripe specific fields
-  stripeSessionId     String?  @unique // Stripe Checkout Session ID
-  stripePaymentIntent String?  // Stripe Payment Intent ID
+  id                  String    @id @default(cuid())
+  orderNo             String    @unique
+  amount              Int
+  status              String    @default("PENDING")
+  userId              String
+  itemType            String?
+  itemId              String?
+  metadata            Json?
+  stripeSessionId     String?   @unique
+  stripePaymentIntent String?
   paymentDate         DateTime?
-  paymentMethod       String?  // "card", "promptpay", etc.
-  
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  
+  paymentMethod       String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  user                User      @relation(fields: [userId], references: [id])
+
   @@index([userId])
   @@index([itemType, itemId])
   @@index([status])
+}
+
+model SiteConfig {
+  id           Int      @id @default(1)
+  heroTitle    String   @default("Welcome, Traveler")
+  heroSubtitle String   @default("Your adventure begins here. Choose your destiny.")
+  heroImageUrl String?
+  announcement String?
+  updatedAt    DateTime
 }

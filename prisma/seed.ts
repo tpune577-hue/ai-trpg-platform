@@ -92,6 +92,9 @@ async function main() {
     })
     console.log(`✅ Player purchased campaign`)
 
+    // 4. Seed Audio
+    await seedAudio()
+
     console.log('🌱 Seed finished.')
 }
 

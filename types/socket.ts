@@ -49,7 +49,7 @@ export interface GameStateUpdate {
 export interface SocketChatMessage {
     id: string
     content: string
-    type: 'NARRATION' | 'TALK' | 'ACTION'
+    type: 'NARRATION' | 'TALK' | 'ACTION' | 'CHAT'
     senderId: string
     senderName: string
     timestamp: Date

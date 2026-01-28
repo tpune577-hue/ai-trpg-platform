@@ -16,6 +16,10 @@ import { VoicePTTButton } from '@/components/game/LiveKitWidgets'
 import '@livekit/components-styles'
 import StatBox from '@/components/game/StatBox'
 
+// ✅ 1. Import Audio & Settings Components (เพิ่มใหม่)
+import AudioManager from '@/components/game/AudioManager'
+import SettingsModal from '@/components/game/SettingsModal'
+
 export default function PlayerControllerPage() {
     const params = useParams()
     const router = useRouter()
@@ -42,6 +46,9 @@ export default function PlayerControllerPage() {
 
     // ✅ VOICE CHAT STATE
     const [voiceToken, setVoiceToken] = useState('')
+
+    // ✅ 2. SETTINGS STATE (เพิ่มใหม่)
+    const [isSettingsOpen, setIsSettingsOpen] = useState(false)
 
     // --- GAME STATE ---
     const [gameState, setGameState] = useState<any>({
@@ -108,7 +115,7 @@ export default function PlayerControllerPage() {
         }
     }, [joinCode])
 
-    // ✅ FETCH VOICE TOKEN (เมื่อได้ชื่อผู้เล่นแล้ว)
+    // ✅ FETCH VOICE TOKEN
     useEffect(() => {
         if (!joinCode || !playerName) return;
         (async () => {
@@ -166,63 +173,33 @@ export default function PlayerControllerPage() {
                     try { charData = myPlayer.characterData ? JSON.parse(myPlayer.characterData) : {} } catch (e) { console.error("Parse Error", e) }
 
                     // ✅ Fix: Merge with PreGen Data (Restore missing Attributes/Abilities)
-                    // Logic: Base Template < Saved Data. Saved Data MUST overwrite Template for dynamic values.
                     if (myPlayer.preGenId && session.campaign?.preGens) {
                         const template = session.campaign.preGens.find((pg: any) => pg.id === myPlayer.preGenId)
                         if (template && template.stats) {
                             try {
                                 const baseStats = JSON.parse(template.stats)
-
-                                // ✅ Deep Merge for Stats
-                                // We want Base Stats to fill in gaps, but NOT overwrite existing saved values.
-                                // Especially dynamic values like HP, MP, WillPower, Vitals.
                                 const savedStats = charData.stats || {}
-
                                 const mergedStats = {
                                     ...baseStats,
                                     ...savedStats,
-                                    // Ensure Vitals are merged deeply if they exist in both
-                                    vitals: {
-                                        ...(baseStats.vitals || {}),
-                                        ...(savedStats.vitals || {})
-                                    },
-                                    // Ensure Attributes/Abilities are merged deeply
-                                    attributes: {
-                                        ...(baseStats.attributes || {}),
-                                        ...(savedStats.attributes || {})
-                                    },
-                                    abilities: {
-                                        ...(baseStats.abilities || {}),
-                                        ...(savedStats.abilities || {})
-                                    }
+                                    vitals: { ...(baseStats.vitals || {}), ...(savedStats.vitals || {}) },
+                                    attributes: { ...(baseStats.attributes || {}), ...(savedStats.attributes || {}) },
+                                    abilities: { ...(baseStats.abilities || {}), ...(savedStats.abilities || {}) }
                                 }
-
                                 charData = {
                                     ...charData,
                                     stats: mergedStats,
-                                    // Persist Sheet Type if not set in Saved Data
                                     sheetType: charData.sheetType || myPlayer.sheetType || template.sheetType || 'STANDARD'
                                 }
-
-                                console.log("✅ [Resume] Merged with PreGen Template:", template.name)
                             } catch (e) { console.error("Template Parse Error", e) }
                         }
                     } else {
-                        // Fallback for non-PreGen characters
                         if (!charData.sheetType && myPlayer.sheetType) {
                             charData.sheetType = myPlayer.sheetType
                         }
                     }
 
-                    console.log("🔄 [Resume] Loaded Player Data:", {
-                        playerSheetType: myPlayer.sheetType,
-                        charDataSheetType: charData.sheetType,
-                        inventoryCount: charData.inventory?.length
-                    })
-
-                    // ✅ Load Persistent Inventory
                     setInventory(charData.inventory || [])
-
                     setCharacter({
                         name: charData.name || myPlayer.name || 'Adventurer',
                         hp: charData.hp || 20, maxHp: charData.maxHp || 20,
@@ -324,7 +301,6 @@ export default function PlayerControllerPage() {
                         // RnR System (Vitals)
                         if (statsUpdate.vitals) {
                             const oldVitals = oldStats.vitals || {}
-                            // ✅ Fix: Check both hp AND health for diff calculation
                             const oldHp = oldVitals.hp ?? oldVitals.health ?? 0
 
                             if (statsUpdate.vitals.hp !== undefined) {
@@ -338,18 +314,14 @@ export default function PlayerControllerPage() {
                                 changes.push(`WILL ${statsUpdate.vitals.willPower} (${statsUpdate.vitals.willPower - (oldVitals.willPower || 0) > 0 ? '+' : ''}${statsUpdate.vitals.willPower - (oldVitals.willPower || 0)})`)
                         }
 
-
                         if (changes.length > 0) handleLog({ id: `stats-${Date.now()}`, content: `📊 GM updated: ${changes.join(', ')}`, type: 'SYSTEM', senderName: 'GM', timestamp: new Date() })
 
-                        // ✅ SAFE DEEP MERGE: Prevent partial vitals update from wiping other fields
                         setCharacter((prev: any) => {
                             const newStats = { ...(prev.stats || {}) }
-
                             // 1. Merge Standard Props
                             Object.keys(statsUpdate).forEach(key => {
                                 if (key !== 'vitals') newStats[key] = statsUpdate[key]
                             })
-
                             // 2. Merge Vitals Deeply
                             if (statsUpdate.vitals) {
                                 newStats.vitals = {
@@ -357,14 +329,6 @@ export default function PlayerControllerPage() {
                                     ...statsUpdate.vitals
                                 }
                             }
-
-                            // Debug Log
-                            console.log("🔄 [Controller] Stats Updated:", {
-                                received: statsUpdate,
-                                prevStats: prev.stats,
-                                newStats: newStats
-                            })
-
                             return { ...prev, stats: newStats }
                         })
 
@@ -386,7 +350,7 @@ export default function PlayerControllerPage() {
                 }
 
                 // General Logs
-                if (!['GM_MANAGE_INVENTORY', 'GM_UPDATE_SCENE', 'RNR_LIVE_UPDATE', 'rnr_roll', 'dice_roll', 'WHISPER', 'STATS_UPDATE'].includes(action.actionType)) {
+                if (!['GM_MANAGE_INVENTORY', 'GM_UPDATE_SCENE', 'RNR_LIVE_UPDATE', 'rnr_roll', 'dice_roll', 'WHISPER', 'STATS_UPDATE', 'PLAY_AUDIO', 'STOP_BGM'].includes(action.actionType)) {
                     const isPrivate = action.isPrivate || action.payload?.isPrivate
                     if (isPrivate && action.actorId !== playerId) return
                     handleLog({ id: `${Date.now()}-${action.actionType}`, content: isPrivate ? `🔒 (Private) ${action.description}` : (action.description || `${action.actorName} used ${action.actionType}`), type: 'ACTION', senderName: action.actorName, timestamp: new Date() })
@@ -438,14 +402,12 @@ export default function PlayerControllerPage() {
     const handleRnRComplete = async (totalScore: number, steps: any[], willUsed: number) => {
         setIsRnRRolling(false)
         if (willUsed > 0 && character?.stats) {
-            // ✅ Fix: Support WillPower inside Vitals (RnR) or Top-level (Standard)
             const currentWill = character.stats.vitals?.willPower ?? character.stats.willPower ?? 0
             const newWill = Math.max(0, currentWill - willUsed)
 
             let statsUpdate = {}
 
             if (character.stats.vitals?.willPower !== undefined) {
-                // Update Vitals
                 const newVitals = { ...character.stats.vitals, willPower: newWill }
                 statsUpdate = { vitals: newVitals }
                 setCharacter((prev: any) => ({
@@ -456,7 +418,6 @@ export default function PlayerControllerPage() {
                     }
                 }))
             } else {
-                // Update Standard
                 statsUpdate = { willPower: newWill }
                 setCharacter((prev: any) => ({ ...prev, stats: { ...prev.stats, willPower: newWill } }))
             }
@@ -504,8 +465,9 @@ export default function PlayerControllerPage() {
     const activeMp = isRnR ? (character?.stats?.vitals?.mental || 0) : (character?.stats?.mp || character?.mp || 0)
     const activeMaxMp = isRnR ? (character?.stats?.vitals?.maxMental || 10) : (character?.stats?.maxMp || character?.maxMp || 10)
 
-    const hpPercent = Math.min(100, Math.max(0, (activeHp / activeMaxHp) * 100))
-    const mpPercent = Math.min(100, Math.max(0, (activeMp / activeMaxMp) * 100))
+    // ✅ 3. สร้างรูป User จาก ID
+    const userImage = `https://api.dicebear.com/7.x/adventurer/svg?seed=${playerId}`
+
     return (
         <LiveKitRoom
             token={voiceToken}
@@ -518,26 +480,42 @@ export default function PlayerControllerPage() {
         >
             <div className="h-[100dvh] bg-slate-950 text-white flex flex-col font-sans overflow-hidden">
 
-                {/* 1. HEADER */}
+                {/* ✅ 4. ใส่ Audio Manager และ Settings Modal ไว้ที่นี่ */}
+                <AudioManager roomCode={joinCode} />
+                <SettingsModal
+                    isOpen={isSettingsOpen}
+                    onClose={() => setIsSettingsOpen(false)}
+                    playerData={{
+                        name: playerName || 'Player', // ชื่อ user
+                        role: 'PLAYER',
+                        image: userImage // รูป user
+                    }}
+                />
+
+                {/* 1. HEADER (แก้ UI ให้มีปุ่ม Profile) */}
                 <div className="bg-slate-900 border-b border-amber-500/30 flex flex-col gap-2 p-2 shrink-0 z-30 shadow-lg relative">
                     <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                            <div className="w-10 h-10 rounded-full border-2 border-amber-500 bg-slate-800 overflow-hidden relative">
-                                {character && (
-                                    <Image
-                                        src={character.avatarUrl || '/placeholder.jpg'}
-                                        alt={character.name}
-                                        fill
-                                        className="object-cover"
-                                        sizes="40px"
-                                    />
-                                )}
+
+                        {/* ✅ Profile Button (Unified) */}
+                        <button
+                            onClick={() => setIsSettingsOpen(true)}
+                            className="flex items-center gap-2 text-left group"
+                        >
+                            <div className="w-10 h-10 rounded-full border-2 border-amber-500 bg-slate-800 overflow-hidden relative group-hover:shadow-[0_0_10px_rgba(245,158,11,0.5)] transition-all">
+                                <img
+                                    src={userImage} // ✅ รูปจาก User ID
+                                    alt="Profile"
+                                    className="w-full h-full object-cover"
+                                />
                             </div>
                             <div>
                                 <div className="font-bold text-amber-500 text-sm">{character?.name || 'Loading...'}</div>
-                                <div className="text-[10px] text-slate-400 bg-slate-800 px-1.5 py-0.5 rounded inline-block">{playerName || 'Player'}</div>
+                                <div className="text-[10px] text-slate-400 bg-slate-800 px-1.5 py-0.5 rounded inline-block group-hover:text-white transition-colors">
+                                    {playerName || 'Player'} {/* ✅ ชื่อ User */}
+                                </div>
                             </div>
-                        </div>
+                        </button>
+
                         {/* HP/MP Bars REMOVED as requested */}
                     </div>
                 </div>

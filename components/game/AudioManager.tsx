@@ -4,7 +4,12 @@ import { useEffect, useRef, useState } from 'react'
 import { Howl, Howler } from 'howler'
 import { useGameSocket } from '@/hooks/useGameSocket'
 
-export default function AudioManager({ roomCode }: { roomCode: string }) {
+interface AudioManagerProps {
+    roomCode: string
+    onTrackChange?: (trackName: string | null) => void
+}
+
+export default function AudioManager({ roomCode, onTrackChange }: AudioManagerProps) {
     const { onPlayerAction } = useGameSocket(roomCode)
     const bgmRef = useRef<Howl | null>(null)
     const [settings, setSettings] = useState({ master: 1.0, bgm: 0.8, sfx: 1.0 })
@@ -49,7 +54,7 @@ export default function AudioManager({ roomCode }: { roomCode: string }) {
     useEffect(() => {
         onPlayerAction((action: any) => {
             if (action.actionType === 'PLAY_AUDIO') {
-                const { url, type, loop } = action.payload
+                const { url, type, loop, name } = action.payload
 
                 if (type === 'BGM') {
                     // หยุดเพลงเก่าก่อน
@@ -71,6 +76,7 @@ export default function AudioManager({ roomCode }: { roomCode: string }) {
                     })
                     sound.play()
                     bgmRef.current = sound
+                    if (onTrackChange) onTrackChange(name || 'Unknown Track')
                 } else if (type === 'SFX') {
                     // SFX เล่นซ้อนกันได้เลย ไม่ต้องหยุดอันเก่า
                     const sound = new Howl({
@@ -86,6 +92,7 @@ export default function AudioManager({ roomCode }: { roomCode: string }) {
                     setTimeout(() => oldSound.stop(), 2000)
                     bgmRef.current = null
                 }
+                if (onTrackChange) onTrackChange(null)
             }
         })
     }, [onPlayerAction, settings])

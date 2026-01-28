@@ -32,6 +32,7 @@ export default function CampaignBoardPage() {
     const [campaignNpcs, setCampaignNpcs] = useState<any[]>([])
     // ✅ เพิ่ม State สำหรับ Audio
     const [audioTracks, setAudioTracks] = useState<any[]>([])
+    const [currentTrack, setCurrentTrack] = useState<string | null>(null)
 
     const [customScenes, setCustomScenes] = useState<any[]>([])
     const [customNpcs, setCustomNpcs] = useState<any[]>([])
@@ -168,7 +169,7 @@ export default function CampaignBoardPage() {
     const playAudio = (track: any, loop: boolean = false) => {
         sendPlayerAction({
             actionType: 'PLAY_AUDIO',
-            payload: { url: track.url, type: track.type, loop },
+            payload: { url: track.url, type: track.type, loop, name: track.name },
             actorName: 'GM'
         } as any)
     }
@@ -676,7 +677,7 @@ export default function CampaignBoardPage() {
         <div className="flex h-screen bg-[#0f172a] text-slate-200 overflow-hidden font-sans relative">
 
             {/* ✅ Audio Manager & Modal */}
-            <AudioManager roomCode={joinCode} />
+            <AudioManager roomCode={joinCode} onTrackChange={(track) => setCurrentTrack(track)} />
             <SettingsModal
                 isOpen={isSettingsOpen}
                 onClose={() => setIsSettingsOpen(false)}
@@ -798,6 +799,40 @@ export default function CampaignBoardPage() {
 
                     {/* Tab Content */}
                     <div className="flex-1 min-h-0 p-3 overflow-y-auto custom-scrollbar">
+                        {activeTab === 'AUDIO' && (
+                            <div className="space-y-4">
+                                {currentTrack && (
+                                    <div className="bg-slate-800 p-3 rounded-lg border border-amber-500/50 shadow-lg animate-pulse flex items-center gap-3">
+                                        <div className="w-8 h-8 flex items-center justify-center bg-amber-500 text-black rounded-full animate-spin-slow">🎵</div>
+                                        <div className="flex-1 min-w-0">
+                                            <div className="text-[10px] text-amber-500 font-bold uppercase tracking-wider">Now Playing</div>
+                                            <div className="text-sm text-white font-medium truncate">{currentTrack}</div>
+                                        </div>
+                                    </div>
+                                )}
+                                <div className="space-y-2">
+                                    <div className="flex justify-between items-center text-xs font-bold text-slate-500 uppercase">
+                                        <span>Playlist ({audioTracks.length})</span>
+                                        <button onClick={stopBgm} className="text-red-500 hover:text-red-400">Stop Music</button>
+                                    </div>
+                                    {audioTracks.map((track, idx) => (
+                                        <div key={idx} onClick={() => playAudio(track, true)} className="flex items-center gap-3 p-3 bg-slate-800 hover:bg-slate-700 rounded-lg cursor-pointer transition-colors group">
+                                            <div className="w-8 h-8 flex items-center justify-center bg-slate-700 group-hover:bg-slate-600 rounded text-lg">
+                                                {track.type === 'SFX' ? '🔊' : '🎵'}
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <div className="text-sm font-medium text-slate-200 group-hover:text-amber-500 truncate">{track.name}</div>
+                                                <div className="text-[10px] text-slate-500">{track.type}</div>
+                                            </div>
+                                            <div className="w-6 h-6 flex items-center justify-center opacity-0 group-hover:opacity-100 text-amber-500">▶</div>
+                                        </div>
+                                    ))}
+                                    {audioTracks.length === 0 && (
+                                        <div className="text-center text-slate-500 py-8 text-xs">No audio tracks found</div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
                         {activeTab === 'PARTY' && (
                             <EnhancedPartyStatus
                                 players={partyPlayers}

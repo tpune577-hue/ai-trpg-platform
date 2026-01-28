@@ -32,6 +32,7 @@ export default function CampaignBoardPage() {
     const [campaignNpcs, setCampaignNpcs] = useState<any[]>([])
     // ✅ เพิ่ม State สำหรับ Audio
     const [audioTracks, setAudioTracks] = useState<any[]>([])
+    const [currentTrack, setCurrentTrack] = useState<string | null>(null) // ✅ เพิ่ม State นี้เพื่อแก้ Error
 
     const [customScenes, setCustomScenes] = useState<any[]>([])
     const [customNpcs, setCustomNpcs] = useState<any[]>([])
@@ -166,14 +167,16 @@ export default function CampaignBoardPage() {
 
     // --- 🔊 AUDIO FUNCTIONS ---
     const playAudio = (track: any, loop: boolean = false) => {
+        if (loop) setCurrentTrack(track.name)
         sendPlayerAction({
             actionType: 'PLAY_AUDIO',
-            payload: { url: track.url, type: track.type, loop },
+            payload: { url: track.url, type: track.type, loop, name: track.name }, // Send name too
             actorName: 'GM'
         } as any)
     }
 
     const stopBgm = () => {
+        setCurrentTrack(null)
         sendPlayerAction({ actionType: 'STOP_BGM', actorName: 'GM' } as any)
     }
 
@@ -271,6 +274,14 @@ export default function CampaignBoardPage() {
 
             if (action.actionType === 'RNR_LIVE_UPDATE') {
                 setShowingDiceResult(action)
+            }
+
+            // ✅ Listen for Audio Events to update UI
+            if (action.actionType === 'PLAY_AUDIO') {
+                if (action.payload?.loop) setCurrentTrack(action.payload.name)
+            }
+            if (action.actionType === 'STOP_BGM') {
+                setCurrentTrack(null)
             }
 
             if (action.actionType === 'rnr_roll' || action.actionType === 'dice_roll') {
@@ -878,7 +889,8 @@ export default function CampaignBoardPage() {
                                 })}
                             </div>
                         )}
-                        {/* ✅ AUDIO TAB CONTENT */}
+
+                        {/* ✅ AUDIO TAB CONTENT (UPDATED & SEPARATED) */}
                         {activeTab === 'AUDIO' && (
                             <div className="space-y-4 p-1">
                                 {/* 1. Now Playing Banner (โชว์เมื่อมีเพลงเล่นอยู่) */}
@@ -947,6 +959,7 @@ export default function CampaignBoardPage() {
                                 </div>
                             </div>
                         )}
+
                         {activeTab === 'NOTE' && (
                             <div className="space-y-4">
                                 <textarea value={gmNotes} onChange={e => setGmNotes(e.target.value)} className="w-full h-40 bg-slate-950 border-slate-700 rounded p-2 text-xs text-slate-300" placeholder="Notes..." />

@@ -27,12 +27,22 @@ export default function AudioManager({ roomCode }: { roomCode: string }) {
                 const parsed = JSON.parse(saved)
                 setSettings(parsed)
                 Howler.volume(parsed.master)
-                if (bgmRef.current) bgmRef.current.volume(parsed.bgm)
+                if (bgmRef.current) {
+                    // Update volume immediately, overwriting any active fades if necessary for responsiveness
+                    bgmRef.current.volume(parsed.bgm)
+                }
             }
         }
 
+        // Listen for internal event (same tab)
         window.addEventListener('audio-settings-changed', handleStorageChange)
-        return () => window.removeEventListener('audio-settings-changed', handleStorageChange)
+        // Listen for storage event (cross-tab)
+        window.addEventListener('storage', handleStorageChange)
+
+        return () => {
+            window.removeEventListener('audio-settings-changed', handleStorageChange)
+            window.removeEventListener('storage', handleStorageChange)
+        }
     }, [])
 
     // ฟังคำสั่งจาก Socket
@@ -44,8 +54,9 @@ export default function AudioManager({ roomCode }: { roomCode: string }) {
                 if (type === 'BGM') {
                     // หยุดเพลงเก่าก่อน
                     if (bgmRef.current) {
-                        bgmRef.current.fade(bgmRef.current.volume(), 0, 1000) // Fade out
-                        setTimeout(() => bgmRef.current?.stop(), 1000)
+                        const oldSound = bgmRef.current // Capture ref for closure
+                        oldSound.fade(oldSound.volume(), 0, 1000) // Fade out
+                        setTimeout(() => oldSound.stop(), 1000)
                     }
 
                     // เล่นเพลงใหม่
@@ -70,8 +81,10 @@ export default function AudioManager({ roomCode }: { roomCode: string }) {
                 }
             } else if (action.actionType === 'STOP_BGM') {
                 if (bgmRef.current) {
-                    bgmRef.current.fade(bgmRef.current.volume(), 0, 2000)
-                    setTimeout(() => bgmRef.current?.stop(), 2000)
+                    const oldSound = bgmRef.current // Capture ref
+                    oldSound.fade(oldSound.volume(), 0, 2000)
+                    setTimeout(() => oldSound.stop(), 2000)
+                    bgmRef.current = null
                 }
             }
         })

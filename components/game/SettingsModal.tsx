@@ -2,7 +2,19 @@
 
 import { useState, useEffect } from 'react'
 
-export default function SettingsModal({ isOpen, onClose }: any) {
+// ✅ 1. สร้าง Interface เพื่อระบุประเภทข้อมูล
+interface VolumeSliderProps {
+    label: string
+    value: number
+    onChange: (value: number) => void
+}
+
+interface SettingsModalProps {
+    isOpen: boolean
+    onClose: () => void
+}
+
+export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     const [volumes, setVolumes] = useState({ master: 1.0, bgm: 0.8, sfx: 1.0 })
 
     useEffect(() => {
@@ -15,7 +27,9 @@ export default function SettingsModal({ isOpen, onClose }: any) {
         setVolumes(newVol)
         localStorage.setItem('rnr_audio_settings', JSON.stringify(newVol))
         // Dispatch event บอก AudioManager ให้ปรับเสียงทันที
-        window.dispatchEvent(new Event('audio-settings-changed'))
+        if (typeof window !== 'undefined') {
+            window.dispatchEvent(new Event('audio-settings-changed'))
+        }
     }
 
     if (!isOpen) return null
@@ -27,6 +41,7 @@ export default function SettingsModal({ isOpen, onClose }: any) {
                 <h2 className="text-xl font-bold text-white mb-6">Settings</h2>
 
                 <div className="space-y-6">
+                    {/* ✅ ตอนนี้ TypeScript จะรู้แล้วว่า v คือ number */}
                     <VolumeSlider label="Master Volume" value={volumes.master} onChange={(v) => handleChange('master', v)} />
                     <VolumeSlider label="Music (BGM)" value={volumes.bgm} onChange={(v) => handleChange('bgm', v)} />
                     <VolumeSlider label="Sound Effects (SFX)" value={volumes.sfx} onChange={(v) => handleChange('sfx', v)} />
@@ -36,7 +51,8 @@ export default function SettingsModal({ isOpen, onClose }: any) {
     )
 }
 
-function VolumeSlider({ label, value, onChange }: any) {
+// ✅ 2. ระบุ Type ให้ Component นี้
+function VolumeSlider({ label, value, onChange }: VolumeSliderProps) {
     return (
         <div>
             <div className="flex justify-between text-xs font-bold text-slate-400 mb-2">

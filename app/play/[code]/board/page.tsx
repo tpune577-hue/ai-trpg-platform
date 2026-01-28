@@ -381,6 +381,15 @@ export default function CampaignBoardPage() {
                     }
                 }
 
+                if (action.actionType === 'PLAY_AUDIO') {
+                    const { name, type } = action.payload
+                    if (type === 'BGM') setCurrentTrack(name || 'Unknown Track')
+                    // Not adding log for play audio to avoid clutter, or maybe add if needed?
+                }
+                if (action.actionType === 'STOP_BGM') {
+                    setCurrentTrack(null)
+                }
+
                 if (!['RNR_LIVE_UPDATE', 'rnr_roll', 'dice_roll', 'WHISPER', 'PLAY_AUDIO', 'STOP_BGM'].includes(action.actionType)) {
                     setLogs((prev) => [...prev, {
                         id: Date.now().toString(), content,
@@ -677,7 +686,7 @@ export default function CampaignBoardPage() {
         <div className="flex h-screen bg-[#0f172a] text-slate-200 overflow-hidden font-sans relative">
 
             {/* ✅ Audio Manager & Modal */}
-            <AudioManager roomCode={joinCode} onTrackChange={(track) => setCurrentTrack(track)} />
+            <AudioManager roomCode={joinCode} />
             <SettingsModal
                 isOpen={isSettingsOpen}
                 onClose={() => setIsSettingsOpen(false)}

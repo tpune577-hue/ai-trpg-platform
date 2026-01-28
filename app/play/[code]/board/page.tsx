@@ -746,9 +746,10 @@ export default function CampaignBoardPage() {
                 {/* RIGHT: Sidebar */}
                 <div className={`fixed inset-y-0 right-0 z-40 w-96 bg-slate-900 border-l border-slate-700 shadow-2xl transform transition-transform duration-300 pt-14 ${isSidebarOpen ? 'translate-x-0' : 'translate-x-full'} lg:relative lg:translate-x-0 lg:flex lg:pt-0 lg:w-96 lg:shadow-none flex flex-col h-full overflow-hidden`}>
                     {/* แก้ไขตรงนี้ */}
-                    <div className="flex border-b border-slate-800 overflow-x-auto no-scrollbar bg-slate-900/50 backdrop-blur-sm sticky top-0 z-10">
-                        {/* เพิ่ม padding-x และ gap นิดหน่อยเพื่อให้ดูไม่อึดอัด */}
-                        <div className="flex min-w-full px-2">
+                    <div className="relative z-10 bg-slate-900 shadow-md">
+                        {/* Container หลักที่กำหนด Scroll */}
+                        <div className="flex overflow-x-auto no-scrollbar border-b border-slate-800">
+                            {/* ใช้ map สร้างปุ่ม */}
                             {['PARTY', 'SCENE', 'NPC', 'AUDIO', 'NOTE', 'STORY'].map(tab => (
                                 <TabButton
                                     key={tab}
@@ -757,7 +758,12 @@ export default function CampaignBoardPage() {
                                     label={tab}
                                 />
                             ))}
+                            {/* ดันพื้นที่ว่างด้านขวานิดนึงเผื่อปุ่มสุดท้ายชิดขอบเกินไป */}
+                            <div className="w-4 shrink-0" />
                         </div>
+
+                        {/* ✨ Fade Effect ด้านขวา (ทำให้รู้ว่ามีเมนูต่อ) */}
+                        <div className="absolute top-0 right-0 h-full w-12 bg-gradient-to-l from-slate-900 to-transparent pointer-events-none" />
                     </div>
 
                     {/* Tab Content */}

@@ -117,26 +117,17 @@ body {
   box-shadow: 0 0 20px rgba(239, 68, 68, 0.3);
 }
 
-/* app/globals.css */
 @layer utilities {
-  .custom-scrollbar::-webkit-scrollbar {
-    height: 4px;
-    /* ความสูงของ scrollbar แนวนอน */
+
+  /* ซ่อน Scrollbar (แต่ยังเลื่อนได้) */
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
   }
 
-  .custom-scrollbar::-webkit-scrollbar-track {
-    background: #0f172a;
-    /* สีพื้นหลังรางเลื่อน (slate-950) */
-  }
-
-  .custom-scrollbar::-webkit-scrollbar-thumb {
-    background: #334155;
-    /* สีตัวเลื่อน (slate-700) */
-    border-radius: 4px;
-  }
-
-  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-    background: #f59e0b;
-    /* สีเมื่อเอาเมาส์ชี้ (amber-500) */
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    /* IE and Edge */
+    scrollbar-width: none;
+    /* Firefox */
   }
 }

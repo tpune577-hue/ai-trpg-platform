@@ -670,35 +670,76 @@ export default function CampaignBoardPage() {
 
     const currentSceneUrl = gameState?.sceneImageUrl || '/placeholder.jpg'
 
-    return (
-        <div className="flex h-screen bg-[#0f172a] text-slate-200 overflow-hidden font-sans relative">
+    // ... (imports และ code ส่วนอื่นเหมือนเดิม)
 
-            {/* ✅ Audio Manager & Modal */}
+    // เพิ่มตัวแปรเพื่อดึงชื่อ GM (ใส่ไว้ก่อน return)
+    const myName = dbPlayers.find(p => p.id === myIdentity)?.name || 'Game Master'
+
+    return (
+        <div className="...">
+
             <AudioManager roomCode={joinCode} />
-            <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
+
+            {/* ✅ ส่งข้อมูล Profile ไปให้ Modal */}
+            <SettingsModal
+                isOpen={isSettingsOpen}
+                onClose={() => setIsSettingsOpen(false)}
+                playerData={{
+                    name: myName,
+                    role: 'GM',
+                    image: `https://api.dicebear.com/7.x/adventurer/svg?seed=${myIdentity}`
+                }}
+            />
 
             {/* HEADER */}
             <div className="absolute top-0 w-full h-14 bg-slate-900/90 border-b border-slate-700 flex justify-between items-center px-4 z-50 backdrop-blur-md shadow-lg">
-                <h1 className="text-amber-500 font-bold tracking-widest text-sm md:text-lg uppercase">
-                    GM Dashboard ({campaignSystem})
-                    {isLoadingAssets && <span className="ml-2 text-xs text-slate-500 animate-pulse">(Loading Assets...)</span>}
-                </h1>
-                <div className="flex items-center gap-2">
-                    <button onClick={handlePauseGame} className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1 rounded text-xs border border-slate-600">⏸ Pause</button>
-                    <button onClick={handleEndSession} className="bg-red-900/50 hover:bg-red-600 text-red-200 px-3 py-1 rounded text-xs border border-red-800">🛑 END</button>
 
-                    {/* ✅ Profile Button */}
+                {/* LOGO / TITLE */}
+                <h1 className="text-amber-500 font-bold tracking-widest text-sm md:text-lg uppercase flex items-center gap-2">
+                    <span>GM Dashboard</span>
+                    {isLoadingAssets && <span className="text-[10px] text-slate-500 animate-pulse hidden md:inline">(Loading...)</span>}
+                </h1>
+
+                {/* RIGHT CONTROLS (เหลือปุ่มเดียวที่รวมทุกอย่าง) */}
+                <div className="flex items-center gap-3">
+
+                    {/* ปุ่มควบคุมเกม (Pause/End) แยกไว้เหมือนเดิมเพราะสำคัญ */}
+                    <div className="hidden md:flex gap-1 mr-2">
+                        <button onClick={handlePauseGame} className="w-8 h-8 flex items-center justify-center bg-slate-800 hover:bg-slate-700 text-slate-400 rounded-full transition-colors" title="Pause Game">⏸</button>
+                        <button onClick={handleEndSession} className="w-8 h-8 flex items-center justify-center bg-red-900/20 hover:bg-red-900/50 text-red-500 rounded-full transition-colors" title="End Session">🛑</button>
+                    </div>
+
+                    {/* ✅ The Unified Profile Button */}
                     <button
                         onClick={() => setIsSettingsOpen(true)}
-                        className="w-8 h-8 rounded-full bg-slate-700 border border-slate-500 overflow-hidden hover:border-amber-500 transition-all ml-2"
-                        title="Audio Settings"
+                        className="flex items-center gap-3 pl-1 pr-1 py-1 rounded-full hover:bg-slate-800 transition-all group border border-transparent hover:border-slate-700"
                     >
-                        <img src={`https://api.dicebear.com/7.x/adventurer/svg?seed=${myIdentity}`} alt="Profile" className="w-full h-full object-cover" />
+                        {/* ชื่อ (โชว์เฉพาะจอใหญ่) */}
+                        <div className="text-right hidden md:block">
+                            <div className="text-xs font-bold text-slate-200 group-hover:text-amber-500 transition-colors">{myName}</div>
+                            <div className="text-[9px] text-slate-500 font-bold">GAME MASTER</div>
+                        </div>
+
+                        {/* รูปโปรไฟล์ */}
+                        <div className="w-9 h-9 rounded-full bg-slate-700 border-2 border-slate-600 group-hover:border-amber-500 overflow-hidden shadow-sm transition-all relative">
+                            <img
+                                src={`https://api.dicebear.com/7.x/adventurer/svg?seed=${myIdentity}`}
+                                alt="Profile"
+                                className="w-full h-full object-cover"
+                            />
+                            {/* จุดเขียวบอกว่า Online */}
+                            <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 border-2 border-slate-900 rounded-full"></div>
+                        </div>
                     </button>
 
-                    <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="lg:hidden p-2 text-slate-300 border border-slate-700 rounded bg-slate-800 ml-2">{isSidebarOpen ? '✖' : '☰'}</button>
+                    {/* Mobile Menu Button */}
+                    <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="lg:hidden p-2 text-slate-300">
+                        {isSidebarOpen ? '✖' : '☰'}
+                    </button>
                 </div>
             </div>
+
+            {/* ... (Content ส่วนอื่นเหมือนเดิม) ... */}
 
             {/* CONTENT */}
             <div className="flex flex-1 pt-14 pb-24 md:pb-32 h-full w-full relative">

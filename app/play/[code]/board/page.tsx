@@ -20,6 +20,8 @@ import SettingsModal from '@/components/game/SettingsModal'
 
 // Utils
 import { rollD4RnR } from '@/lib/rnr-dice'
+// ✅ Import Howler เพื่อใช้ในการ Resume Audio Context
+import { Howler } from 'howler'
 
 export default function CampaignBoardPage() {
     const params = useParams()
@@ -32,7 +34,7 @@ export default function CampaignBoardPage() {
     const [campaignNpcs, setCampaignNpcs] = useState<any[]>([])
     // ✅ เพิ่ม State สำหรับ Audio
     const [audioTracks, setAudioTracks] = useState<any[]>([])
-    const [currentTrack, setCurrentTrack] = useState<string | null>(null) // ✅ เพิ่ม State นี้เพื่อแก้ Error
+    const [currentTrack, setCurrentTrack] = useState<string | null>(null)
 
     const [customScenes, setCustomScenes] = useState<any[]>([])
     const [customNpcs, setCustomNpcs] = useState<any[]>([])
@@ -149,7 +151,8 @@ export default function CampaignBoardPage() {
     const {
         onGameStateUpdate, onChatMessage, onPlayerAction, onDiceResult,
         requestRoll, sendPlayerAction,
-        setPrivateScene, sendWhisper, onWhisperReceived, giveItem
+        setPrivateScene, sendWhisper, onWhisperReceived, giveItem,
+        isConnected // ✅ รับค่านี้มาเพื่อใช้ Disable ปุ่มตอนเน็ตหลุด
     } = useGameSocket(joinCode, {
         sessionToken: 'DEMO_GM_TOKEN',
         autoConnect: true
@@ -166,11 +169,20 @@ export default function CampaignBoardPage() {
     }
 
     // --- 🔊 AUDIO FUNCTIONS ---
-    const playAudio = (track: any, loop: boolean = false) => {
+    const playAudio = async (track: any, loop: boolean = false) => {
+        // ✅ 1. บังคับ Unlock Audio ทันทีที่กดปุ่ม (User Gesture)
+        if (Howler.ctx && Howler.ctx.state === 'suspended') {
+            await Howler.ctx.resume()
+            console.log("🔊 Manually Resumed AudioContext via Button Click")
+        }
+
+        // 2. อัปเดต UI
         if (loop) setCurrentTrack(track.name)
+
+        // 3. ส่งคำสั่งไป Socket
         sendPlayerAction({
             actionType: 'PLAY_AUDIO',
-            payload: { url: track.url, type: track.type, loop, name: track.name }, // Send name too
+            payload: { url: track.url, type: track.type, loop, name: track.name },
             actorName: 'GM'
         } as any)
     }
@@ -679,7 +691,7 @@ export default function CampaignBoardPage() {
         )
     }
 
-    const currentSceneUrl = gameState?.sceneImageUrl || '/placeholder.jpg'
+    const currentSceneUrl = gameState?.sceneImageUrl || 'https://placehold.co/600x400/1e293b/cbd5e1?text=No+Image'
     // ✅ ดึงชื่อของเรา (ถ้าเป็น GM หรือ Player)
     const myName = dbPlayers.find(p => p.id === myIdentity)?.name || 'Game Master'
 
@@ -841,7 +853,7 @@ export default function CampaignBoardPage() {
                                         className={`aspect-video bg-black rounded border-2 cursor-pointer relative group ${gameState.sceneImageUrl === s.imageUrl ? 'border-amber-500' : (s.isCustom ? 'border-green-600/50 hover:border-green-400' : 'border-slate-700 hover:border-slate-500')}`}
                                     >
                                         <Image
-                                            src={s.imageUrl || '/placeholder.jpg'}
+                                            src={s.imageUrl || 'https://placehold.co/600x400/1e293b/cbd5e1?text=No+Image'}
                                             alt={s.name}
                                             fill
                                             className="object-cover opacity-70 group-hover:opacity-100 transition-opacity"
@@ -874,7 +886,7 @@ export default function CampaignBoardPage() {
                                         >
                                             <div className="relative w-8 h-8 rounded bg-black overflow-hidden flex-shrink-0">
                                                 <Image
-                                                    src={displayImage || '/placeholder.jpg'}
+                                                    src={displayImage || 'https://placehold.co/100x100/1e293b/cbd5e1?text=NPC'}
                                                     alt={npc.name}
                                                     fill
                                                     className="object-cover"
@@ -910,7 +922,8 @@ export default function CampaignBoardPage() {
                                         <h4 className="text-xs font-bold text-amber-500 uppercase">🎵 Background Music</h4>
                                         <button
                                             onClick={stopBgm}
-                                            className="text-[10px] bg-red-900/30 text-red-400 px-2 py-1 rounded border border-red-900/50 hover:bg-red-900/50 transition-colors"
+                                            disabled={!isConnected}
+                                            className="text-[10px] bg-red-900/30 text-red-400 px-2 py-1 rounded border border-red-900/50 hover:bg-red-900/50 transition-colors disabled:opacity-50"
                                         >
                                             ■ STOP
                                         </button>
@@ -928,9 +941,10 @@ export default function CampaignBoardPage() {
                                                 </div>
                                                 <button
                                                     onClick={() => playAudio(track, true)}
-                                                    className="text-[10px] bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1 rounded shadow-sm transition-all active:scale-95"
+                                                    disabled={!isConnected}
+                                                    className="text-[10px] bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1 rounded shadow-sm transition-all active:scale-95 disabled:bg-slate-700 disabled:cursor-not-allowed"
                                                 >
-                                                    Play Loop
+                                                    {isConnected ? 'Play Loop' : '...'}
                                                 </button>
                                             </div>
                                         ))}
@@ -948,7 +962,8 @@ export default function CampaignBoardPage() {
                                             <button
                                                 key={track.id}
                                                 onClick={() => playAudio(track, false)}
-                                                className="bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-emerald-500/50 p-2 rounded text-xs text-slate-300 text-left transition-all active:scale-95 truncate flex items-center gap-2"
+                                                disabled={!isConnected}
+                                                className="bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-emerald-500/50 p-2 rounded text-xs text-slate-300 text-left transition-all active:scale-95 truncate flex items-center gap-2 disabled:opacity-50"
                                                 title={track.name}
                                             >
                                                 <span>🔊</span>

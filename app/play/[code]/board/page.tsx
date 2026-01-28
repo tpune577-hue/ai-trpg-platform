@@ -669,47 +669,39 @@ export default function CampaignBoardPage() {
     }
 
     const currentSceneUrl = gameState?.sceneImageUrl || '/placeholder.jpg'
-
-    // ... (imports และ code ส่วนอื่นเหมือนเดิม)
-
-    // เพิ่มตัวแปรเพื่อดึงชื่อ GM (ใส่ไว้ก่อน return)
+    // ✅ ดึงชื่อของเรา (ถ้าเป็น GM หรือ Player)
     const myName = dbPlayers.find(p => p.id === myIdentity)?.name || 'Game Master'
 
     return (
-        <div className="...">
+        <div className="flex h-screen bg-[#0f172a] text-slate-200 overflow-hidden font-sans relative">
 
+            {/* ✅ Audio Manager & Modal */}
             <AudioManager roomCode={joinCode} />
-
-            {/* ✅ ส่งข้อมูล Profile ไปให้ Modal */}
             <SettingsModal
                 isOpen={isSettingsOpen}
                 onClose={() => setIsSettingsOpen(false)}
                 playerData={{
                     name: myName,
-                    role: 'GM',
+                    role: 'GM', // ในหน้านี้เป็น GM เสมอ
                     image: `https://api.dicebear.com/7.x/adventurer/svg?seed=${myIdentity}`
                 }}
             />
 
             {/* HEADER */}
             <div className="absolute top-0 w-full h-14 bg-slate-900/90 border-b border-slate-700 flex justify-between items-center px-4 z-50 backdrop-blur-md shadow-lg">
-
-                {/* LOGO / TITLE */}
                 <h1 className="text-amber-500 font-bold tracking-widest text-sm md:text-lg uppercase flex items-center gap-2">
                     <span>GM Dashboard</span>
                     {isLoadingAssets && <span className="text-[10px] text-slate-500 animate-pulse hidden md:inline">(Loading...)</span>}
                 </h1>
 
-                {/* RIGHT CONTROLS (เหลือปุ่มเดียวที่รวมทุกอย่าง) */}
                 <div className="flex items-center gap-3">
-
-                    {/* ปุ่มควบคุมเกม (Pause/End) แยกไว้เหมือนเดิมเพราะสำคัญ */}
+                    {/* System Controls (Pause/End) */}
                     <div className="hidden md:flex gap-1 mr-2">
-                        <button onClick={handlePauseGame} className="w-8 h-8 flex items-center justify-center bg-slate-800 hover:bg-slate-700 text-slate-400 rounded-full transition-colors" title="Pause Game">⏸</button>
-                        <button onClick={handleEndSession} className="w-8 h-8 flex items-center justify-center bg-red-900/20 hover:bg-red-900/50 text-red-500 rounded-full transition-colors" title="End Session">🛑</button>
+                        <button onClick={handlePauseGame} className="w-8 h-8 flex items-center justify-center bg-slate-800 hover:bg-slate-700 text-slate-400 rounded-full transition-colors border border-slate-700" title="Pause Game">⏸</button>
+                        <button onClick={handleEndSession} className="w-8 h-8 flex items-center justify-center bg-red-900/20 hover:bg-red-900/50 text-red-500 rounded-full transition-colors border border-red-900/50" title="End Session">🛑</button>
                     </div>
 
-                    {/* ✅ The Unified Profile Button */}
+                    {/* ✅ Unified Profile Button */}
                     <button
                         onClick={() => setIsSettingsOpen(true)}
                         className="flex items-center gap-3 pl-1 pr-1 py-1 rounded-full hover:bg-slate-800 transition-all group border border-transparent hover:border-slate-700"
@@ -733,13 +725,9 @@ export default function CampaignBoardPage() {
                     </button>
 
                     {/* Mobile Menu Button */}
-                    <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="lg:hidden p-2 text-slate-300">
-                        {isSidebarOpen ? '✖' : '☰'}
-                    </button>
+                    <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="lg:hidden p-2 text-slate-300 border border-slate-700 rounded bg-slate-800 ml-2">{isSidebarOpen ? '✖' : '☰'}</button>
                 </div>
             </div>
-
-            {/* ... (Content ส่วนอื่นเหมือนเดิม) ... */}
 
             {/* CONTENT */}
             <div className="flex flex-1 pt-14 pb-24 md:pb-32 h-full w-full relative">
@@ -786,7 +774,8 @@ export default function CampaignBoardPage() {
 
                 {/* RIGHT: Sidebar */}
                 <div className={`fixed inset-y-0 right-0 z-40 w-96 bg-slate-900 border-l border-slate-700 shadow-2xl transform transition-transform duration-300 pt-14 ${isSidebarOpen ? 'translate-x-0' : 'translate-x-full'} lg:relative lg:translate-x-0 lg:flex lg:pt-0 lg:w-96 lg:shadow-none flex flex-col h-full overflow-hidden`}>
-                    {/* แก้ไขตรงนี้ */}
+
+                    {/* ✅ TAB HEADER DESIGN */}
                     <div className="relative z-10 bg-slate-900 shadow-md">
                         {/* Container หลักที่กำหนด Scroll */}
                         <div className="flex overflow-x-auto no-scrollbar border-b border-slate-800">
@@ -1033,5 +1022,23 @@ export default function CampaignBoardPage() {
 }
 
 function TabButton({ active, onClick, label }: any) {
-    return <button onClick={onClick} className={`flex-1 min-w-[80px] py-3 text-xs font-bold uppercase tracking-wide transition-colors whitespace-nowrap px-2 ${active ? 'bg-slate-800 text-amber-500 border-b-2 border-amber-500' : 'text-slate-500 hover:text-slate-300'}`}>{label}</button>
+    return (
+        <button
+            onClick={onClick}
+            className={`
+                shrink-0 /* 👈 สำคัญ: ห้ามหดปุ่มเด็ดขาด */
+                relative px-5 py-3 text-xs font-bold uppercase tracking-wider 
+                transition-all duration-200 
+                whitespace-nowrap /* 👈 สำคัญ: ข้อความห้ามขึ้นบรรทัดใหม่ */
+                border-b-2 
+                hover:bg-slate-800
+                ${active
+                    ? 'text-amber-500 border-amber-500 bg-slate-800/50'
+                    : 'text-slate-500 border-transparent hover:text-slate-300'
+                }
+            `}
+        >
+            {label}
+        </button>
+    )
 }

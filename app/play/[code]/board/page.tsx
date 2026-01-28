@@ -745,11 +745,19 @@ export default function CampaignBoardPage() {
 
                 {/* RIGHT: Sidebar */}
                 <div className={`fixed inset-y-0 right-0 z-40 w-96 bg-slate-900 border-l border-slate-700 shadow-2xl transform transition-transform duration-300 pt-14 ${isSidebarOpen ? 'translate-x-0' : 'translate-x-full'} lg:relative lg:translate-x-0 lg:flex lg:pt-0 lg:w-96 lg:shadow-none flex flex-col h-full overflow-hidden`}>
-                    <div className="flex border-b border-slate-800 overflow-x-auto">
-                        {/* ✅ เพิ่ม AUDIO Tab */}
-                        {['PARTY', 'SCENE', 'NPC', 'AUDIO', 'NOTE', 'STORY'].map(tab => (
-                            <TabButton key={tab} active={activeTab === tab} onClick={() => setActiveTab(tab as any)} label={tab} />
-                        ))}
+                    {/* แก้ไขตรงนี้ */}
+                    <div className="flex border-b border-slate-800 overflow-x-auto no-scrollbar bg-slate-900/50 backdrop-blur-sm sticky top-0 z-10">
+                        {/* เพิ่ม padding-x และ gap นิดหน่อยเพื่อให้ดูไม่อึดอัด */}
+                        <div className="flex min-w-full px-2">
+                            {['PARTY', 'SCENE', 'NPC', 'AUDIO', 'NOTE', 'STORY'].map(tab => (
+                                <TabButton
+                                    key={tab}
+                                    active={activeTab === tab}
+                                    onClick={() => setActiveTab(tab as any)}
+                                    label={tab}
+                                />
+                            ))}
+                        </div>
                     </div>
 
                     {/* Tab Content */}

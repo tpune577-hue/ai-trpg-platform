@@ -1,17 +1,20 @@
 'use client'
 
 import { useEffect, useState, useRef, useCallback } from 'react'
-import { supabase } from '@/lib/supabaseClient' // ตรวจสอบให้แน่ใจว่า import ถูกต้อง
+import { supabase } from '@/lib/supabaseClient'
 import { PlayerActionData, GameStateUpdate, SocketChatMessage, UserProfile } from '@/types/socket'
-import { RealtimeChannel, RealtimePresenceState } from '@supabase/supabase-js'
+import { RealtimeChannel } from '@supabase/supabase-js'
 
 export const useGameSocket = (campaignId: string | null, options: any = {}) => {
     const [isConnected, setIsConnected] = useState(false)
     const [roomInfo, setRoomInfo] = useState<any>({ connectedPlayers: [] })
-    const [onlineUsers, setOnlineUsers] = useState<any[]>([]) // ✅ Track real-time online users
+    const [onlineUsers, setOnlineUsers] = useState<any[]>([])
     const channelRef = useRef<RealtimeChannel | null>(null)
 
-    // Event Refs เพื่อป้องกันปัญหา Closure
+    // ✅ เพิ่ม Ref สำหรับติดตามสถานะการเชื่อมต่อ (เพื่อใช้ใน broadcast ได้ทันที)
+    const isChannelConnectedRef = useRef(false)
+
+    // Event Refs
     const eventCallbacksRef = useRef({
         onPlayerAction: (action: PlayerActionData) => { },
         onGameStateUpdate: (state: GameStateUpdate) => { },
@@ -27,56 +30,47 @@ export const useGameSocket = (campaignId: string | null, options: any = {}) => {
     useEffect(() => {
         if (!campaignId || !supabase) return
 
-        // 1. สร้าง Channel ตามรหัส Campaign
         const channelName = `campaign-${campaignId}`
+
+        // Reset status เมื่อเริ่ม connect ใหม่
+        setIsConnected(false)
+        isChannelConnectedRef.current = false
+
         const channel = supabase.channel(channelName, {
             config: {
-                broadcast: { self: true }, // ให้ตัวเองได้รับ Event ที่ตัวเองส่งด้วย (เหมือน Pusher)
-                presence: { key: options.userId || 'anon' }, // ✅ Enable Presence
+                broadcast: { self: true },
+                presence: { key: options.userId || 'anon' },
             },
         })
 
-        // 2. รับสัญญาณ (Listen for Broadcast & Presence)
         channel
-            // ✅ Handle Presence Sync
             .on('presence', { event: 'sync' }, () => {
                 const state = channel.presenceState()
-                // Map presence state to array
                 const users = Object.keys(state).map(key => {
                     const data = state[key]?.[0] as any
                     return { userId: key, ...data }
                 })
                 setOnlineUsers(users)
-                // console.log('🟢 Online Users Sync:', users)
             })
             .on('broadcast', { event: 'game-event' }, ({ payload: data }) => {
                 console.log(`📡 Supabase Realtime Event [${data.actionType || data.type}]:`, data)
-
                 const currentUserId = options.userId || options.sessionToken
 
-                // --- Logic แยกตามประเภท Event (ยกมาจาก Pusher เดิม) ---
+                // ... (Logic การจัดการ Event ทั้งหมดเหมือนเดิม) ...
 
-                // 1. Game State Update
                 if (data.actionType === 'GM_UPDATE_SCENE' || data.gameState) {
                     eventCallbacksRef.current.onGameStateUpdate(data.gameState || data.payload)
                 }
-
-                // 2. Roll Request
                 if (data.actionType === 'GM_REQUEST_ROLL') {
                     if (!data.targetPlayerId || data.targetPlayerId === currentUserId) {
                         eventCallbacksRef.current.onRollRequested(data.payload)
                     }
                 }
-
-                // 3. Dice Result
                 if (data.actionType === 'dice_roll' || data.actionType === 'rnr_roll') {
                     eventCallbacksRef.current.onDiceResult(data)
                 }
-
-                // 4. Player Actions & Join Logic
                 if (['move', 'attack', 'talk', 'inspect', 'custom', 'JOIN_GAME', 'GM_MANAGE_INVENTORY'].includes(data.actionType)) {
                     eventCallbacksRef.current.onPlayerAction(data)
-
                     if (data.actionType === 'JOIN_GAME' && data.characterData) {
                         setRoomInfo((prev: any) => {
                             const existing = prev?.connectedPlayers || []
@@ -95,8 +89,6 @@ export const useGameSocket = (campaignId: string | null, options: any = {}) => {
                         })
                     }
                 }
-
-                // 5. Whisper
                 if (data.type === 'WHISPER' || data.actionType === 'WHISPER') {
                     if (!data.targetPlayerId || data.targetPlayerId === currentUserId || currentUserId === 'DEMO_GM_TOKEN') {
                         eventCallbacksRef.current.onWhisperReceived({
@@ -105,39 +97,37 @@ export const useGameSocket = (campaignId: string | null, options: any = {}) => {
                         })
                     }
                 }
-
-                // 6. Private Scene Update
                 if (data.type === 'PRIVATE_SCENE_UPDATE') {
                     if (!data.targetPlayerId || data.targetPlayerId === currentUserId) {
                         eventCallbacksRef.current.onPrivateSceneUpdate({ sceneId: data.payload?.sceneId })
                     }
                 }
-
-                // 7. Announce
                 if (data.type === 'ANNOUNCE' || data.actionType === 'ANNOUNCE') {
                     eventCallbacksRef.current.onAnnounce({
                         message: data.message || data.payload?.message || ''
                     })
                 }
-
-                // 8. Catch-all for other actions
                 const handledActions = ['GM_UPDATE_SCENE', 'GM_REQUEST_ROLL', 'dice_roll', 'rnr_roll', 'chat', 'whisper', 'WHISPER', 'PRIVATE_SCENE_UPDATE', 'ANNOUNCE', 'GM_MANAGE_INVENTORY', 'JOIN_GAME']
                 if (!handledActions.includes(data.actionType)) {
                     eventCallbacksRef.current.onPlayerAction(data)
                 }
             })
             .subscribe(async (status) => {
+                // ✅ อัปเดตสถานะการเชื่อมต่อเมื่อ Subscribe สำเร็จ
                 if (status === 'SUBSCRIBED') {
                     console.log(`🔌 Supabase Realtime Subscribed: ${channelName}`)
                     setIsConnected(true)
+                    isChannelConnectedRef.current = true // Update Ref
 
-                    // ✅ Track Self Presence
                     if (options.userId) {
                         await channel.track({
                             userId: options.userId,
                             onlineAt: new Date().toISOString()
                         })
                     }
+                } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
+                    setIsConnected(false)
+                    isChannelConnectedRef.current = false
                 }
             })
 
@@ -147,20 +137,23 @@ export const useGameSocket = (campaignId: string | null, options: any = {}) => {
             if (channelRef.current) {
                 console.log(`🔌 Supabase Realtime Unsubscribed: ${channelName}`)
                 channelRef.current.unsubscribe()
+                isChannelConnectedRef.current = false
             }
         }
     }, [campaignId, options.userId, options.sessionToken])
 
     // --- การส่งข้อมูล (Send Actions) ---
 
-    // ✅ เปลี่ยนจาก callApi (Fetch) มาเป็น channel.send (Broadcast) โดยตรงเพื่อความเร็ว
     const broadcast = async (data: any) => {
-        if (channelRef.current) {
+        // ✅ เช็คสถานะจาก Ref ก่อนส่ง เพื่อป้องกัน Warning "falling back to REST API"
+        if (channelRef.current && isChannelConnectedRef.current) {
             await channelRef.current.send({
                 type: 'broadcast',
                 event: 'game-event',
                 payload: data,
             })
+        } else {
+            console.warn("⚠️ Socket not connected yet. Action queued or skipped:", data.actionType)
         }
     }
 
@@ -197,7 +190,7 @@ export const useGameSocket = (campaignId: string | null, options: any = {}) => {
         })
     }, [campaignId])
 
-    // --- Callback Setters (เหมือนเดิม) ---
+    // --- Callback Setters ---
     const onGameStateUpdate = (cb: any) => { eventCallbacksRef.current.onGameStateUpdate = cb }
     const onPlayerAction = (cb: any) => { eventCallbacksRef.current.onPlayerAction = cb }
     const onChatMessage = (cb: any) => { eventCallbacksRef.current.onChatMessage = cb }
@@ -210,7 +203,7 @@ export const useGameSocket = (campaignId: string | null, options: any = {}) => {
 
     return {
         isConnected,
-        onlineUsers, // ✅ Return Presence Data
+        onlineUsers,
         roomInfo,
         sendPlayerAction,
         sendGMUpdate,

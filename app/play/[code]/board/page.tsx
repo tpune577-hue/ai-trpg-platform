@@ -35,6 +35,7 @@ export default function CampaignBoardPage() {
     // ✅ เพิ่ม State สำหรับ Audio
     const [audioTracks, setAudioTracks] = useState<any[]>([])
     const [currentTrack, setCurrentTrack] = useState<string | null>(null)
+    const [lastAudioAction, setLastAudioAction] = useState<any>(null) // ✅ For Audio Manager
 
     const [customScenes, setCustomScenes] = useState<any[]>([])
     const [customNpcs, setCustomNpcs] = useState<any[]>([])
@@ -291,9 +292,11 @@ export default function CampaignBoardPage() {
             // ✅ Listen for Audio Events to update UI
             if (action.actionType === 'PLAY_AUDIO') {
                 if (action.payload?.loop) setCurrentTrack(action.payload.name)
+                setLastAudioAction(action)
             }
             if (action.actionType === 'STOP_BGM') {
                 setCurrentTrack(null)
+                setLastAudioAction(action)
             }
 
             if (action.actionType === 'rnr_roll' || action.actionType === 'dice_roll') {
@@ -699,7 +702,7 @@ export default function CampaignBoardPage() {
         <div className="flex h-screen bg-[#0f172a] text-slate-200 overflow-hidden font-sans relative">
 
             {/* ✅ Audio Manager & Modal */}
-            <AudioManager roomCode={joinCode} />
+            <AudioManager action={lastAudioAction} />
             <SettingsModal
                 isOpen={isSettingsOpen}
                 onClose={() => setIsSettingsOpen(false)}

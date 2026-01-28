@@ -2,19 +2,12 @@
 
 import { useEffect, useRef } from 'react'
 import { Howl, Howler } from 'howler'
-import { useGameSocket } from '@/hooks/useGameSocket'
 
 interface AudioManagerProps {
-    roomCode: string
+    action: any
 }
 
-export default function AudioManager({ roomCode }: AudioManagerProps) {
-    // ใช้ Socket แยกเพื่อให้แน่ใจว่าได้รับ Events แน่นอน
-    const { onPlayerAction } = useGameSocket(roomCode, {
-        autoConnect: true,
-        sessionToken: 'AUDIO_LISTENER'
-    })
-
+export default function AudioManager({ action }: AudioManagerProps) {
     const bgmRef = useRef<Howl | null>(null)
     const sfxRef = useRef<Howl | null>(null)
 
@@ -59,69 +52,67 @@ export default function AudioManager({ roomCode }: AudioManagerProps) {
         }
     }, [])
 
-    // 3. Listen to Socket Events
+    // 3. Process Action from Props
     useEffect(() => {
-        if (!onPlayerAction) return
+        if (!action) return
 
-        onPlayerAction((action: any) => {
-            if (action.actionType !== 'PLAY_AUDIO' && action.actionType !== 'STOP_BGM') return
+        if (action.actionType !== 'PLAY_AUDIO' && action.actionType !== 'STOP_BGM') return
 
-            console.log("🎵 AudioManager Received:", action.actionType, action.payload)
+        console.log("🎵 AudioManager Processing:", action.actionType, action.payload)
 
-            // ✅ บังคับ Resume ทุกครั้งที่มีคำสั่งเสียง (แก้เผ็ด Browser)
-            ensureAudioContext();
+        // ✅ บังคับ Resume ทุกครั้งที่มีคำสั่งเสียง
+        ensureAudioContext();
 
-            if (action.actionType === 'STOP_BGM') {
+        if (action.actionType === 'STOP_BGM') {
+            if (bgmRef.current) {
+                bgmRef.current.fade(bgmRef.current.volume(), 0, 1500)
+                setTimeout(() => bgmRef.current?.stop(), 1500)
+            }
+            return
+        }
+
+        if (action.actionType === 'PLAY_AUDIO') {
+            const { url, type, loop } = action.payload
+
+            // ป้องกันเล่นซ้ำเพลงเดิม
+            if (type === 'BGM' && bgmRef.current && bgmRef.current.playing()) {
+                // @ts-ignore
+                if (bgmRef.current._src && bgmRef.current._src.includes(url)) {
+                    console.log("⚠️ Same BGM playing, ignoring...")
+                    return
+                }
+            }
+
+            const sound = new Howl({
+                src: [url],
+                html5: true,
+                loop: loop,
+                volume: type === 'BGM' ? 0.8 : 1.0,
+                onloaderror: (id, err) => console.error("❌ Audio Load Error:", err),
+                onplayerror: (id, err) => {
+                    console.error("❌ Audio Play Error:", err)
+                    ensureAudioContext(); // ลอง Resume อีกทีถ้าพัง
+                    sound.once('unlock', () => {
+                        sound.play();
+                    });
+                }
+            })
+
+            if (type === 'BGM') {
                 if (bgmRef.current) {
-                    bgmRef.current.fade(bgmRef.current.volume(), 0, 1500)
-                    setTimeout(() => bgmRef.current?.stop(), 1500)
+                    const oldSound = bgmRef.current
+                    oldSound.fade(oldSound.volume(), 0, 1000)
+                    setTimeout(() => oldSound.stop(), 1000)
                 }
-                return
+                bgmRef.current = sound
+                sound.play()
+                sound.fade(0, 0.8, 1000)
+            } else {
+                sfxRef.current = sound
+                sound.play()
             }
-
-            if (action.actionType === 'PLAY_AUDIO') {
-                const { url, type, loop } = action.payload
-
-                // ป้องกันเล่นซ้ำเพลงเดิม
-                if (type === 'BGM' && bgmRef.current && bgmRef.current.playing()) {
-                    // @ts-ignore
-                    if (bgmRef.current._src && bgmRef.current._src.includes(url)) {
-                        console.log("⚠️ Same BGM playing, ignoring...")
-                        return
-                    }
-                }
-
-                const sound = new Howl({
-                    src: [url],
-                    html5: true,
-                    loop: loop,
-                    volume: type === 'BGM' ? 0.8 : 1.0,
-                    onloaderror: (id, err) => console.error("❌ Audio Load Error:", err),
-                    onplayerror: (id, err) => {
-                        console.error("❌ Audio Play Error:", err)
-                        ensureAudioContext(); // ลอง Resume อีกทีถ้าพัง
-                        sound.once('unlock', () => {
-                            sound.play();
-                        });
-                    }
-                })
-
-                if (type === 'BGM') {
-                    if (bgmRef.current) {
-                        const oldSound = bgmRef.current
-                        oldSound.fade(oldSound.volume(), 0, 1000)
-                        setTimeout(() => oldSound.stop(), 1000)
-                    }
-                    bgmRef.current = sound
-                    sound.play()
-                    sound.fade(0, 0.8, 1000)
-                } else {
-                    sfxRef.current = sound
-                    sound.play()
-                }
-            }
-        })
-    }, [onPlayerAction])
+        }
+    }, [action])
 
     return null
 }

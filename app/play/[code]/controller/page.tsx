@@ -71,6 +71,7 @@ export default function PlayerControllerPage() {
     // --- OVERLAYS ---
     const [selectedItemDetail, setSelectedItemDetail] = useState<any>(null)
     const [isPrivateAction, setIsPrivateAction] = useState(false)
+    const [lastAudioAction, setLastAudioAction] = useState<any>(null) // ✅ For Audio Manager
 
     // Roll State
     const [rollRequest, setRollRequest] = useState<any>(null)
@@ -355,6 +356,12 @@ export default function PlayerControllerPage() {
                     if (isPrivate && action.actorId !== playerId) return
                     handleLog({ id: `${Date.now()}-${action.actionType}`, content: isPrivate ? `🔒 (Private) ${action.description}` : (action.description || `${action.actorName} used ${action.actionType}`), type: 'ACTION', senderName: action.actorName, timestamp: new Date() })
                 }
+
+                // ✅ Audio Updates
+                if (action.actionType === 'PLAY_AUDIO' || action.actionType === 'STOP_BGM') {
+                    setLastAudioAction(action)
+                }
+
                 if (action.actorName === 'Game Master' && action.actionType === 'custom') {
                     setGmNarration(action.description); setTimeout(() => setGmNarration(''), 15000)
                 }
@@ -481,7 +488,7 @@ export default function PlayerControllerPage() {
             <div className="h-[100dvh] bg-slate-950 text-white flex flex-col font-sans overflow-hidden">
 
                 {/* ✅ 4. ใส่ Audio Manager และ Settings Modal ไว้ที่นี่ */}
-                <AudioManager roomCode={joinCode} />
+                <AudioManager action={lastAudioAction} />
                 <SettingsModal
                     isOpen={isSettingsOpen}
                     onClose={() => setIsSettingsOpen(false)}

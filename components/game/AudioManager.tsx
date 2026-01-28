@@ -12,20 +12,28 @@ export default function AudioManager({ roomCode }: AudioManagerProps) {
     // ใช้ Socket แยกเพื่อให้แน่ใจว่าได้รับ Events แน่นอน
     const { onPlayerAction } = useGameSocket(roomCode, {
         autoConnect: true,
-        sessionToken: 'AUDIO_LISTENER' // แยก Session เพื่อกันชนกับ Board หลัก
+        sessionToken: 'AUDIO_LISTENER'
     })
 
     const bgmRef = useRef<Howl | null>(null)
     const sfxRef = useRef<Howl | null>(null)
 
-    // ✅ 1. โหลดค่า Volume ที่บันทึกไว้
+    // ฟังก์ชันช่วย Resume Audio Context (เรียกใช้บ่อยๆ)
+    const ensureAudioContext = () => {
+        if (Howler.ctx && Howler.ctx.state === 'suspended') {
+            Howler.ctx.resume().then(() => {
+                console.log("🔊 AudioContext Resumed by Action!");
+            });
+        }
+    };
+
+    // 1. โหลดค่า Volume
     useEffect(() => {
         const loadVolume = () => {
             const saved = localStorage.getItem('rnr_audio_settings')
             if (saved) {
                 const vols = JSON.parse(saved)
                 Howler.volume(vols.master)
-                // เก็บค่าแยกไว้ใช้กับ BGM/SFX ถ้าต้องการ fine-tune
             }
         }
         loadVolume()
@@ -33,13 +41,14 @@ export default function AudioManager({ roomCode }: AudioManagerProps) {
         return () => window.removeEventListener('audio-settings-changed', loadVolume)
     }, [])
 
-    // ✅ 2. Unlock Audio Context (แก้ปัญหาไม่ได้ยินเสียง)
+    // 2. Unlock Audio Context (User Gesture)
     useEffect(() => {
         const unlockAudio = () => {
-            if (Howler.ctx.state === 'suspended') {
-                Howler.ctx.resume().then(() => {
-                    console.log("🔊 AudioContext Resumed!")
-                })
+            ensureAudioContext();
+            // เอาออกเมื่อทำสำเร็จเพื่อประหยัด resource
+            if (Howler.ctx && Howler.ctx.state === 'running') {
+                document.removeEventListener('click', unlockAudio);
+                document.removeEventListener('keydown', unlockAudio);
             }
         }
         document.addEventListener('click', unlockAudio)
@@ -50,15 +59,17 @@ export default function AudioManager({ roomCode }: AudioManagerProps) {
         }
     }, [])
 
-    // ✅ 3. Listen to Socket Events
+    // 3. Listen to Socket Events
     useEffect(() => {
         if (!onPlayerAction) return
 
         onPlayerAction((action: any) => {
-            // กรองเฉพาะ Event เสียง
             if (action.actionType !== 'PLAY_AUDIO' && action.actionType !== 'STOP_BGM') return
 
             console.log("🎵 AudioManager Received:", action.actionType, action.payload)
+
+            // ✅ บังคับ Resume ทุกครั้งที่มีคำสั่งเสียง (แก้เผ็ด Browser)
+            ensureAudioContext();
 
             if (action.actionType === 'STOP_BGM') {
                 if (bgmRef.current) {
@@ -71,9 +82,9 @@ export default function AudioManager({ roomCode }: AudioManagerProps) {
             if (action.actionType === 'PLAY_AUDIO') {
                 const { url, type, loop } = action.payload
 
-                // ป้องกันเล่นซ้ำเพลงเดิม (ถ้าเป็น BGM)
+                // ป้องกันเล่นซ้ำเพลงเดิม
                 if (type === 'BGM' && bgmRef.current && bgmRef.current.playing()) {
-                    // @ts-ignore - เช็ค src ภายใน Howl
+                    // @ts-ignore
                     if (bgmRef.current._src && bgmRef.current._src.includes(url)) {
                         console.log("⚠️ Same BGM playing, ignoring...")
                         return
@@ -82,18 +93,19 @@ export default function AudioManager({ roomCode }: AudioManagerProps) {
 
                 const sound = new Howl({
                     src: [url],
-                    html5: true, // บังคับใช้ HTML5 Audio เพื่อเลี่ยงปัญหา Codec
+                    html5: true,
                     loop: loop,
-                    volume: type === 'BGM' ? 0.8 : 1.0, // ค่าเริ่มต้น
+                    volume: type === 'BGM' ? 0.8 : 1.0,
                     onloaderror: (id, err) => console.error("❌ Audio Load Error:", err),
                     onplayerror: (id, err) => {
                         console.error("❌ Audio Play Error:", err)
-                        // พยายามปลดล็อคอีกรอบ
-                        Howler.ctx.resume()
+                        ensureAudioContext(); // ลอง Resume อีกทีถ้าพัง
+                        sound.once('unlock', () => {
+                            sound.play();
+                        });
                     }
                 })
 
-                // Crossfade Logic for BGM
                 if (type === 'BGM') {
                     if (bgmRef.current) {
                         const oldSound = bgmRef.current
@@ -102,9 +114,8 @@ export default function AudioManager({ roomCode }: AudioManagerProps) {
                     }
                     bgmRef.current = sound
                     sound.play()
-                    sound.fade(0, 0.8, 1000) // Fade In
+                    sound.fade(0, 0.8, 1000)
                 } else {
-                    // SFX เล่นทับได้เลย แต่เก็บ Ref ไว้ตัวล่าสุด
                     sfxRef.current = sound
                     sound.play()
                 }
@@ -112,5 +123,5 @@ export default function AudioManager({ roomCode }: AudioManagerProps) {
         })
     }, [onPlayerAction])
 
-    return null // Component นี้ไม่มี UI
+    return null
 }

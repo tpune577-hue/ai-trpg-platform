@@ -103,3 +103,21 @@ main()
     .finally(async () => {
         await prisma.$disconnect()
     })
+// prisma/seed.ts (เพิ่มต่อท้าย)
+
+// ... code เดิม ...
+
+async function seedAudio() {
+    console.log('🎵 Seeding Audio...')
+
+    await prisma.audioTrack.createMany({
+        data: [
+            { name: "Epic Battle", url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3", type: "BGM", category: "Battle" },
+            { name: "Tavern Ambience", url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3", type: "BGM", category: "Relax" },
+            { name: "Sword Hit", url: "https://www.myinstants.com/media/sounds/minecraft-hit-sound.mp3", type: "SFX", category: "Combat" },
+            { name: "Magic Spell", url: "https://www.myinstants.com/media/sounds/magic-spell.mp3", type: "SFX", category: "Magic" },
+        ]
+    })
+}
+
+// อย่าลืมเรียก seedAudio() ใน main()

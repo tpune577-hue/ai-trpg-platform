@@ -302,3 +302,15 @@ model SiteConfig {
   announcement String?
   updatedAt    DateTime
 }
+// prisma/schema.prisma
+
+// ... models เดิม ...
+
+model AudioTrack {
+  id        String   @id @default(cuid())
+  name      String
+  url       String
+  type      String   // "BGM" หรือ "SFX"
+  category  String?  // เช่น "Battle", "Ambiance", "Magic"
+  createdAt DateTime @default(now())
+}

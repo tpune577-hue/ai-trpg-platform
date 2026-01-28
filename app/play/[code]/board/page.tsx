@@ -4,7 +4,6 @@ import { useEffect, useState, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { useGameSocket } from '@/hooks/useGameSocket'
-// ✅ Import getLobbyAssets เพิ่มเข้ามา
 import { getLobbyInfo, getLobbyAssets, updateGameSessionState, kickPlayer, pauseGameSession, endGameSession, updateCharacterStats, updatePlayerInventory } from '@/app/actions/game'
 import { addCustomAsset } from '@/app/actions/quick-add'
 
@@ -15,6 +14,9 @@ import { GameLog } from '@/components/board/GameLog'
 import { SceneDisplay } from '@/components/board/SceneDisplay'
 import { EnhancedPartyStatus } from '@/components/board/EnhancedPartyStatus'
 import { DiceResultOverlay } from '@/components/board/DiceResultOverlay'
+// ✅ Import Audio Components
+import AudioManager from '@/components/game/AudioManager'
+import SettingsModal from '@/components/game/SettingsModal'
 
 // Utils
 import { rollD4RnR } from '@/lib/rnr-dice'
@@ -28,11 +30,14 @@ export default function CampaignBoardPage() {
     const [session, setSession] = useState<any>(null)
     const [campaignScenes, setCampaignScenes] = useState<any[]>([])
     const [campaignNpcs, setCampaignNpcs] = useState<any[]>([])
+    // ✅ เพิ่ม State สำหรับ Audio
+    const [audioTracks, setAudioTracks] = useState<any[]>([])
+
     const [customScenes, setCustomScenes] = useState<any[]>([])
     const [customNpcs, setCustomNpcs] = useState<any[]>([])
     const [dbPlayers, setDbPlayers] = useState<any[]>([])
-    const [isLoadingData, setIsLoadingData] = useState(true) // Loading หลัก (Session)
-    const [isLoadingAssets, setIsLoadingAssets] = useState(true) // Loading รอง (Scenes/NPCs)
+    const [isLoadingData, setIsLoadingData] = useState(true)
+    const [isLoadingAssets, setIsLoadingAssets] = useState(true)
     const [myIdentity, setMyIdentity] = useState<string>('')
     const [playerInventories, setPlayerInventories] = useState<Record<string, any[]>>({})
 
@@ -47,9 +52,13 @@ export default function CampaignBoardPage() {
 
     // --- UI STATE ---
     const [isSidebarOpen, setIsSidebarOpen] = useState(true)
-    const [activeTab, setActiveTab] = useState<'SCENE' | 'NPC' | 'PARTY' | 'NOTE' | 'STORY'>('PARTY')
+    // ✅ เพิ่ม Tab AUDIO
+    const [activeTab, setActiveTab] = useState<'SCENE' | 'NPC' | 'PARTY' | 'AUDIO' | 'NOTE' | 'STORY'>('PARTY')
     const [gmInput, setGmInput] = useState('')
     const [targetDC, setTargetDC] = useState(15)
+
+    // ✅ Settings Modal State
+    const [isSettingsOpen, setIsSettingsOpen] = useState(false)
 
     // RESIZE STATE
     const [sceneHeightPercent, setSceneHeightPercent] = useState(60)
@@ -155,15 +164,27 @@ export default function CampaignBoardPage() {
         } as any)
     }
 
-    // --- 🚀 OPTIMIZED FETCH DATA (แก้ตรงนี้) ---
+    // --- 🔊 AUDIO FUNCTIONS ---
+    const playAudio = (track: any, loop: boolean = false) => {
+        sendPlayerAction({
+            actionType: 'PLAY_AUDIO',
+            payload: { url: track.url, type: track.type, loop },
+            actorName: 'GM'
+        } as any)
+    }
+
+    const stopBgm = () => {
+        sendPlayerAction({ actionType: 'STOP_BGM', actorName: 'GM' } as any)
+    }
+
+    // --- FETCH DATA ---
     const fetchCampaignData = async () => {
         try {
-            // 1. ดึงข้อมูลพื้นฐาน (เร็ว)
+            // 1. ดึงข้อมูลพื้นฐาน
             const data = await getLobbyInfo(joinCode)
             if (data) {
                 setSession(data)
 
-                // Parse Custom Assets (เพราะเก็บเป็น JSON string ใน session เลย)
                 if (data.customScenes) {
                     try { setCustomScenes(JSON.parse(data.customScenes)) } catch (e) { console.error("Parse Error customScenes", e) }
                 }
@@ -171,7 +192,6 @@ export default function CampaignBoardPage() {
                     try { setCustomNpcs(JSON.parse(data.customNpcs)) } catch (e) { console.error("Parse Error customNpcs", e) }
                 }
 
-                // Process Players (จากข้อมูลพื้นฐาน)
                 if (data.players) {
                     const loadedInventories: Record<string, any[]> = {}
                     const formattedPlayers = data.players.map((p: any) => {
@@ -189,7 +209,6 @@ export default function CampaignBoardPage() {
                     setPlayerInventories(prev => ({ ...prev, ...loadedInventories }))
                 }
 
-                // Set Game State เบื้องต้น (ยังไม่มีรูป Scene จริง จนกว่า Assets จะมา)
                 const savedActiveNpcs = data.activeNpcs ? JSON.parse(data.activeNpcs) : []
                 setGameState((prev: any) => ({
                     ...prev,
@@ -197,16 +216,16 @@ export default function CampaignBoardPage() {
                     activeNpcs: savedActiveNpcs
                 }))
 
-                // ✅ ปลดล็อคหน้าจอทันที เพื่อให้ User รู้สึกว่าเร็ว
                 setIsLoadingData(false)
 
-                // 2. ดึง Assets หนักๆ (ช้า) ทีหลัง
+                // 2. ดึง Assets (Scenes, NPCs, Audio)
                 getLobbyAssets(joinCode).then((assets) => {
                     const loadedScenes = assets.scenes || []
                     setCampaignScenes(loadedScenes)
                     setCampaignNpcs(assets.npcs || [])
+                    // ✅ Load Audio Tracks
+                    setAudioTracks(assets.audioTracks || [])
 
-                    // อัปเดตรูปภาพ Scene เมื่อโหลดเสร็จ
                     if (data.currentSceneId) {
                         const allScenes = [...loadedScenes, ...(data.customScenes ? JSON.parse(data.customScenes) : [])]
                         const foundScene = allScenes.find((s: any) => s.id === data.currentSceneId)
@@ -254,7 +273,6 @@ export default function CampaignBoardPage() {
                 setShowingDiceResult(action)
             }
 
-            // --- Roll Logic & Will Power Fix ---
             if (action.actionType === 'rnr_roll' || action.actionType === 'dice_roll') {
                 if (overlayTimeoutRef.current) clearTimeout(overlayTimeoutRef.current)
                 setShowingDiceResult(action)
@@ -263,10 +281,8 @@ export default function CampaignBoardPage() {
                     overlayTimeoutRef.current = null
                 }, 5000)
 
-                // Will Power Fix
                 const boostAmount = Number(action.willBoost) || 0
                 if (boostAmount > 0) {
-                    console.log(`⚡ Will Power Boost detected: -${boostAmount} for ${action.actorName}`)
                     setDbPlayers(prev => prev.map(p => {
                         const clean = (s: string) => s ? s.toString().toLowerCase().trim() : ''
                         const isMatch = (action.actorId && p.id === action.actorId) ||
@@ -292,7 +308,6 @@ export default function CampaignBoardPage() {
                 }
             }
 
-            // --- Stats Update Logic (HP/MP) ---
             if (action.actionType === 'STATS_UPDATE') {
                 try {
                     const statsUpdate = JSON.parse(action.description)
@@ -365,7 +380,7 @@ export default function CampaignBoardPage() {
                     }
                 }
 
-                if (!['RNR_LIVE_UPDATE', 'rnr_roll', 'dice_roll', 'WHISPER'].includes(action.actionType)) {
+                if (!['RNR_LIVE_UPDATE', 'rnr_roll', 'dice_roll', 'WHISPER', 'PLAY_AUDIO', 'STOP_BGM'].includes(action.actionType)) {
                     setLogs((prev) => [...prev, {
                         id: Date.now().toString(), content,
                         type: action.actionType === 'custom' ? 'NARRATION' : 'ACTION',
@@ -644,7 +659,6 @@ export default function CampaignBoardPage() {
     const allScenes = [...campaignScenes, ...customScenes]
     const allNpcs = [...campaignNpcs, ...customNpcs]
 
-    // ✅ ใช้ Skeleton Loading แทนข้อความ Loading... ธรรมดา (ให้ดูเร็วขึ้น)
     if (isLoadingData) {
         return (
             <div className="h-screen bg-slate-950 flex flex-col items-center justify-center space-y-4">
@@ -659,6 +673,10 @@ export default function CampaignBoardPage() {
     return (
         <div className="flex h-screen bg-[#0f172a] text-slate-200 overflow-hidden font-sans relative">
 
+            {/* ✅ Audio Manager & Modal */}
+            <AudioManager roomCode={joinCode} />
+            <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
+
             {/* HEADER */}
             <div className="absolute top-0 w-full h-14 bg-slate-900/90 border-b border-slate-700 flex justify-between items-center px-4 z-50 backdrop-blur-md shadow-lg">
                 <h1 className="text-amber-500 font-bold tracking-widest text-sm md:text-lg uppercase">
@@ -668,6 +686,16 @@ export default function CampaignBoardPage() {
                 <div className="flex items-center gap-2">
                     <button onClick={handlePauseGame} className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1 rounded text-xs border border-slate-600">⏸ Pause</button>
                     <button onClick={handleEndSession} className="bg-red-900/50 hover:bg-red-600 text-red-200 px-3 py-1 rounded text-xs border border-red-800">🛑 END</button>
+
+                    {/* ✅ Profile Button */}
+                    <button
+                        onClick={() => setIsSettingsOpen(true)}
+                        className="w-8 h-8 rounded-full bg-slate-700 border border-slate-500 overflow-hidden hover:border-amber-500 transition-all ml-2"
+                        title="Audio Settings"
+                    >
+                        <img src={`https://api.dicebear.com/7.x/adventurer/svg?seed=${myIdentity}`} alt="Profile" className="w-full h-full object-cover" />
+                    </button>
+
                     <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="lg:hidden p-2 text-slate-300 border border-slate-700 rounded bg-slate-800 ml-2">{isSidebarOpen ? '✖' : '☰'}</button>
                 </div>
             </div>
@@ -717,8 +745,9 @@ export default function CampaignBoardPage() {
 
                 {/* RIGHT: Sidebar */}
                 <div className={`fixed inset-y-0 right-0 z-40 w-96 bg-slate-900 border-l border-slate-700 shadow-2xl transform transition-transform duration-300 pt-14 ${isSidebarOpen ? 'translate-x-0' : 'translate-x-full'} lg:relative lg:translate-x-0 lg:flex lg:pt-0 lg:w-96 lg:shadow-none flex flex-col h-full overflow-hidden`}>
-                    <div className="flex border-b border-slate-800">
-                        {['PARTY', 'SCENE', 'NPC', 'NOTE', 'STORY'].map(tab => (
+                    <div className="flex border-b border-slate-800 overflow-x-auto">
+                        {/* ✅ เพิ่ม AUDIO Tab */}
+                        {['PARTY', 'SCENE', 'NPC', 'AUDIO', 'NOTE', 'STORY'].map(tab => (
                             <TabButton key={tab} active={activeTab === tab} onClick={() => setActiveTab(tab as any)} label={tab} />
                         ))}
                     </div>
@@ -805,6 +834,48 @@ export default function CampaignBoardPage() {
                                 })}
                             </div>
                         )}
+                        {/* ✅ AUDIO TAB CONTENT */}
+                        {activeTab === 'AUDIO' && (
+                            <div className="space-y-4 p-1">
+                                <div className="bg-slate-950 p-3 rounded border border-slate-800">
+                                    <h4 className="text-xs font-bold text-amber-500 uppercase mb-2 flex justify-between items-center">
+                                        <span>🎵 Background Music</span>
+                                        <button onClick={stopBgm} className="text-[10px] bg-red-900/50 text-red-200 px-2 py-1 rounded hover:bg-red-800 border border-red-800">■ STOP MUSIC</button>
+                                    </h4>
+                                    <div className="space-y-1">
+                                        {audioTracks.filter(t => t.type === 'BGM').length === 0 && <div className="text-xs text-slate-500 italic p-2">No music found.</div>}
+                                        {audioTracks.filter(t => t.type === 'BGM').map(track => (
+                                            <div key={track.id} className="flex items-center justify-between bg-slate-900 p-2 rounded hover:bg-slate-800 group border border-slate-800 hover:border-slate-600 transition-all">
+                                                <span className="text-xs text-slate-300 font-medium">{track.name}</span>
+                                                <button
+                                                    onClick={() => playAudio(track, true)}
+                                                    className="text-[10px] bg-indigo-600 hover:bg-indigo-500 text-white px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                                                >
+                                                    ▶ Play Loop
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <div className="bg-slate-950 p-3 rounded border border-slate-800">
+                                    <h4 className="text-xs font-bold text-emerald-500 uppercase mb-2">🔊 Sound Effects</h4>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        {audioTracks.filter(t => t.type === 'SFX').length === 0 && <div className="col-span-2 text-xs text-slate-500 italic p-2">No SFX found.</div>}
+                                        {audioTracks.filter(t => t.type === 'SFX').map(track => (
+                                            <button
+                                                key={track.id}
+                                                onClick={() => playAudio(track, false)}
+                                                className="bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-emerald-500 p-2 rounded text-xs text-slate-300 text-left transition-all active:scale-95 truncate"
+                                                title={track.name}
+                                            >
+                                                🔊 {track.name}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                         {activeTab === 'NOTE' && (
                             <div className="space-y-4">
                                 <textarea value={gmNotes} onChange={e => setGmNotes(e.target.value)} className="w-full h-40 bg-slate-950 border-slate-700 rounded p-2 text-xs text-slate-300" placeholder="Notes..." />
@@ -849,7 +920,6 @@ export default function CampaignBoardPage() {
             <div className="absolute bottom-0 w-full h-auto min-h-[80px] md:h-32 bg-slate-900 border-t border-slate-700 flex flex-col md:flex-row items-center px-4 py-2 gap-3 z-50">
                 <div className="flex gap-2 shrink-0">
                     <button onClick={handleGmRoll} className="bg-amber-600 hover:bg-amber-500 text-black px-4 py-2 rounded-lg font-black shadow-lg active:scale-95 transition-all flex items-center gap-2"><span className="text-xl">🎲</span><span className="hidden md:inline">GM Roll</span></button>
-                    {/* BUTTON REMOVED */}
                 </div>
 
                 <div className="w-full md:flex-1 flex gap-2">

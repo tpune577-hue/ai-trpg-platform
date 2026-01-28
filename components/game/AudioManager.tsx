@@ -4,13 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Howl, Howler } from 'howler'
 import { useGameSocket } from '@/hooks/useGameSocket'
 
-// ...
-// Reverting to simpler component without callback props
-interface AudioManagerProps {
-    roomCode: string
-}
-
-export default function AudioManager({ roomCode }: AudioManagerProps) {
+export default function AudioManager({ roomCode }: { roomCode: string }) {
     const { onPlayerAction } = useGameSocket(roomCode)
     const bgmRef = useRef<Howl | null>(null)
     const [settings, setSettings] = useState({ master: 1.0, bgm: 0.8, sfx: 1.0 })
@@ -55,7 +49,7 @@ export default function AudioManager({ roomCode }: AudioManagerProps) {
     useEffect(() => {
         onPlayerAction((action: any) => {
             if (action.actionType === 'PLAY_AUDIO') {
-                const { url, type, loop, name } = action.payload
+                const { url, type, loop } = action.payload
 
                 if (type === 'BGM') {
                     // หยุดเพลงเก่าก่อน

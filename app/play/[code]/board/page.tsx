@@ -32,7 +32,6 @@ export default function CampaignBoardPage() {
     const [campaignNpcs, setCampaignNpcs] = useState<any[]>([])
     // ✅ เพิ่ม State สำหรับ Audio
     const [audioTracks, setAudioTracks] = useState<any[]>([])
-    const [currentTrack, setCurrentTrack] = useState<string | null>(null)
 
     const [customScenes, setCustomScenes] = useState<any[]>([])
     const [customNpcs, setCustomNpcs] = useState<any[]>([])
@@ -169,7 +168,7 @@ export default function CampaignBoardPage() {
     const playAudio = (track: any, loop: boolean = false) => {
         sendPlayerAction({
             actionType: 'PLAY_AUDIO',
-            payload: { url: track.url, type: track.type, loop, name: track.name },
+            payload: { url: track.url, type: track.type, loop },
             actorName: 'GM'
         } as any)
     }
@@ -379,15 +378,6 @@ export default function CampaignBoardPage() {
                         const prefix = isPrivate ? '🔒 (Private) ' : ''
                         content = `${prefix}${action.actorName} ${action.actionType} : ${action.description || ''}`
                     }
-                }
-
-                if (action.actionType === 'PLAY_AUDIO') {
-                    const { name, type } = action.payload
-                    if (type === 'BGM') setCurrentTrack(name || 'Unknown Track')
-                    // Not adding log for play audio to avoid clutter, or maybe add if needed?
-                }
-                if (action.actionType === 'STOP_BGM') {
-                    setCurrentTrack(null)
                 }
 
                 if (!['RNR_LIVE_UPDATE', 'rnr_roll', 'dice_roll', 'WHISPER', 'PLAY_AUDIO', 'STOP_BGM'].includes(action.actionType)) {
@@ -808,40 +798,6 @@ export default function CampaignBoardPage() {
 
                     {/* Tab Content */}
                     <div className="flex-1 min-h-0 p-3 overflow-y-auto custom-scrollbar">
-                        {activeTab === 'AUDIO' && (
-                            <div className="space-y-4">
-                                {currentTrack && (
-                                    <div className="bg-slate-800 p-3 rounded-lg border border-amber-500/50 shadow-lg animate-pulse flex items-center gap-3">
-                                        <div className="w-8 h-8 flex items-center justify-center bg-amber-500 text-black rounded-full animate-spin-slow">🎵</div>
-                                        <div className="flex-1 min-w-0">
-                                            <div className="text-[10px] text-amber-500 font-bold uppercase tracking-wider">Now Playing</div>
-                                            <div className="text-sm text-white font-medium truncate">{currentTrack}</div>
-                                        </div>
-                                    </div>
-                                )}
-                                <div className="space-y-2">
-                                    <div className="flex justify-between items-center text-xs font-bold text-slate-500 uppercase">
-                                        <span>Playlist ({audioTracks.length})</span>
-                                        <button onClick={stopBgm} className="text-red-500 hover:text-red-400">Stop Music</button>
-                                    </div>
-                                    {audioTracks.map((track, idx) => (
-                                        <div key={idx} onClick={() => playAudio(track, true)} className="flex items-center gap-3 p-3 bg-slate-800 hover:bg-slate-700 rounded-lg cursor-pointer transition-colors group">
-                                            <div className="w-8 h-8 flex items-center justify-center bg-slate-700 group-hover:bg-slate-600 rounded text-lg">
-                                                {track.type === 'SFX' ? '🔊' : '🎵'}
-                                            </div>
-                                            <div className="flex-1 min-w-0">
-                                                <div className="text-sm font-medium text-slate-200 group-hover:text-amber-500 truncate">{track.name}</div>
-                                                <div className="text-[10px] text-slate-500">{track.type}</div>
-                                            </div>
-                                            <div className="w-6 h-6 flex items-center justify-center opacity-0 group-hover:opacity-100 text-amber-500">▶</div>
-                                        </div>
-                                    ))}
-                                    {audioTracks.length === 0 && (
-                                        <div className="text-center text-slate-500 py-8 text-xs">No audio tracks found</div>
-                                    )}
-                                </div>
-                            </div>
-                        )}
                         {activeTab === 'PARTY' && (
                             <EnhancedPartyStatus
                                 players={partyPlayers}
@@ -925,39 +881,66 @@ export default function CampaignBoardPage() {
                         {/* ✅ AUDIO TAB CONTENT */}
                         {activeTab === 'AUDIO' && (
                             <div className="space-y-4 p-1">
+                                {/* 1. Now Playing Banner (โชว์เมื่อมีเพลงเล่นอยู่) */}
+                                {currentTrack && (
+                                    <div className="bg-slate-800 p-3 rounded-lg border border-amber-500/50 shadow-lg animate-pulse flex items-center gap-3 mb-4">
+                                        <div className="w-8 h-8 flex items-center justify-center bg-amber-500 text-black rounded-full animate-spin-slow">🎵</div>
+                                        <div className="flex-1 min-w-0">
+                                            <div className="text-[10px] text-amber-500 font-bold uppercase tracking-wider">Now Playing</div>
+                                            <div className="text-sm text-white font-medium truncate">{currentTrack}</div>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* 2. Background Music (BGM) Section */}
                                 <div className="bg-slate-950 p-3 rounded border border-slate-800">
-                                    <h4 className="text-xs font-bold text-amber-500 uppercase mb-2 flex justify-between items-center">
-                                        <span>🎵 Background Music</span>
-                                        <button onClick={stopBgm} className="text-[10px] bg-red-900/50 text-red-200 px-2 py-1 rounded hover:bg-red-800 border border-red-800">■ STOP MUSIC</button>
-                                    </h4>
+                                    <div className="flex justify-between items-center mb-2">
+                                        <h4 className="text-xs font-bold text-amber-500 uppercase">🎵 Background Music</h4>
+                                        <button
+                                            onClick={stopBgm}
+                                            className="text-[10px] bg-red-900/30 text-red-400 px-2 py-1 rounded border border-red-900/50 hover:bg-red-900/50 transition-colors"
+                                        >
+                                            ■ STOP
+                                        </button>
+                                    </div>
+
                                     <div className="space-y-1">
-                                        {audioTracks.filter(t => t.type === 'BGM').length === 0 && <div className="text-xs text-slate-500 italic p-2">No music found.</div>}
+                                        {audioTracks.filter(t => t.type === 'BGM').length === 0 && (
+                                            <div className="text-xs text-slate-600 italic p-2 text-center">No BGM tracks</div>
+                                        )}
                                         {audioTracks.filter(t => t.type === 'BGM').map(track => (
-                                            <div key={track.id} className="flex items-center justify-between bg-slate-900 p-2 rounded hover:bg-slate-800 group border border-slate-800 hover:border-slate-600 transition-all">
-                                                <span className="text-xs text-slate-300 font-medium">{track.name}</span>
+                                            <div key={track.id} className="flex items-center justify-between bg-slate-900 p-2 rounded hover:bg-slate-800 border border-slate-800 hover:border-slate-600 transition-all group">
+                                                <div className="flex items-center gap-2 overflow-hidden">
+                                                    <span className="text-xs text-slate-400">🎵</span>
+                                                    <span className="text-xs text-slate-300 font-medium truncate">{track.name}</span>
+                                                </div>
                                                 <button
                                                     onClick={() => playAudio(track, true)}
-                                                    className="text-[10px] bg-indigo-600 hover:bg-indigo-500 text-white px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                                                    className="text-[10px] bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1 rounded shadow-sm transition-all active:scale-95"
                                                 >
-                                                    ▶ Play Loop
+                                                    Play Loop
                                                 </button>
                                             </div>
                                         ))}
                                     </div>
                                 </div>
 
+                                {/* 3. Sound Effects (SFX) Section */}
                                 <div className="bg-slate-950 p-3 rounded border border-slate-800">
                                     <h4 className="text-xs font-bold text-emerald-500 uppercase mb-2">🔊 Sound Effects</h4>
                                     <div className="grid grid-cols-2 gap-2">
-                                        {audioTracks.filter(t => t.type === 'SFX').length === 0 && <div className="col-span-2 text-xs text-slate-500 italic p-2">No SFX found.</div>}
+                                        {audioTracks.filter(t => t.type === 'SFX').length === 0 && (
+                                            <div className="col-span-2 text-xs text-slate-600 italic p-2 text-center">No SFX tracks</div>
+                                        )}
                                         {audioTracks.filter(t => t.type === 'SFX').map(track => (
                                             <button
                                                 key={track.id}
                                                 onClick={() => playAudio(track, false)}
-                                                className="bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-emerald-500 p-2 rounded text-xs text-slate-300 text-left transition-all active:scale-95 truncate"
+                                                className="bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-emerald-500/50 p-2 rounded text-xs text-slate-300 text-left transition-all active:scale-95 truncate flex items-center gap-2"
                                                 title={track.name}
                                             >
-                                                🔊 {track.name}
+                                                <span>🔊</span>
+                                                <span className="truncate">{track.name}</span>
                                             </button>
                                         ))}
                                     </div>

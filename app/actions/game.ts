@@ -81,9 +81,6 @@ export async function createGameSession(campaignId?: string, roomName?: string) 
 
 // ✅ 2.1 ดึงข้อมูล Lobby เบื้องต้น (Lightweight - โหลดเร็วมาก)
 // ใช้สำหรับเปิดหน้า Lobby หรือ Board ครั้งแรก
-// ในไฟล์ app/actions/game.ts
-
-// ✅ แก้ไขฟังก์ชันนี้ให้เป็นแบบนี้ครับ
 export async function getLobbyInfo(joinCode: string) {
     const session = await prisma.gameSession.findUnique({
         where: { joinCode },
@@ -96,7 +93,7 @@ export async function getLobbyInfo(joinCode: string) {
             activeNpcs: true,
             customScenes: true,
             customNpcs: true,
-            // isAiGm: true, // 👈 ถ้าอยากให้ Error หายและใช้ตัวนี้ใน Frontend ให้ Uncomment บรรทัดนี้ (แต่จริงๆ ในโค้ดใหม่เราไม่ได้ใช้)
+            // isAiGm: true, 
 
             // 👇 สำคัญมาก! ต้องมี players ถึงจะหาย Error
             players: {
@@ -107,8 +104,8 @@ export async function getLobbyInfo(joinCode: string) {
                     role: true,
                     isReady: true,
                     characterData: true,
-                    // userId: true, // REMOVED: Field does not exist in schema
-                    // inventory: true // ถ้าต้องการ Inventory ด้วยให้ใส่บรรทัดนี้
+                    // userId: true, 
+                    // inventory: true 
                 }
             },
 
@@ -158,16 +155,35 @@ export async function getLobbyAssets(joinCode: string) {
                     items: true,
                     preGens: true
                 }
-            }
+            },
+            campaignId: true // เพิ่ม campaignId เพื่อใช้เช็ค
         }
     })
 
+    // สร้าง Default Object (รวม audioTracks ด้วย)
+    const emptyAssets = { scenes: [], npcs: [], items: [], preGens: [], audioTracks: [] }
+
+    // ดึง Audio Tracks ทั้งหมด (เพราะเป็น Global Library)
+    // ใช้ try-catch เผื่อยังไม่ได้ migrate หรือ table ไม่พร้อม
+    let audioTracks: any[] = []
+    try {
+        audioTracks = await prisma.audioTrack.findMany({
+            orderBy: { name: 'asc' }
+        })
+    } catch (e) {
+        console.warn("⚠️ AudioTrack table might not exist yet. Run 'npx prisma db push'")
+    }
+
+    if (!session) return { ...emptyAssets, audioTracks }
+
     // Return แยกตาม category เพื่อให้ frontend ใช้ง่าย
+    // ผสานข้อมูลจาก Campaign (ถ้ามี) กับ Audio Tracks ที่ดึงมาแยก
     return {
-        scenes: session?.campaign?.scenes || [],
-        npcs: session?.campaign?.npcs || [],
-        items: session?.campaign?.items || [],
-        preGens: session?.campaign?.preGens || []
+        scenes: session.campaign?.scenes || [],
+        npcs: session.campaign?.npcs || [],
+        items: session.campaign?.items || [],
+        preGens: session.campaign?.preGens || [],
+        audioTracks: audioTracks // ✅ ส่ง audioTracks กลับไปด้วย
     }
 }
 

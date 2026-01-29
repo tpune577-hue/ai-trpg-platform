@@ -5,6 +5,7 @@ import { prisma } from '@/lib/prisma'
 // import { stripe, generateOrderNo } from '@/lib/stripe' 
 import { generateOrderNo } from '@/lib/stripe' // import แค่ function สร้างเลข Order พอ
 import Stripe from 'stripe' // ✅ Import Class Stripe โดยตรง
+import { fulfillOrder } from '@/lib/payment-service'
 
 export async function POST(req: Request) {
     try {
@@ -132,7 +133,27 @@ export async function POST(req: Request) {
             }
         })
 
-        // 6. Create Stripe Checkout Session
+        // 6. Handle Free Items (Price = 0)
+        if (price === 0) {
+            await fulfillOrder(
+                transaction.id,
+                itemType,
+                itemId,
+                session.user.id,
+                'free',
+                null
+            )
+
+            return NextResponse.json({
+                success: true,
+                url: `${process.env.NEXT_PUBLIC_APP_URL}/payment/success?orderNo=${orderNo}`, // Direct to success page
+                sessionId: 'free-order',
+                orderNo,
+                transactionId: transaction.id
+            })
+        }
+
+        // 7. Create Stripe Checkout Session (For Paid Items)
         const checkoutSession = await stripe.checkout.sessions.create({
             mode: 'payment',
             customer_email: session.user.email,

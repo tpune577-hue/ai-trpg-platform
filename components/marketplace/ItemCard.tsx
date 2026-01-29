@@ -197,7 +197,9 @@ export default function ItemCard({ item, isPurchased, onClick }: ItemCardProps) 
                                     ? 'SOLD OUT'
                                     : isSession
                                         ? 'Book Seat'
-                                        : 'Buy Now'
+                                        : item.price === 0
+                                            ? 'Get Free'
+                                            : 'Buy Now'
                         }
                     </button>
                 </div>

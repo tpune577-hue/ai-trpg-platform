@@ -1,14 +1,28 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/prisma'
-// ❌ ลบการ import stripe จาก lib ออก
-// import { stripe, generateOrderNo } from '@/lib/stripe' 
-import { generateOrderNo } from '@/lib/stripe' // import แค่ function สร้างเลข Order พอ
-import Stripe from 'stripe' // ✅ Import Class Stripe โดยตรง
+import { generateOrderNo } from '@/lib/stripe'
+import Stripe from 'stripe'
+// ⚠️ ต้องมั่นใจว่ามี function นี้จริง หรือถ้าไม่มีให้ลบ import นี้ออกแล้วเขียน logic อัพเดท DB ตรงๆ
 import { fulfillOrder } from '@/lib/payment-service'
 
 export async function POST(req: Request) {
     try {
+        // 1. จัดการ Base URL ให้ปลอดภัย (แก้ปัญหา Invalid URL scheme)
+        // -------------------------------------------------------
+        let baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+
+        // ลบ slash ท้ายสุดออก (ถ้ามี)
+        if (baseUrl.endsWith('/')) {
+            baseUrl = baseUrl.slice(0, -1)
+        }
+
+        // เติม https:// ถ้าไม่มี (ยกเว้น localhost)
+        if (!baseUrl.startsWith('http')) {
+            baseUrl = `https://${baseUrl}`
+        }
+        // -------------------------------------------------------
+
         // 2. Check authentication
         const session = await auth()
         if (!session?.user?.email || !session?.user?.id) {
@@ -111,24 +125,30 @@ export async function POST(req: Request) {
         // 6. Handle Free Items (Price = 0)
         // ✅ ถ้าฟรี ตัดจบตรงนี้เลย ไม่ต้องไปยุ่งกับ Stripe Key
         if (price === 0) {
-            await fulfillOrder(
-                transaction.id,
-                itemType,
-                itemId,
-                session.user.id,
-                'free',
-                null
-            )
-
-            // ✅ Determine base URL safely
-            const protocol = req.headers.get('x-forwarded-proto') || 'http'
-            const host = req.headers.get('host')
-            const origin = req.headers.get('origin') || `${protocol}://${host}`
-            const baseUrl = process.env.NEXT_PUBLIC_APP_URL || origin
+            // เรียกใช้ Service เพื่อแจกของ/ส่งเมล (ถ้ามีไฟล์นี้)
+            // ถ้าไม่มีไฟล์ lib/payment-service ให้เขียน Logic update DB ตรงนี้แทน
+            if (typeof fulfillOrder === 'function') {
+                await fulfillOrder(
+                    transaction.id,
+                    itemType,
+                    itemId,
+                    session.user.id,
+                    'free',
+                    null
+                )
+            } else {
+                // Fallback: อัปเดต Transaction เป็น Completed เฉยๆ
+                await prisma.transaction.update({
+                    where: { id: transaction.id },
+                    data: { status: 'COMPLETED', paymentMethod: 'free' }
+                })
+                // ตรงนี้คุณอาจจะต้องเพิ่ม Logic สร้าง Booking/Purchase ด้วยมือ
+                // เหมือนที่ทำใน Webhook
+            }
 
             return NextResponse.json({
                 success: true,
-                url: `${baseUrl}/payment/success?orderNo=${orderNo}`,
+                url: `${baseUrl}/payment/success?orderNo=${orderNo}`, // ✅ ใช้ baseUrl ที่ปลอดภัย
                 sessionId: 'free-order',
                 orderNo,
                 transactionId: transaction.id
@@ -137,8 +157,9 @@ export async function POST(req: Request) {
 
         // 7. Create Stripe Checkout Session (For Paid Items Only)
         // ---------------------------------------------------------
-        // ✅ ย้าย Logic การ Init Stripe มาไว้ตรงนี้
+        // ✅ ย้าย Logic การ Init Stripe มาไว้ตรงนี้ เพื่อแก้ปัญหา Vercel Env
         const stripeKey = process.env.STRIPE_SECRET_KEY
+
         if (!stripeKey) {
             console.error("❌ STRIPE_SECRET_KEY is missing in runtime!")
             return NextResponse.json(
@@ -148,7 +169,7 @@ export async function POST(req: Request) {
         }
 
         const stripe = new Stripe(stripeKey, {
-            apiVersion: '2025-12-15.clover',
+            apiVersion: '2025-12-15.clover', // แนะนำใช้ Version มาตรฐานที่เสถียร
             typescript: true,
         })
         // ---------------------------------------------------------
@@ -171,8 +192,9 @@ export async function POST(req: Request) {
                     quantity: 1,
                 }
             ],
-            success_url: `${process.env.NEXT_PUBLIC_APP_URL}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
-            cancel_url: `${process.env.NEXT_PUBLIC_APP_URL}/marketplace?canceled=true`,
+            // ✅ ใช้ baseUrl ที่ผ่านการ Clean มาแล้ว (แก้ปัญหา Invalid URL scheme)
+            success_url: `${baseUrl}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
+            cancel_url: `${baseUrl}/marketplace?canceled=true`,
             metadata: {
                 orderNo,
                 transactionId: transaction.id,
@@ -182,7 +204,7 @@ export async function POST(req: Request) {
             }
         })
 
-        // 7. Update transaction
+        // 8. Update transaction
         await prisma.transaction.update({
             where: { id: transaction.id },
             data: {

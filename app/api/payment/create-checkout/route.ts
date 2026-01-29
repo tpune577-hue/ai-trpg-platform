@@ -6,9 +6,17 @@ import { stripe, generateOrderNo } from '@/lib/stripe'
 export async function POST(req: Request) {
     try {
         // Check if Stripe is configured
+        // Check if Stripe is configured
         if (!stripe) {
+            console.error("Stripe is not initialized. Key present:", !!process.env.STRIPE_SECRET_KEY)
             return NextResponse.json(
-                { error: 'Payment system not configured' },
+                {
+                    error: 'Payment system not configured',
+                    debug: {
+                        hasKey: !!process.env.STRIPE_SECRET_KEY,
+                        env: process.env.NODE_ENV
+                    }
+                },
                 { status: 503 }
             )
         }

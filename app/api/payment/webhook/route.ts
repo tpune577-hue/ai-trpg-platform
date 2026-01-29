@@ -11,6 +11,11 @@ export async function POST(req: Request) {
 
     let event
 
+    if (!stripe) {
+        console.error("Stripe is not initialized")
+        return NextResponse.json({ error: "Stripe not initialized" }, { status: 500 })
+    }
+
     try {
         event = stripe.webhooks.constructEvent(
             body,

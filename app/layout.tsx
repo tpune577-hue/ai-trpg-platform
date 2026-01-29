@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "AI-TRPG Platform",
+  title: "Sandory Box",
   description: "AI-powered TTRPG Platform",
 };
 

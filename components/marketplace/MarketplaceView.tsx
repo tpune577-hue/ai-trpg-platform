@@ -210,7 +210,7 @@ export default function MarketplaceView({ user }: MarketplaceViewProps) {
                         {filteredItems.map((item) => (
                             <ItemCard
                                 key={item.id}
-                                {...item}
+                                item={item} // ✅ Pass entire item object
                                 isPurchased={purchasedAssets.includes(item.id)}
                                 onClick={() => setSelectedItem(item)}
                             />

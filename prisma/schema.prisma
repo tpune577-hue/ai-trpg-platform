@@ -8,6 +8,18 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
+// ✅ [NEW] Enum สำหรับแยกประเภทสินค้า
+enum ProductType {
+  DIGITAL_ASSET // ขายไฟล์ Campaign
+  LIVE_SESSION  // ขายตั๋วรอบเล่น
+}
+
+enum UserRole {
+  USER
+  GM
+  ADMIN
+}
+
 model User {
   id               String            @id @default(cuid())
   name             String?
@@ -22,7 +34,11 @@ model User {
   accounts         Account[]
   createdCampaigns Campaign[]
   inventory        InventoryItem[]
+  
+  // Marketplace Relations
   marketplaceItems MarketplaceItem[] @relation("UserMarketplaceItems")
+  bookings         Booking[]         // ✅ [NEW] ประวัติการจองของผู้เล่น
+
   orders           Order[]
   ownedCampaigns   Purchase[]
   receivedReviews  Review[]
@@ -30,6 +46,49 @@ model User {
   sessions         Session[]
   transactions     Transaction[]
 }
+
+model MarketplaceItem {
+  id          String      @id @default(cuid())
+  title       String
+  description String?
+  price       Float       @default(0)
+  imageUrl    String?     // ✅ [NEW] รูปปกสินค้า
+  
+  // ✅ [UPDATE] เปลี่ยน type เป็น Enum หรือ String ก็ได้ (แนะนำ String เพื่อความยืดหยุ่น หรือ Enum ถ้าอยาก Strict)
+  type        ProductType @default(DIGITAL_ASSET) 
+
+  // ✅ [NEW] ฟิลด์สำหรับ Session (ticket)
+  sessionDate    DateTime?  // วันเวลาที่เล่น
+  duration       Int?       // ระยะเวลา (นาที)
+  maxPlayers     Int?       // รับกี่คน
+  currentPlayers Int        @default(0) // จองแล้วกี่คน
+  gameLink       String?    // ลิงก์ห้อง (Discord/Zoom/TRPG)
+
+  isPublished Boolean     @default(true)
+  data        String?     // เก็บข้อมูล JSON หรือ Link ไฟล์ (สำหรับ Digital Asset)
+  
+  creatorId   String
+  creator     User        @relation("UserMarketplaceItems", fields: [creatorId], references: [id])
+  
+  bookings    Booking[]   // ✅ [NEW] รายการคนจอง
+
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+}
+
+// ✅ [NEW] ตารางเก็บการจอง
+model Booking {
+  id        String   @id @default(cuid())
+  userId    String
+  itemId    String
+  status    String   @default("CONFIRMED") // CONFIRMED, CANCELLED
+  createdAt DateTime @default(now())
+
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  item      MarketplaceItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+}
+
+// --- โมเดลเดิมอื่นๆ (คงไว้เหมือนเดิม) ---
 
 model SellerProfile {
   id            String    @id @default(cuid())
@@ -258,20 +317,6 @@ model InventoryItem {
   @@unique([userId, productId])
 }
 
-model MarketplaceItem {
-  id          String   @id @default(cuid())
-  title       String
-  description String?
-  type        String
-  price       Float    @default(0)
-  creatorId   String
-  isPublished Boolean  @default(true)
-  data        String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  creator     User     @relation("UserMarketplaceItems", fields: [creatorId], references: [id])
-}
-
 model Transaction {
   id                  String    @id @default(cuid())
   orderNo             String    @unique
@@ -300,17 +345,15 @@ model SiteConfig {
   heroSubtitle String   @default("Your adventure begins here. Choose your destiny.")
   heroImageUrl String?
   announcement String?
-  updatedAt    DateTime
+  updatedAt    DateTime @updatedAt
 }
-// prisma/schema.prisma
 
-// ... models เดิม ...
-
+// ✅ Audio System (ของเดิมที่คุณทำไปแล้ว)
 model AudioTrack {
   id        String   @id @default(cuid())
   name      String
   url       String
   type      String   // "BGM" หรือ "SFX"
-  category  String?  // เช่น "Battle", "Ambiance", "Magic"
+  category  String?
   createdAt DateTime @default(now())
 }

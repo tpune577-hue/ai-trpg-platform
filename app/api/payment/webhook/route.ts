@@ -1,207 +1,118 @@
-// app/api/payment/webhook/route.ts
-import { NextResponse } from 'next/server'
 import { headers } from 'next/headers'
+import { NextResponse } from 'next/server'
 import { stripe } from '@/lib/stripe'
 import { prisma } from '@/lib/prisma'
-import Stripe from 'stripe'
+import { sendBookingEmail } from '@/lib/email'
 
 export async function POST(req: Request) {
+    const body = await req.text()
+    const headerList = await headers()
+    const signature = headerList.get('Stripe-Signature') as string
+
+    let event
+
     try {
-        // Check if Stripe is configured
-        if (!stripe) {
-            return NextResponse.json(
-                { error: 'Payment system not configured' },
-                { status: 503 }
-            )
-        }
-
-        const body = await req.text()
-        const headersList = await headers()
-        const signature = headersList.get('stripe-signature')
-
-        if (!signature) {
-            return NextResponse.json(
-                { error: 'No signature' },
-                { status: 400 }
-            )
-        }
-
-        // Verify webhook signature
-        let event: Stripe.Event
-        try {
-            event = stripe.webhooks.constructEvent(
-                body,
-                signature,
-                process.env.STRIPE_WEBHOOK_SECRET!
-            )
-        } catch (err: any) {
-            console.error('Webhook signature verification failed:', err.message)
-            return NextResponse.json(
-                { error: `Webhook Error: ${err.message}` },
-                { status: 400 }
-            )
-        }
-
-        // Handle the event
-        switch (event.type) {
-            case 'checkout.session.completed':
-                const session = event.data.object as Stripe.Checkout.Session
-                await handleCheckoutCompleted(session)
-                break
-
-            case 'checkout.session.expired':
-                const expiredSession = event.data.object as Stripe.Checkout.Session
-                await handleCheckoutExpired(expiredSession)
-                break
-
-            default:
-                console.log(`Unhandled event type: ${event.type}`)
-        }
-
-        return NextResponse.json({ received: true })
-
-    } catch (error: any) {
-        console.error('Webhook error:', error)
-        return NextResponse.json(
-            { error: error.message || 'Webhook processing failed' },
-            { status: 500 }
+        event = stripe.webhooks.constructEvent(
+            body,
+            signature,
+            process.env.STRIPE_WEBHOOK_SECRET!
         )
+    } catch (err: any) {
+        console.error(`Webhook signature verification failed: ${err.message}`)
+        return NextResponse.json({ error: `Webhook Error: ${err.message}` }, { status: 400 })
     }
-}
 
-/**
- * Handle successful checkout
- */
-async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
-    try {
-        const { orderNo, transactionId, itemType, itemId } = session.metadata || {}
+    if (event.type === 'checkout.session.completed') {
+        const session = event.data.object as any
+        const { userId, itemId, itemType, transactionId } = session.metadata
 
-        if (!transactionId) {
-            console.error('No transaction ID in session metadata')
-            return
-        }
+        console.log(`💰 Payment success for ${itemType}: ${itemId}`)
 
-        console.log('Processing successful payment:', {
-            sessionId: session.id,
-            orderNo,
-            transactionId
-        })
-
-        // Update transaction
-        await prisma.transaction.update({
-            where: { id: transactionId },
-            data: {
-                status: 'SUCCESS',
-                stripePaymentIntent: session.payment_intent as string,
-                paymentDate: new Date(),
-                paymentMethod: session.payment_method_types?.[0] || 'unknown'
+        try {
+            // ✅ 1. อัปเดตสถานะ Transaction
+            if (transactionId) {
+                await prisma.transaction.update({
+                    where: { id: transactionId },
+                    data: {
+                        status: 'COMPLETED',
+                        paymentMethod: session.payment_method_types?.[0] || 'card',
+                        paymentDate: new Date(),
+                        stripePaymentIntent: session.payment_intent as string
+                    }
+                }).catch(e => console.error("Failed to update transaction status:", e))
             }
-        })
 
-        // Process the purchase
-        await processPurchase({
-            transactionId,
-            itemType: itemType || '',
-            itemId: itemId || '',
-            userId: session.metadata?.userId || ''
-        })
+            // ✅ 2. แยก Logic ตามประเภทสินค้า
 
-        console.log('Payment processed successfully:', orderNo)
+            // --- กรณีสินค้าใหม่ (Asset & Live Session) ---
+            if (itemType === 'LIVE_SESSION' || itemType === 'DIGITAL_ASSET' || itemType === 'MARKETPLACE_ITEM') {
 
-    } catch (error) {
-        console.error('Error handling checkout completed:', error)
-        throw error
-    }
-}
+                // A. สร้าง Booking (Ownership)
+                await prisma.booking.create({
+                    data: {
+                        userId: userId,
+                        itemId: itemId,
+                        status: 'CONFIRMED'
+                    }
+                })
 
-/**
- * Handle expired/cancelled checkout
- */
-async function handleCheckoutExpired(session: Stripe.Checkout.Session) {
-    try {
-        const { transactionId } = session.metadata || {}
+                // B. ถ้าเป็น Session ต้องตัดที่นั่งและส่งอีเมล
+                if (itemType === 'LIVE_SESSION') {
+                    // B1. อัปเดตจำนวนผู้เล่น +1 และดึงข้อมูล GM
+                    const updatedItem = await prisma.marketplaceItem.update({
+                        where: { id: itemId },
+                        data: {
+                            currentPlayers: { increment: 1 }
+                        },
+                        // ✅ แก้เป็น creator ตาม Schema เดิม
+                        include: { creator: true }
+                    })
 
-        if (!transactionId) {
-            return
-        }
+                    // B2. ส่งอีเมล (ใส่ Try-Catch แยก เพื่อไม่ให้ Webhook พังถ้าส่งเมลไม่ได้)
+                    try {
+                        const buyer = await prisma.user.findUnique({ where: { id: userId } })
+                        const recipientEmail = buyer?.email || session.customer_details?.email
+                        const creatorEmail = updatedItem.creator?.email // Safe access
 
-        console.log('Processing expired checkout:', session.id)
-
-        await prisma.transaction.update({
-            where: { id: transactionId },
-            data: {
-                status: 'FAILED'
+                        if (recipientEmail && creatorEmail) {
+                            await sendBookingEmail(
+                                recipientEmail,
+                                creatorEmail,
+                                {
+                                    title: updatedItem.title || 'Game Session',
+                                    date: updatedItem.sessionDate,
+                                    duration: updatedItem.duration,
+                                    link: updatedItem.gameLink,
+                                    price: updatedItem.price
+                                }
+                            )
+                            console.log(`📧 Booking email sent to ${recipientEmail}`)
+                        } else {
+                            console.warn("⚠️ Skipping email: Missing recipient or creator email.")
+                        }
+                    } catch (emailError) {
+                        console.error("❌ Failed to send booking email:", emailError)
+                        // ไม่ throw error ต่อ เพื่อให้ Webhook จบการทำงานได้ (เพราะจ่ายเงินและจองสำเร็จแล้ว)
+                    }
+                }
             }
-        })
 
-    } catch (error) {
-        console.error('Error handling checkout expired:', error)
-    }
-}
-
-/**
- * Process purchase after successful payment
- */
-async function processPurchase(params: {
-    transactionId: string
-    itemType: string
-    itemId: string
-    userId: string
-}) {
-    const { itemType, itemId, userId } = params
-
-    try {
-        switch (itemType) {
-            case 'MARKETPLACE_ITEM':
-                console.log('Processing marketplace item purchase:', {
-                    userId,
-                    itemId
+            // --- กรณีสินค้าเก่า (Campaign Legacy) ---
+            else if (itemType === 'CAMPAIGN') {
+                await prisma.purchase.create({
+                    data: {
+                        userId: userId,
+                        campaignId: itemId,
+                        price: session.amount_total ? session.amount_total / 100 : 0
+                    }
                 })
+            }
 
-                // TODO: Add item to user's inventory
-                // Example:
-                // await prisma.inventoryItem.create({
-                //   data: {
-                //     userId,
-                //     marketplaceItemId: itemId,
-                //     acquiredAt: new Date()
-                //   }
-                // })
-                break
-
-            case 'CAMPAIGN':
-                console.log('Processing campaign purchase:', {
-                    userId,
-                    itemId
-                })
-
-                // TODO: Grant access to campaign
-                // await prisma.purchase.create({
-                //   data: {
-                //     userId,
-                //     campaignId: itemId,
-                //     purchasedAt: new Date()
-                //   }
-                // })
-                break
-
-            case 'GM_QUEUE':
-                console.log('Processing GM queue booking:', {
-                    userId,
-                    itemId
-                })
-                // TODO: Create GM session booking
-                break
-
-            default:
-                console.warn('Unknown item type:', itemType)
+        } catch (error) {
+            console.error('❌ Error processing webhook database update:', error)
+            return NextResponse.json({ error: 'Database update failed' }, { status: 500 })
         }
-
-        // TODO: Send email notification
-        // await sendPurchaseConfirmationEmail(params)
-
-    } catch (error) {
-        console.error('Purchase processing error:', error)
-        // Don't throw - transaction is already marked as SUCCESS
     }
+
+    return NextResponse.json({ received: true })
 }

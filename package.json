@@ -34,6 +34,7 @@
     "pusher": "^5.3.2",
     "react": "19.2.3",
     "react-dom": "19.2.3",
+    "resend": "^6.9.1",
     "socket.io": "^4.8.3",
     "socket.io-client": "^4.8.3",
     "stripe": "^20.2.0",

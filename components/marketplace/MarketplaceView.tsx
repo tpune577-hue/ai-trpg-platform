@@ -152,16 +152,7 @@ export default function MarketplaceView({ user }: MarketplaceViewProps) {
                                     </Link>
                                 )}
 
-                                {/* Approved Status - Show Seller Dashboard Button */}
-                                {sellerProfile?.status === 'APPROVED' && (
-                                    <Link
-                                        href="/seller/products"
-                                        className="px-5 py-3 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white rounded-lg font-bold transition-all flex items-center gap-2 shadow-lg hover:shadow-blue-500/50"
-                                    >
-                                        <span>🏪</span>
-                                        Seller Studio
-                                    </Link>
-                                )}
+
 
                                 {/* Rejected Status - Show Resubmit Button */}
                                 {sellerProfile?.status === 'REJECTED' && (

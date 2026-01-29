@@ -9,7 +9,7 @@ interface ItemDetailModalProps {
         id: string
         title: string
         description?: string
-        type: 'ART' | 'THEME' | 'CAMPAIGN'
+        type: string // 'DIGITAL_ASSET' | 'LIVE_SESSION' | 'CAMPAIGN'
         price: number
         imageUrl: string
         creatorName: string
@@ -43,26 +43,37 @@ export default function ItemDetailModal({
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    itemType: 'MARKETPLACE_ITEM',
+                    itemType: item.type, // ✅ Use actual item type (DIGITAL_ASSET, LIVE_SESSION, CAMPAIGN)
                     itemId: item.id,
-                    amount: item.price,
                     metadata: {
                         itemName: item.title,
                         itemDescription: item.description,
-                        itemType: item.type
                     }
                 }),
             })
 
+            const data = await response.json()
+
             if (!response.ok) {
-                const data = await response.json()
                 throw new Error(data.error || 'Failed to create checkout session')
             }
 
-            const { sessionUrl } = await response.json()
+            // ✅ Handle Free Item (No Redirect)
+            if (data.sessionId === 'free-order') {
+                setIsPurchasing(false)
+                onPurchaseSuccess()
+                onClose()
+                alert("🎉 Item claimed successfully!")
+                return
+            }
 
-            // Redirect to Stripe Checkout
-            window.location.href = sessionUrl
+            // ✅ Handle Paid Item (Redirect)
+            // Backend returns 'url', not 'sessionUrl'
+            if (data.url) {
+                window.location.href = data.url
+            } else {
+                throw new Error("Invalid response from payment server")
+            }
 
         } catch (err: any) {
             setError(err.message)

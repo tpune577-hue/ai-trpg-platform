@@ -9,31 +9,6 @@ import { fulfillOrder } from '@/lib/payment-service'
 
 export async function POST(req: Request) {
     try {
-        // ✅ 1. Initialize Stripe ภายใน Function (เพื่อให้อ่าน Env ล่าสุดเสมอ)
-        // ---------------------------------------------------------
-        const stripeKey = process.env.STRIPE_SECRET_KEY
-
-        if (!stripeKey) {
-            console.error("❌ STRIPE_SECRET_KEY is missing in runtime!")
-            return NextResponse.json(
-                {
-                    error: 'Payment system not configured',
-                    debug: {
-                        hasKey: false,
-                        env: process.env.NODE_ENV
-                    }
-                },
-                { status: 503 }
-            )
-        }
-
-        const stripe = new Stripe(stripeKey, {
-            apiVersion: '2025-12-15.clover', // Updated to match installed SDK version
-            typescript: true,
-        })
-        // ---------------------------------------------------------
-
-
         // 2. Check authentication
         const session = await auth()
         if (!session?.user?.email || !session?.user?.id) {
@@ -134,6 +109,7 @@ export async function POST(req: Request) {
         })
 
         // 6. Handle Free Items (Price = 0)
+        // ✅ ถ้าฟรี ตัดจบตรงนี้เลย ไม่ต้องไปยุ่งกับ Stripe Key
         if (price === 0) {
             await fulfillOrder(
                 transaction.id,
@@ -146,14 +122,31 @@ export async function POST(req: Request) {
 
             return NextResponse.json({
                 success: true,
-                url: `${process.env.NEXT_PUBLIC_APP_URL}/payment/success?orderNo=${orderNo}`, // Direct to success page
+                url: `${process.env.NEXT_PUBLIC_APP_URL}/payment/success?orderNo=${orderNo}`,
                 sessionId: 'free-order',
                 orderNo,
                 transactionId: transaction.id
             })
         }
 
-        // 7. Create Stripe Checkout Session (For Paid Items)
+        // 7. Create Stripe Checkout Session (For Paid Items Only)
+        // ---------------------------------------------------------
+        // ✅ ย้าย Logic การ Init Stripe มาไว้ตรงนี้
+        const stripeKey = process.env.STRIPE_SECRET_KEY
+        if (!stripeKey) {
+            console.error("❌ STRIPE_SECRET_KEY is missing in runtime!")
+            return NextResponse.json(
+                { error: 'Payment system not configured' },
+                { status: 503 }
+            )
+        }
+
+        const stripe = new Stripe(stripeKey, {
+            apiVersion: '2025-12-15.clover',
+            typescript: true,
+        })
+        // ---------------------------------------------------------
+
         const checkoutSession = await stripe.checkout.sessions.create({
             mode: 'payment',
             customer_email: session.user.email,

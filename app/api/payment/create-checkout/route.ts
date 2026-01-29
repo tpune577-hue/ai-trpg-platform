@@ -27,7 +27,7 @@ export async function POST(req: Request) {
         }
 
         const stripe = new Stripe(stripeKey, {
-            apiVersion: '2023-10-16', // หรือเวอร์ชันที่คุณใช้
+            apiVersion: '2025-12-15.clover', // Updated to match installed SDK version
             typescript: true,
         })
         // ---------------------------------------------------------

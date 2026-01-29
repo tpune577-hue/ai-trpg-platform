@@ -120,9 +120,15 @@ export async function POST(req: Request) {
                 null
             )
 
+            // ✅ Determine base URL safely
+            const protocol = req.headers.get('x-forwarded-proto') || 'http'
+            const host = req.headers.get('host')
+            const origin = req.headers.get('origin') || `${protocol}://${host}`
+            const baseUrl = process.env.NEXT_PUBLIC_APP_URL || origin
+
             return NextResponse.json({
                 success: true,
-                url: `${process.env.NEXT_PUBLIC_APP_URL}/payment/success?orderNo=${orderNo}`,
+                url: `${baseUrl}/payment/success?orderNo=${orderNo}`,
                 sessionId: 'free-order',
                 orderNo,
                 transactionId: transaction.id

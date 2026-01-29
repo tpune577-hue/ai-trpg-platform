@@ -40,7 +40,7 @@ async function main() {
         const itemData = {
             title: 'Debug Item',
             description: 'Test description',
-            type: 'ART' as const,
+            type: 'DIGITAL_ASSET' as const,
             price: 10.99, // Passing number
             creatorId: creator.id,
             isPublished: true,

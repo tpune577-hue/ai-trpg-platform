@@ -1,6 +1,8 @@
 import { Resend } from 'resend';
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+// Initialize Resend safely - won't crash build if env var is missing
+const apiKey = process.env.RESEND_API_KEY
+const resend = apiKey ? new Resend(apiKey) : null;
 
 // กำหนด Type ของข้อมูลที่จะส่งเข้ามา เพื่อความชัวร์
 interface SessionDetails {
@@ -17,6 +19,11 @@ export const sendBookingEmail = async (
     sessionDetails: SessionDetails
 ) => {
     try {
+        if (!resend) {
+            console.warn("⚠️ Resend is not initialized (missing API Key). Skipping email.")
+            return
+        }
+
         // แปลงวันที่เป็น format ที่อ่านง่าย (เช่น Mon, 25 Dec 2023, 08:00 PM)
         const dateStr = sessionDetails.date
             ? new Date(sessionDetails.date).toLocaleString('en-US', {

@@ -1,19 +1,24 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/prisma'
-import { stripe, generateOrderNo } from '@/lib/stripe'
+// ❌ ลบการ import stripe จาก lib ออก
+// import { stripe, generateOrderNo } from '@/lib/stripe' 
+import { generateOrderNo } from '@/lib/stripe' // import แค่ function สร้างเลข Order พอ
+import Stripe from 'stripe' // ✅ Import Class Stripe โดยตรง
 
 export async function POST(req: Request) {
     try {
-        // Check if Stripe is configured
-        // Check if Stripe is configured
-        if (!stripe) {
-            console.error("Stripe is not initialized. Key present:", !!process.env.STRIPE_SECRET_KEY)
+        // ✅ 1. Initialize Stripe ภายใน Function (เพื่อให้อ่าน Env ล่าสุดเสมอ)
+        // ---------------------------------------------------------
+        const stripeKey = process.env.STRIPE_SECRET_KEY
+
+        if (!stripeKey) {
+            console.error("❌ STRIPE_SECRET_KEY is missing in runtime!")
             return NextResponse.json(
                 {
                     error: 'Payment system not configured',
                     debug: {
-                        hasKey: !!process.env.STRIPE_SECRET_KEY,
+                        hasKey: false,
                         env: process.env.NODE_ENV
                     }
                 },
@@ -21,7 +26,14 @@ export async function POST(req: Request) {
             )
         }
 
-        // 1. Check authentication
+        const stripe = new Stripe(stripeKey, {
+            apiVersion: '2023-10-16', // หรือเวอร์ชันที่คุณใช้
+            typescript: true,
+        })
+        // ---------------------------------------------------------
+
+
+        // 2. Check authentication
         const session = await auth()
         if (!session?.user?.email || !session?.user?.id) {
             return NextResponse.json(
@@ -30,9 +42,9 @@ export async function POST(req: Request) {
             )
         }
 
-        // 2. Parse request body
+        // 3. Parse request body
         const body = await req.json()
-        const { itemType, itemId, metadata } = body // amount ไม่ต้องรับจาก Frontend ให้ดึงจาก DB เองเพื่อความปลอดภัย
+        const { itemType, itemId, metadata } = body
 
         if (!itemType || !itemId) {
             return NextResponse.json(
@@ -41,7 +53,7 @@ export async function POST(req: Request) {
             )
         }
 
-        // 3. Validate item & Fetch Data
+        // 4. Validate item & Fetch Data
         let itemData: any = null
         let itemName = ''
         let itemDescription = ''
@@ -49,16 +61,14 @@ export async function POST(req: Request) {
         let images: string[] = []
 
         switch (itemType) {
-            // ✅ Case 1: ระบบใหม่ (Asset & Live Session)
             case 'DIGITAL_ASSET':
             case 'LIVE_SESSION':
-            case 'MARKETPLACE_ITEM': // เผื่อไว้ถ้า Frontend ส่ง type นี้มา
+            case 'MARKETPLACE_ITEM':
                 itemData = await prisma.marketplaceItem.findUnique({
                     where: { id: itemId }
                 })
 
                 if (itemData) {
-                    // ⚠️ สำคัญ: เช็คที่นั่งว่างสำหรับ LIVE_SESSION
                     if (itemType === 'LIVE_SESSION' && itemData.type === 'LIVE_SESSION') {
                         const currentSeats = itemData.currentPlayers || 0
                         const maxSeats = itemData.maxPlayers || 0
@@ -69,7 +79,7 @@ export async function POST(req: Request) {
                         itemName = `Ticket: ${itemData.title || itemData.name}`
                         itemDescription = `Session Date: ${itemData.sessionDate ? new Date(itemData.sessionDate).toLocaleString() : 'TBA'}`
                     } else {
-                        itemName = itemData.title || 'Digital Asset'
+                        itemName = itemData.title || itemData.name || 'Digital Asset'
                         itemDescription = itemData.description || 'Digital Download'
                     }
 
@@ -78,7 +88,6 @@ export async function POST(req: Request) {
                 }
                 break
 
-            // ✅ Case 2: ระบบเก่า (Campaign)
             case 'CAMPAIGN':
                 itemData = await prisma.campaign.findUnique({
                     where: { id: itemId }
@@ -105,14 +114,14 @@ export async function POST(req: Request) {
             )
         }
 
-        // 4. Create transaction record
+        // 5. Create transaction record
         const orderNo = generateOrderNo()
         const transaction = await prisma.transaction.create({
             data: {
                 orderNo,
                 amount: price,
                 userId: session.user.id,
-                itemType, // เก็บ type ที่ส่งมาเพื่อใช้แยกใน Webhook
+                itemType,
                 itemId,
                 metadata: {
                     ...metadata,
@@ -123,10 +132,9 @@ export async function POST(req: Request) {
             }
         })
 
-        // 5. Create Stripe Checkout Session
+        // 6. Create Stripe Checkout Session
         const checkoutSession = await stripe.checkout.sessions.create({
             mode: 'payment',
-            // ✅ Auto-fill Email ลูกค้าจาก Google Account
             customer_email: session.user.email,
             payment_method_types: ['card'],
             line_items: [
@@ -135,15 +143,14 @@ export async function POST(req: Request) {
                         currency: 'thb',
                         product_data: {
                             name: itemName,
-                            description: itemDescription?.substring(0, 100), // Stripe จำกัดความยาว
+                            description: itemDescription?.substring(0, 100),
                             images: images.length > 0 ? images : undefined,
                         },
-                        unit_amount: Math.round(price * 100), // แปลงเป็นสตางค์
+                        unit_amount: Math.round(price * 100),
                     },
                     quantity: 1,
                 }
             ],
-            // ใช้ URL เดิมของคุณ
             success_url: `${process.env.NEXT_PUBLIC_APP_URL}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
             cancel_url: `${process.env.NEXT_PUBLIC_APP_URL}/marketplace?canceled=true`,
             metadata: {
@@ -155,7 +162,7 @@ export async function POST(req: Request) {
             }
         })
 
-        // 6. Update transaction with Stripe session ID
+        // 7. Update transaction
         await prisma.transaction.update({
             where: { id: transaction.id },
             data: {
@@ -163,10 +170,9 @@ export async function POST(req: Request) {
             }
         })
 
-        // 7. Return checkout URL
         return NextResponse.json({
             success: true,
-            url: checkoutSession.url, // ✅ ส่ง url กลับไปให้ Frontend redirect
+            url: checkoutSession.url,
             sessionId: checkoutSession.id,
             orderNo,
             transactionId: transaction.id

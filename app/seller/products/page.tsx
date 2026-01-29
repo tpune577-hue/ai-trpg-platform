@@ -11,6 +11,11 @@ async function getSellerProducts(userId: string) {
         },
         orderBy: {
             createdAt: 'desc'
+        },
+        include: {
+            _count: {
+                select: { bookings: true }
+            }
         }
     })
     return products
@@ -68,7 +73,7 @@ export default async function SellerProductsPage() {
                                 <div className="text-amber-400 font-bold mt-1">฿{product.price.toLocaleString()}</div>
                                 <div className="flex justify-between items-center mt-4 text-sm text-slate-400">
                                     <span>Downloads/Bookings</span>
-                                    <span className="text-white">{product.downloads || 0}</span>
+                                    <span className="text-white">{product._count.bookings}</span>
                                 </div>
                             </div>
 

@@ -1,64 +1,166 @@
 'use client'
 
-import { useState } from 'react'
-import { verifySeller } from '@/app/actions/admin' // Import Action ใหม่
+import { useState, useEffect } from 'react'
+import { verifySeller, getPendingSellers } from '@/app/actions/admin'
 
-export default function AdminDashboardClient({ pendingSellers }: { pendingSellers: any[] }) {
+interface PaginatedData {
+    sellers: any[]
+    totalCount: number
+    totalPages: number
+    currentPage: number
+    pageSize: number
+}
+
+export default function AdminDashboardClient() {
+    const [data, setData] = useState<PaginatedData | null>(null)
+    const [isLoading, setIsLoading] = useState(true)
     const [selectedSeller, setSelectedSeller] = useState<any>(null)
+    const [currentPage, setCurrentPage] = useState(1)
+    const [pageSize, setPageSize] = useState(50)
+
+    // Fetch data when page or pageSize changes
+    useEffect(() => {
+        async function loadData() {
+            setIsLoading(true)
+            try {
+                const result = await getPendingSellers(currentPage, pageSize)
+                setData(result)
+            } catch (error) {
+                console.error('Error loading pending sellers:', error)
+            } finally {
+                setIsLoading(false)
+            }
+        }
+        loadData()
+    }, [currentPage, pageSize])
+
+    const handlePageSizeChange = (newSize: number) => {
+        setPageSize(newSize)
+        setCurrentPage(1) // Reset to first page
+    }
+
+    const handleNextPage = () => {
+        if (data && currentPage < data.totalPages) {
+            setCurrentPage(currentPage + 1)
+        }
+    }
+
+    const handlePrevPage = () => {
+        if (currentPage > 1) {
+            setCurrentPage(currentPage - 1)
+        }
+    }
+
+    const handleVerificationComplete = () => {
+        setSelectedSeller(null)
+        // Reload current page
+        getPendingSellers(currentPage, pageSize).then(setData)
+    }
 
     return (
-        <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden mt-8">
-            {/* Header */}
+        <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+            {/* Header with Controls */}
             <div className="p-6 border-b border-slate-800 flex justify-between items-center">
                 <h3 className="text-xl font-bold text-white flex items-center gap-2">
                     <span>📝</span> Verification Requests
-                    {pendingSellers.length > 0 && (
+                    {data && data.totalCount > 0 && (
                         <span className="bg-amber-600 text-black text-xs px-2 py-0.5 rounded-full font-bold">
-                            {pendingSellers.length}
+                            {data.totalCount}
                         </span>
                     )}
                 </h3>
+
+                {/* Page Size Dropdown */}
+                <div className="flex items-center gap-3">
+                    <span className="text-sm text-slate-400">Show:</span>
+                    <select
+                        value={pageSize}
+                        onChange={(e) => handlePageSizeChange(Number(e.target.value))}
+                        className="bg-slate-800 border border-slate-700 text-white rounded-lg px-3 py-2 text-sm font-medium focus:border-amber-500 outline-none cursor-pointer"
+                    >
+                        <option value={50}>50</option>
+                        <option value={100}>100</option>
+                        <option value={150}>150</option>
+                    </select>
+                    <span className="text-sm text-slate-400">per page</span>
+                </div>
             </div>
 
             {/* Table */}
             <div className="p-0">
-                {pendingSellers.length === 0 ? (
+                {isLoading ? (
+                    <div className="p-12 text-center text-slate-500">
+                        <div className="animate-spin inline-block w-8 h-8 border-4 border-slate-700 border-t-amber-500 rounded-full"></div>
+                        <p className="mt-4">Loading...</p>
+                    </div>
+                ) : !data || data.sellers.length === 0 ? (
                     <div className="p-12 text-center text-slate-500">
                         ✅ All caught up! No pending requests.
                     </div>
                 ) : (
-                    <table className="w-full text-left text-sm text-slate-400">
-                        <thead className="bg-slate-950 text-slate-500 uppercase font-bold text-xs">
-                            <tr>
-                                <th className="px-6 py-3">User</th>
-                                <th className="px-6 py-3">Real Name</th>
-                                <th className="px-6 py-3">Date</th>
-                                <th className="px-6 py-3 text-right">Action</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-800">
-                            {pendingSellers.map((seller) => (
-                                <tr key={seller.id} className="hover:bg-slate-800/50 transition-colors">
-                                    <td className="px-6 py-4 font-medium text-white flex items-center gap-3">
-                                        <div className="w-8 h-8 rounded-full bg-slate-700 overflow-hidden">
-                                            {seller.user.image ? <img src={seller.user.image} className="w-full h-full object-cover" /> : <div className="flex items-center justify-center h-full text-xs">?</div>}
-                                        </div>
-                                        {seller.user.name || seller.user.email}
-                                    </td>
-                                    <td className="px-6 py-4">{seller.realName || '-'}</td>
-                                    <td className="px-6 py-4">{new Date(seller.createdAt).toLocaleDateString()}</td>
-                                    <td className="px-6 py-4 text-right">
-                                        <button
-                                            onClick={() => setSelectedSeller(seller)}
-                                            className="bg-slate-800 hover:bg-emerald-600 hover:text-white text-emerald-400 border border-slate-700 hover:border-emerald-500 px-4 py-2 rounded transition-all font-bold text-xs active:scale-95 shadow-lg"
-                                        >
-                                            🔍 Review
-                                        </button>
-                                    </td>
+                    <>
+                        <table className="w-full text-left text-sm text-slate-400">
+                            <thead className="bg-slate-950 text-slate-500 uppercase font-bold text-xs">
+                                <tr>
+                                    <th className="px-6 py-3">User</th>
+                                    <th className="px-6 py-3">Real Name</th>
+                                    <th className="px-6 py-3">Date</th>
+                                    <th className="px-6 py-3 text-right">Action</th>
                                 </tr>
-                            ))}
-                        </tbody>
-                    </table>
+                            </thead>
+                            <tbody className="divide-y divide-slate-800">
+                                {data.sellers.map((seller) => (
+                                    <tr key={seller.id} className="hover:bg-slate-800/50 transition-colors">
+                                        <td className="px-6 py-4 font-medium text-white flex items-center gap-3">
+                                            <div className="w-8 h-8 rounded-full bg-slate-700 overflow-hidden">
+                                                {seller.user.image ? <img src={seller.user.image} className="w-full h-full object-cover" /> : <div className="flex items-center justify-center h-full text-xs">?</div>}
+                                            </div>
+                                            {seller.user.name || seller.user.email}
+                                        </td>
+                                        <td className="px-6 py-4">{seller.realName || '-'}</td>
+                                        <td className="px-6 py-4">{new Date(seller.createdAt).toLocaleDateString()}</td>
+                                        <td className="px-6 py-4 text-right">
+                                            <button
+                                                onClick={() => setSelectedSeller(seller)}
+                                                className="bg-slate-800 hover:bg-emerald-600 hover:text-white text-emerald-400 border border-slate-700 hover:border-emerald-500 px-4 py-2 rounded transition-all font-bold text-xs active:scale-95 shadow-lg"
+                                            >
+                                                🔍 Review
+                                            </button>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+
+                        {/* Pagination Controls */}
+                        <div className="p-4 border-t border-slate-800 flex justify-between items-center bg-slate-950">
+                            <div className="text-sm text-slate-400">
+                                Showing <span className="text-white font-bold">{(currentPage - 1) * pageSize + 1}</span> to{' '}
+                                <span className="text-white font-bold">{Math.min(currentPage * pageSize, data.totalCount)}</span> of{' '}
+                                <span className="text-white font-bold">{data.totalCount}</span> results
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={handlePrevPage}
+                                    disabled={currentPage === 1}
+                                    className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                >
+                                    ← Previous
+                                </button>
+                                <span className="text-sm text-slate-400 px-3">
+                                    Page <span className="text-white font-bold">{currentPage}</span> of <span className="text-white font-bold">{data.totalPages}</span>
+                                </span>
+                                <button
+                                    onClick={handleNextPage}
+                                    disabled={currentPage === data.totalPages}
+                                    className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                >
+                                    Next →
+                                </button>
+                            </div>
+                        </div>
+                    </>
                 )}
             </div>
 
@@ -66,7 +168,7 @@ export default function AdminDashboardClient({ pendingSellers }: { pendingSeller
             {selectedSeller && (
                 <VerificationModal
                     seller={selectedSeller}
-                    onClose={() => setSelectedSeller(null)}
+                    onClose={handleVerificationComplete}
                 />
             )}
         </div>
@@ -79,7 +181,6 @@ function VerificationModal({ seller, onClose }: { seller: any, onClose: () => vo
     const [rejectReason, setRejectReason] = useState('')
     const [isLoading, setIsLoading] = useState(false)
 
-    // ✅ ใช้ verifySeller('APPROVED')
     const handleApprove = async () => {
         if (!confirm("Confirm Approve this seller?")) return
         setIsLoading(true)
@@ -94,7 +195,6 @@ function VerificationModal({ seller, onClose }: { seller: any, onClose: () => vo
         }
     }
 
-    // ✅ ใช้ verifySeller('REJECTED', reason)
     const handleReject = async () => {
         if (!rejectReason.trim()) return alert("Please enter a reason.")
         setIsLoading(true)

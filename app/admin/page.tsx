@@ -17,23 +17,17 @@ export default async function AdminDashboard() {
         )
     }
 
-    // Parallel Data Fetching
+    // Parallel Data Fetching - Only fast queries
     const [
         userCount,
         campaignCount,
         pendingSellersCount,
-        activeSellersCount,
-        pendingSellersList
+        activeSellersCount
     ] = await Promise.all([
         prisma.user.count(),
         prisma.campaign.count(),
         prisma.sellerProfile.count({ where: { status: 'PENDING' } }),
-        prisma.sellerProfile.count({ where: { status: 'APPROVED' } }),
-        prisma.sellerProfile.findMany({
-            where: { status: 'PENDING' },
-            orderBy: { createdAt: 'desc' },
-            include: { user: true }
-        })
+        prisma.sellerProfile.count({ where: { status: 'APPROVED' } })
     ])
 
     return (
@@ -51,7 +45,7 @@ export default async function AdminDashboard() {
                 <StatCard title="Active Sellers" value={activeSellersCount} icon="🏪" color="bg-emerald-900/20 border-emerald-800 text-emerald-400" />
             </div>
 
-            {/* --- 🛠️ MANAGEMENT TOOLS (เพิ่มใหม่) --- */}
+            {/* --- 🛠️ MANAGEMENT TOOLS --- */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 {/* ปุ่มไปหน้า Payout Calculator */}
                 <Link href="/admin/payouts" className="p-6 rounded-xl border border-emerald-800 bg-emerald-900/20 hover:bg-emerald-900/40 transition-all group flex items-center justify-between cursor-pointer">
@@ -84,10 +78,10 @@ export default async function AdminDashboard() {
                 </Link>
             </div>
 
-            {/* --- PENDING REQUESTS (Client Component) --- */}
+            {/* --- PENDING REQUESTS (Client Component with Pagination) --- */}
             <div>
                 <h3 className="text-xl font-bold text-white mb-4">Verification Queue</h3>
-                <AdminDashboardClient pendingSellers={pendingSellersList} />
+                <AdminDashboardClient />
             </div>
         </div>
     )

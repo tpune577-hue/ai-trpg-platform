@@ -35,3 +35,41 @@ export async function verifySeller(sellerId: string, status: SellerStatus, reaso
         return { success: false, error: "Database error" }
     }
 }
+
+export async function getPendingSellers(page: number = 1, pageSize: number = 50) {
+    const session = await auth()
+
+    if (session?.user?.role !== 'ADMIN') {
+        throw new Error('Unauthorized')
+    }
+
+    const skip = (page - 1) * pageSize
+
+    const [sellers, totalCount] = await Promise.all([
+        prisma.sellerProfile.findMany({
+            where: { status: 'PENDING' },
+            orderBy: { createdAt: 'desc' },
+            skip,
+            take: pageSize,
+            include: {
+                user: {
+                    select: {
+                        id: true,
+                        name: true,
+                        email: true,
+                        image: true
+                    }
+                }
+            }
+        }),
+        prisma.sellerProfile.count({ where: { status: 'PENDING' } })
+    ])
+
+    return {
+        sellers,
+        totalCount,
+        totalPages: Math.ceil(totalCount / pageSize),
+        currentPage: page,
+        pageSize
+    }
+}

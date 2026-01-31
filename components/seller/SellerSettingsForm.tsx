@@ -2,8 +2,9 @@
 
 import { useFormState, useFormStatus } from 'react-dom'
 import { submitSellerPaymentInfo } from '@/app/actions/seller'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import ImageUploader from '@/components/shared/ImageUploader'
 
 interface SellerSettingsFormProps {
     seller: {
@@ -22,6 +23,10 @@ interface SellerSettingsFormProps {
 export default function SellerSettingsForm({ seller }: SellerSettingsFormProps) {
     const [state, formAction] = useFormState(submitSellerPaymentInfo, null)
     const router = useRouter()
+
+    // Image upload state
+    const [idCardImage, setIdCardImage] = useState(seller.idCardImage || '')
+    const [bookBankImage, setBookBankImage] = useState(seller.bookBankImage || '')
 
     useEffect(() => {
         if (state?.success) {
@@ -119,36 +124,36 @@ export default function SellerSettingsForm({ seller }: SellerSettingsFormProps) 
                 />
             </div>
 
-            {/* ID Card Image URL */}
+            {/* ID Card Image Upload */}
             <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                    ID Card Image URL
-                </label>
-                <input
-                    type="url"
-                    name="idCardImage"
-                    defaultValue={seller.idCardImage || ''}
-                    readOnly={isReadOnly}
-                    className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-gray-500 focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 outline-none transition-all disabled:opacity-50 read-only:opacity-50"
-                    placeholder="https://example.com/id-card.jpg"
+                <ImageUploader
+                    value={idCardImage}
+                    onChange={setIdCardImage}
+                    label="ID Card Image"
+                    aspectRatio="aspect-[4/3]"
+                    placeholder="Upload your ID card (front side)"
+                    required={!isReadOnly}
                 />
-                <p className="text-xs text-gray-500 mt-1">Upload your ID card image and paste the URL here</p>
+                <input type="hidden" name="idCardImage" value={idCardImage} />
+                {isReadOnly && (
+                    <p className="text-xs text-gray-500 mt-2">✓ Image uploaded and under review</p>
+                )}
             </div>
 
-            {/* Book Bank Image URL */}
+            {/* Book Bank Image Upload */}
             <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Bank Book Image URL
-                </label>
-                <input
-                    type="url"
-                    name="bookBankImage"
-                    defaultValue={seller.bookBankImage || ''}
-                    readOnly={isReadOnly}
-                    className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-gray-500 focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 outline-none transition-all disabled:opacity-50 read-only:opacity-50"
-                    placeholder="https://example.com/bank-book.jpg"
+                <ImageUploader
+                    value={bookBankImage}
+                    onChange={setBookBankImage}
+                    label="Bank Book Image"
+                    aspectRatio="aspect-[4/3]"
+                    placeholder="Upload your bank book (first page)"
+                    required={!isReadOnly}
                 />
-                <p className="text-xs text-gray-500 mt-1">Upload your bank book image and paste the URL here</p>
+                <input type="hidden" name="bookBankImage" value={bookBankImage} />
+                {isReadOnly && (
+                    <p className="text-xs text-gray-500 mt-2">✓ Image uploaded and under review</p>
+                )}
             </div>
 
             {/* Submit Button */}

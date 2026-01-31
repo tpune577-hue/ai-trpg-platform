@@ -101,7 +101,8 @@ function RegisterSellerForm() {
                                 onChange={setIdCardImage}
                                 label="ID Card Image"
                                 aspectRatio="aspect-video"
-                                placeholder="Upload ID card photo"
+                                placeholder="ID Card"
+                                className="w-full max-w-[260px]"
                             />
 
                             <div>
@@ -153,7 +154,8 @@ function RegisterSellerForm() {
                             onChange={setBookBankImage}
                             label="Book Bank Image"
                             aspectRatio="aspect-video"
-                            placeholder="Upload bank book photo"
+                            placeholder="Bank Book"
+                            className="w-full max-w-[260px]"
                         />
                     </div>
 

@@ -130,9 +130,10 @@ export default function SellerSettingsForm({ seller }: SellerSettingsFormProps) 
                     value={idCardImage}
                     onChange={setIdCardImage}
                     label="ID Card Image"
-                    aspectRatio="aspect-[4/3]"
+                    aspectRatio="aspect-video"
                     placeholder="Upload your ID card (front side)"
                     required={!isReadOnly}
+                    className="w-full max-w-[260px]"
                 />
                 <input type="hidden" name="idCardImage" value={idCardImage} />
                 {isReadOnly && (
@@ -146,9 +147,10 @@ export default function SellerSettingsForm({ seller }: SellerSettingsFormProps) 
                     value={bookBankImage}
                     onChange={setBookBankImage}
                     label="Bank Book Image"
-                    aspectRatio="aspect-[4/3]"
+                    aspectRatio="aspect-video"
                     placeholder="Upload your bank book (first page)"
                     required={!isReadOnly}
+                    className="w-full max-w-[260px]"
                 />
                 <input type="hidden" name="bookBankImage" value={bookBankImage} />
                 {isReadOnly && (

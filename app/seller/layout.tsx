@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { auth } from "@/auth"
 import { redirect } from "next/navigation"
 import { prisma } from "@/lib/prisma"
+import SellerLayoutClient from './SellerLayoutClient'
 
 export default async function SellerLayout({
     children,
@@ -28,37 +29,5 @@ export default async function SellerLayout({
         )
     }
 
-    return (
-        <div className="flex h-screen bg-slate-950 text-slate-200">
-            {/* Sidebar */}
-            <aside className="w-64 bg-slate-900 border-r border-slate-800 flex flex-col">
-                <div className="p-6 border-b border-slate-800">
-                    <h1 className="text-xl font-bold text-emerald-500">🏪 Seller Studio</h1>
-                    <p className="text-xs text-slate-500 mt-1">Manage your shop</p>
-                </div>
-
-                <nav className="flex-1 p-4 space-y-2">
-                    <SellerLink href="/seller/dashboard" icon="📊" label="Overview" />
-                    <SellerLink href="/seller/products" icon="📦" label="My Products" />
-                    <SellerLink href="/seller/orders" icon="📃" label="Orders" />
-                    <SellerLink href="/seller/payouts" icon="💸" label="Payouts" />
-                    <SellerLink href="/seller/settings" icon="⚙️" label="Settings" />
-                </nav>
-            </aside>
-
-            {/* Content */}
-            <main className="flex-1 overflow-y-auto bg-slate-950 p-8">
-                {children}
-            </main>
-        </div>
-    )
-}
-
-function SellerLink({ href, icon, label }: { href: string, icon: string, label: string }) {
-    return (
-        <Link href={href} className="flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-slate-800 transition-colors text-slate-300 hover:text-white">
-            <span className="text-xl">{icon}</span>
-            <span className="font-medium">{label}</span>
-        </Link>
-    )
+    return <SellerLayoutClient>{children}</SellerLayoutClient>
 }

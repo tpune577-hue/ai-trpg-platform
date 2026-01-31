@@ -9,11 +9,16 @@ export async function GET(request: NextRequest) {
         const session = await auth()
         const userId = session?.user?.id
 
+        // Get pagination parameters from query string
+        const { searchParams } = new URL(request.url)
+        const limit = parseInt(searchParams.get('limit') || '20', 10)
+        const offset = parseInt(searchParams.get('offset') || '0', 10)
+
         // ==========================================
-        // 1. ดึงข้อมูลจากฐานข้อมูล
+        // 1. ดึงข้อมูลจากฐานข้อมูล (with pagination)
         // ==========================================
 
-        // 1.1 MarketplaceItem (Asset & Session)
+        // 1.1 MarketplaceItem (Asset & Session) - with pagination
         const newItemsPromise = prisma.marketplaceItem.findMany({
             where: { isPublished: true },
             include: {
@@ -28,9 +33,11 @@ export async function GET(request: NextRequest) {
                 }
             },
             orderBy: { createdAt: 'desc' },
+            take: limit,
+            skip: offset,
         })
 
-        // 1.2 Campaign (Legacy)
+        // 1.2 Campaign (Legacy) - with pagination
         const oldCampaignsPromise = prisma.campaign.findMany({
             where: { isPublished: true },
             include: {
@@ -45,9 +52,25 @@ export async function GET(request: NextRequest) {
                 }
             },
             orderBy: { createdAt: 'desc' },
+            take: limit,
+            skip: offset,
         })
 
-        const [newItems, oldCampaigns] = await Promise.all([newItemsPromise, oldCampaignsPromise])
+        // Get total counts for pagination metadata
+        const totalItemsPromise = prisma.marketplaceItem.count({
+            where: { isPublished: true }
+        })
+
+        const totalCampaignsPromise = prisma.campaign.count({
+            where: { isPublished: true }
+        })
+
+        const [newItems, oldCampaigns, totalItems, totalCampaigns] = await Promise.all([
+            newItemsPromise,
+            oldCampaignsPromise,
+            totalItemsPromise,
+            totalCampaignsPromise
+        ])
 
         // ==========================================
         // 2. Ownership Check (User ID Required)
@@ -143,14 +166,21 @@ export async function GET(request: NextRequest) {
         })
 
         // ==========================================
-        // 4. Return Combined List
+        // 4. Return Combined List with Pagination Metadata
         // ==========================================
 
         const allItems = [...formattedNewItems, ...formattedOldCampaigns]
+        const totalCount = totalItems + totalCampaigns
 
         return NextResponse.json({
             items: allItems,
             purchasedAssets: ownedIds,
+            pagination: {
+                limit,
+                offset,
+                total: totalCount,
+                hasMore: offset + limit < totalCount
+            }
         })
 
     } catch (error) {

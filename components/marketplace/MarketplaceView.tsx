@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import Link from 'next/link'
 import ItemCard from '@/components/marketplace/ItemCard'
 import ItemDetailModal from '@/components/marketplace/ItemDetailModal'
@@ -11,13 +11,17 @@ interface MarketplaceItem {
     id: string
     title: string
     description?: string
-    type: 'ART' | 'THEME' | 'CAMPAIGN'
+    type: 'ART' | 'THEME' | 'CAMPAIGN' | 'DIGITAL_ASSET' | 'LIVE_SESSION'
     price: number
-    downloads: number
+    downloads?: number
     rating?: number
     creatorName: string
     imageUrl: string
     tags?: string[]
+    sessionDate?: string | Date | null
+    duration?: number | null
+    maxPlayers?: number | null
+    currentPlayers?: number | null
 }
 
 interface MarketplaceViewProps {
@@ -25,15 +29,17 @@ interface MarketplaceViewProps {
 }
 
 export default function MarketplaceView({ user }: MarketplaceViewProps) {
-    // ✅ เช็คว่า Login หรือยัง (ถ้า Login แล้วให้เห็นปุ่ม Studio)
     const isCreator = !!user
 
     const [items, setItems] = useState<MarketplaceItem[]>([])
     const [filteredItems, setFilteredItems] = useState<MarketplaceItem[]>([])
     const [purchasedAssets, setPurchasedAssets] = useState<string[]>([])
     const [isLoading, setIsLoading] = useState(true)
+    const [isLoadingMore, setIsLoadingMore] = useState(false)
+    const [hasMore, setHasMore] = useState(true)
+    const [offset, setOffset] = useState(0)
+    const ITEMS_PER_PAGE = 20
 
-    // ✅ Seller status state
     const [sellerProfile, setSellerProfile] = useState<any>(null)
     const [isLoadingSeller, setIsLoadingSeller] = useState(true)
 
@@ -41,10 +47,12 @@ export default function MarketplaceView({ user }: MarketplaceViewProps) {
     const [searchQuery, setSearchQuery] = useState('')
     const [sortBy, setSortBy] = useState<'recent' | 'price-low' | 'price-high' | 'popular'>('recent')
 
-    // Modals
     const [selectedItem, setSelectedItem] = useState<MarketplaceItem | null>(null)
 
-    // ✅ Fetch seller status
+    // Infinite scroll observer
+    const observerTarget = useRef<HTMLDivElement>(null)
+
+    // Fetch seller status
     useEffect(() => {
         if (user?.id) {
             getSellerStatus(user.id).then(profile => {
@@ -56,7 +64,71 @@ export default function MarketplaceView({ user }: MarketplaceViewProps) {
         }
     }, [user])
 
-    useEffect(() => { fetchItems() }, [])
+    // Fetch items with pagination
+    const fetchItems = useCallback(async (loadMore = false) => {
+        const currentOffset = loadMore ? offset : 0
+
+        if (loadMore) {
+            setIsLoadingMore(true)
+        } else {
+            setIsLoading(true)
+        }
+
+        try {
+            const response = await fetch(`/api/marketplace/items?limit=${ITEMS_PER_PAGE}&offset=${currentOffset}`)
+            const data = await response.json()
+
+            if (loadMore) {
+                setItems(prev => [...prev, ...(data.items || [])])
+            } else {
+                setItems(data.items || [])
+            }
+
+            setPurchasedAssets(data.purchasedAssets || [])
+            setHasMore(data.pagination?.hasMore || false)
+
+            if (loadMore) {
+                setOffset(prev => prev + ITEMS_PER_PAGE)
+            } else {
+                setOffset(ITEMS_PER_PAGE)
+            }
+        } catch (error) {
+            console.error('Failed to fetch items:', error)
+        } finally {
+            setIsLoading(false)
+            setIsLoadingMore(false)
+        }
+    }, [offset])
+
+    // Initial load
+    useEffect(() => {
+        fetchItems(false)
+    }, [])
+
+    // Infinite scroll observer
+    useEffect(() => {
+        const observer = new IntersectionObserver(
+            entries => {
+                if (entries[0].isIntersecting && hasMore && !isLoadingMore && !isLoading) {
+                    fetchItems(true)
+                }
+            },
+            { threshold: 0.1 }
+        )
+
+        const currentTarget = observerTarget.current
+        if (currentTarget) {
+            observer.observe(currentTarget)
+        }
+
+        return () => {
+            if (currentTarget) {
+                observer.unobserve(currentTarget)
+            }
+        }
+    }, [hasMore, isLoadingMore, isLoading, fetchItems])
+
+    // Filter and sort
     useEffect(() => {
         let filtered = [...items]
         if (typeFilter !== 'ALL') filtered = filtered.filter((item) => item.type === typeFilter)
@@ -72,29 +144,16 @@ export default function MarketplaceView({ user }: MarketplaceViewProps) {
             switch (sortBy) {
                 case 'price-low': return a.price - b.price
                 case 'price-high': return b.price - a.price
-                case 'popular': return b.downloads - a.downloads
+                case 'popular': return (b.downloads || 0) - (a.downloads || 0)
                 case 'recent': default: return 0
             }
         })
         setFilteredItems(filtered)
     }, [items, typeFilter, searchQuery, sortBy])
 
-    const fetchItems = async () => {
-        try {
-            const response = await fetch('/api/marketplace/items')
-            const data = await response.json()
-            setItems(data.items || [])
-            setPurchasedAssets(data.purchasedAssets || [])
-        } catch (error) {
-            console.error('Failed to fetch items:', error)
-        } finally {
-            setIsLoading(false)
-        }
-    }
-
     const handlePurchaseSuccess = () => {
         if (selectedItem) setPurchasedAssets([...purchasedAssets, selectedItem.id])
-        fetchItems()
+        fetchItems(false)
     }
 
     return (
@@ -108,7 +167,7 @@ export default function MarketplaceView({ user }: MarketplaceViewProps) {
                             <p className="text-gray-400">Discover and purchase TRPG assets from creators</p>
                         </div>
 
-                        {/* ✅ Conditional Seller Registration Buttons */}
+                        {/* Conditional Seller Registration Buttons */}
                         {isCreator && !isLoadingSeller && (
                             <div className="flex items-center gap-3">
                                 <Link
@@ -119,7 +178,6 @@ export default function MarketplaceView({ user }: MarketplaceViewProps) {
                                     Creator Studio
                                 </Link>
 
-                                {/* No Seller Profile - Show Register Button */}
                                 {!sellerProfile && (
                                     <Link
                                         href="/register-seller"
@@ -130,7 +188,6 @@ export default function MarketplaceView({ user }: MarketplaceViewProps) {
                                     </Link>
                                 )}
 
-                                {/* Pending Status - Show Disabled Button */}
                                 {sellerProfile?.status === 'PENDING' && (
                                     <button
                                         disabled
@@ -141,7 +198,6 @@ export default function MarketplaceView({ user }: MarketplaceViewProps) {
                                     </button>
                                 )}
 
-                                {/* Approved Status - Show Seller Dashboard Button */}
                                 {sellerProfile?.status === 'APPROVED' && (
                                     <Link
                                         href="/seller/products"
@@ -152,9 +208,6 @@ export default function MarketplaceView({ user }: MarketplaceViewProps) {
                                     </Link>
                                 )}
 
-
-
-                                {/* Rejected Status - Show Resubmit Button */}
                                 {sellerProfile?.status === 'REJECTED' && (
                                     <Link
                                         href="/register-seller?resubmit=true"
@@ -164,13 +217,11 @@ export default function MarketplaceView({ user }: MarketplaceViewProps) {
                                         Resubmit Application
                                     </Link>
                                 )}
-
-                                {/* Approved Status - No extra button needed */}
                             </div>
                         )}
                     </div>
 
-                    {/* Filters & Sort (เหมือนเดิม) */}
+                    {/* Filters & Sort */}
                     <div className="flex flex-col md:flex-row gap-4">
                         <div className="flex-1">
                             <input
@@ -205,7 +256,7 @@ export default function MarketplaceView({ user }: MarketplaceViewProps) {
                 </div>
             </div>
 
-            {/* Content (เหมือนเดิม) */}
+            {/* Content - Shopee style grid */}
             <div className="max-w-7xl mx-auto px-4 py-8">
                 {isLoading ? (
                     <div className="flex items-center justify-center py-20">
@@ -219,22 +270,39 @@ export default function MarketplaceView({ user }: MarketplaceViewProps) {
                         <p className="text-gray-400 text-lg">No assets found</p>
                     </div>
                 ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                        {filteredItems.map((item) => (
-                            <ItemCard
-                                key={item.id}
-                                item={item} // ✅ Pass entire item object
-                                isPurchased={purchasedAssets.includes(item.id)}
-                                onClick={() => setSelectedItem(item)}
-                            />
-                        ))}
-                    </div>
+                    <>
+                        {/* Shopee-style compact grid: 5-6 columns on desktop */}
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 md:gap-4">
+                            {filteredItems.map((item) => (
+                                <ItemCard
+                                    key={item.id}
+                                    item={item}
+                                    isPurchased={purchasedAssets.includes(item.id)}
+                                    onClick={() => setSelectedItem(item)}
+                                />
+                            ))}
+                        </div>
+
+                        {/* Infinite scroll trigger */}
+                        {hasMore && (
+                            <div ref={observerTarget} className="flex justify-center py-8">
+                                {isLoadingMore && (
+                                    <div className="w-8 h-8 border-4 border-amber-500 border-t-transparent rounded-full animate-spin" />
+                                )}
+                            </div>
+                        )}
+
+                        {/* End of results message */}
+                        {!hasMore && filteredItems.length > 0 && (
+                            <div className="text-center py-8">
+                                <p className="text-gray-500 text-sm">You've reached the end</p>
+                            </div>
+                        )}
+                    </>
                 )}
             </div>
 
-            {/* Modals */}
-            {/* <UploadModal ... />  ❌ เอาออก */}
-
+            {/* Item Detail Modal */}
             <ItemDetailModal
                 isOpen={!!selectedItem}
                 onClose={() => setSelectedItem(null)}

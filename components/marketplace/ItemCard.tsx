@@ -92,117 +92,88 @@ export default function ItemCard({ item, isPurchased, onClick }: ItemCardProps) 
                 console.log("Card clicked:", item.id)
                 if (onClick) onClick()
             }}
-            className="relative bg-slate-900 border border-slate-700 rounded-xl overflow-hidden hover:shadow-xl hover:shadow-amber-900/20 transition-all flex flex-col group h-full cursor-pointer">
-
-            {/* Image Section */}
-            <div className="relative aspect-video bg-black overflow-hidden">
+            className="relative bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden hover:shadow-lg transition-all flex flex-col group cursor-pointer"
+        >
+            {/* Compact Image Section - Shopee style square ratio */}
+            <div className="relative aspect-square bg-slate-100 dark:bg-black overflow-hidden">
                 <Image
-                    src={item.imageUrl || (isSession ? 'https://placehold.co/600x400/0f172a/22c55e?text=Session' : 'https://placehold.co/600x400/0f172a/eab308?text=Asset')}
+                    src={item.imageUrl || (isSession ? 'https://placehold.co/400x400/0f172a/22c55e?text=Session' : 'https://placehold.co/400x400/0f172a/eab308?text=Asset')}
                     alt={item.title || 'Product Image'}
                     fill
-                    className="object-cover group-hover:scale-105 transition-transform duration-500"
-                    sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                    className="object-cover group-hover:scale-105 transition-transform duration-300"
+                    sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 20vw"
                 />
 
-                {/* Badge ประเภทสินค้า (มุมขวาบน) */}
-                <div className="absolute top-2 right-2 z-10">
-                    {isSession ? (
-                        <span className="bg-green-600 text-white text-[10px] font-bold px-2 py-1 rounded shadow-md uppercase tracking-wider backdrop-blur-sm bg-opacity-90">
-                            🎟️ Live Session
-                        </span>
-                    ) : (
-                        <span className="bg-amber-600 text-black text-[10px] font-bold px-2 py-1 rounded shadow-md uppercase tracking-wider backdrop-blur-sm bg-opacity-90">
-                            📄 Asset
-                        </span>
-                    )}
-                </div>
-
-                {/* Badge ความเป็นเจ้าของ (มุมซ้ายบน) */}
+                {/* Compact Badge - Top Left */}
                 {item.isOwner && (
-                    <div className="absolute top-2 left-2 z-10">
-                        <span className="bg-indigo-600 text-white text-[10px] font-bold px-2 py-1 rounded shadow-md uppercase tracking-wider">
+                    <div className="absolute top-1 left-1 z-10">
+                        <span className="bg-indigo-600 text-white text-[9px] font-bold px-1.5 py-0.5 rounded shadow-sm">
                             ✓ Owned
+                        </span>
+                    </div>
+                )}
+
+                {/* Type Badge - Top Right */}
+                {isSession && (
+                    <div className="absolute top-1 right-1 z-10">
+                        <span className="bg-green-600 text-white text-[9px] font-bold px-1.5 py-0.5 rounded shadow-sm">
+                            🎟️ Session
                         </span>
                     </div>
                 )}
             </div>
 
-            {/* Content Section */}
-            <div className="p-4 flex flex-col flex-1">
-                <h3 className="font-bold text-white text-lg truncate mb-1" title={item.title}>
+            {/* Compact Content Section */}
+            <div className="p-2 flex flex-col flex-1">
+                {/* Title - 2 lines max */}
+                <h3 className="text-sm text-slate-800 dark:text-white line-clamp-2 mb-1 min-h-[2.5rem]" title={item.title}>
                     {item.title}
                 </h3>
-                <p className="text-slate-400 text-xs line-clamp-2 mb-4 flex-1 min-h-[2.5em]">
-                    {item.description || 'No description available'}
-                </p>
 
-                {/* Session Specific Info (แสดงเฉพาะสินค้าประเภท Ticket) */}
+                {/* Session Info - Compact */}
                 {isSession && (
-                    <div className="bg-slate-800/50 rounded p-3 mb-4 border border-slate-700/50 space-y-3">
-                        <div className="flex justify-between items-center text-xs font-medium">
-                            <span className="text-slate-300 flex items-center gap-1.5">
-                                📅 {dateString || 'TBA'}
-                            </span>
-                            <span className="text-slate-300 flex items-center gap-1.5">
-                                ⏰ {timeString || 'TBA'}
-                            </span>
-                        </div>
-
-                        {/* Seats Progress Bar */}
-                        <div className="space-y-1.5">
-                            <div className="flex justify-between text-[10px] font-bold uppercase tracking-wide">
-                                <span className={isFull ? 'text-red-400' : 'text-emerald-400'}>
-                                    {isFull ? 'Full House' : 'Seats Available'}
-                                </span>
-                                <span className="text-slate-400">
-                                    {currentPlayers} / {maxPlayers}
-                                </span>
-                            </div>
-                            <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
-                                <div
-                                    className={`h-full transition-all duration-500 ease-out ${isFull ? 'bg-red-500' : 'bg-emerald-500'}`}
-                                    style={{ width: `${maxPlayers > 0 ? Math.min(100, (currentPlayers / maxPlayers) * 100) : 0}%` }}
-                                />
-                            </div>
-                        </div>
+                    <div className="flex items-center gap-1 mb-1">
+                        <span className="text-[10px] text-slate-500 dark:text-slate-400">
+                            {dateString ? `📅 ${dateString}` : '📅 TBA'}
+                        </span>
                     </div>
                 )}
 
-                {/* Footer: Price & Button */}
-                <div className="flex items-center justify-between mt-auto pt-4 border-t border-slate-800">
-                    <div className="flex flex-col">
-                        <span className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">Price</span>
-                        <span className="text-lg font-black text-amber-500">
-                            {item.price > 0 ? `฿${item.price.toLocaleString()}` : 'FREE'}
+                {/* Seats indicator for sessions - Minimal */}
+                {isSession && maxPlayers > 0 && (
+                    <div className="flex items-center gap-1 mb-2">
+                        <div className="flex-1 h-1 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                            <div
+                                className={`h-full transition-all ${isFull ? 'bg-red-500' : 'bg-emerald-500'}`}
+                                style={{ width: `${Math.min(100, (currentPlayers / maxPlayers) * 100)}%` }}
+                            />
+                        </div>
+                        <span className="text-[9px] text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                            {currentPlayers}/{maxPlayers}
                         </span>
                     </div>
+                )}
 
-                    <button
-                        onClick={handleBuy}
-                        disabled={loading || isFull || item.isOwner}
-                        className={`px-5 py-2 rounded-lg font-bold text-sm shadow-lg transition-all active:scale-95 ${item.isOwner
-                            ? 'bg-slate-700 text-slate-400 cursor-default'
-                            : isFull
-                                ? 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700'
-                                : isSession
-                                    ? 'bg-emerald-600 hover:bg-emerald-500 text-white hover:shadow-emerald-900/20'
-                                    : 'bg-amber-500 hover:bg-amber-400 text-black hover:shadow-amber-900/20'
-                            }`}
-                    >
-                        {loading
-                            ? 'Processing...'
-                            : item.isOwner
-                                ? 'Purchased'
-                                : isFull
-                                    ? 'SOLD OUT'
-                                    : isSession
-                                        ? 'Book Seat'
-                                        : item.price === 0
-                                            ? 'Get Free'
-                                            : 'Buy Now'
-                        }
-                    </button>
+                {/* Price - Shopee style */}
+                <div className="flex items-center justify-between mt-auto">
+                    <span className="text-base font-bold text-orange-600 dark:text-amber-500">
+                        {item.price > 0 ? `฿${item.price.toLocaleString()}` : 'FREE'}
+                    </span>
+
+                    {/* Sold out or Full indicator */}
+                    {isFull && (
+                        <span className="text-[9px] text-red-500 font-medium">FULL</span>
+                    )}
                 </div>
+
+                {/* Creator info - minimal */}
+                {item.creatorName && (
+                    <div className="flex items-center gap-1 mt-1 pt-1 border-t border-slate-100 dark:border-slate-800">
+                        <span className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
+                            {item.creatorName}
+                        </span>
+                    </div>
+                )}
             </div>
         </div>
     )

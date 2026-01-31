@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { acceptSellerTerms } from '@/app/actions/site-config'
 
 interface SellerTermsModalProps {
@@ -19,10 +19,20 @@ export default function SellerTermsModal({
     onSuccess
 }: SellerTermsModalProps) {
     const [acknowledged, setAcknowledged] = useState(false)
+    const [hasScrolledToBottom, setHasScrolledToBottom] = useState(false)
     const [isSubmitting, setIsSubmitting] = useState(false)
     const [error, setError] = useState<string>()
+    const scrollRef = useRef<HTMLDivElement>(null)
 
     if (!isOpen) return null
+
+    const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+        const element = e.currentTarget
+        const isAtBottom = element.scrollHeight - element.scrollTop <= element.clientHeight + 10 // 10px threshold
+        if (isAtBottom && !hasScrolledToBottom) {
+            setHasScrolledToBottom(true)
+        }
+    }
 
     const handleConfirm = async () => {
         setIsSubmitting(true)
@@ -59,7 +69,11 @@ export default function SellerTermsModal({
                 </div>
 
                 {/* Content - Scrollable */}
-                <div className="flex-1 overflow-y-auto p-6">
+                <div
+                    ref={scrollRef}
+                    onScroll={handleScroll}
+                    className="flex-1 overflow-y-auto p-6"
+                >
                     {termsContent ? (
                         <div className="prose prose-invert prose-amber max-w-none text-gray-300 whitespace-pre-wrap">
                             {termsContent}
@@ -81,15 +95,23 @@ export default function SellerTermsModal({
                         </div>
                     )}
 
+                    {/* Scroll Indicator */}
+                    {termsContent && !hasScrolledToBottom && (
+                        <div className="p-3 bg-blue-900/30 border border-blue-500/50 rounded-lg text-blue-200 text-sm">
+                            📜 Please scroll down to read all terms and conditions
+                        </div>
+                    )}
+
                     {/* Acknowledgment Checkbox */}
                     <label className="flex items-start gap-3 cursor-pointer">
                         <input
                             type="checkbox"
                             checked={acknowledged}
                             onChange={(e) => setAcknowledged(e.target.checked)}
-                            className="mt-1 w-5 h-5 rounded border-slate-600 bg-slate-800 text-amber-500 focus:ring-2 focus:ring-amber-500 cursor-pointer"
+                            disabled={!hasScrolledToBottom && !!termsContent}
+                            className="mt-1 w-5 h-5 rounded border-slate-600 bg-slate-800 text-amber-500 focus:ring-2 focus:ring-amber-500 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                         />
-                        <span className="text-gray-300 text-sm">
+                        <span className={`text-sm ${(!hasScrolledToBottom && termsContent) ? 'text-gray-500' : 'text-gray-300'}`}>
                             I acknowledge that I have read and agree to the Seller Terms & Conditions
                         </span>
                     </label>
@@ -105,7 +127,7 @@ export default function SellerTermsModal({
                         </button>
                         <button
                             onClick={handleConfirm}
-                            disabled={!acknowledged || isSubmitting || !termsContent}
+                            disabled={!acknowledged || !hasScrolledToBottom || isSubmitting || !termsContent}
                             className="flex-1 px-6 py-3 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white rounded-lg font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             {isSubmitting ? 'Processing...' : 'Confirm & Continue'}

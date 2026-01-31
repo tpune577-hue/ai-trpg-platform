@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { useSession } from 'next-auth/react'
 import CreateCampaignForm from '@/app/campaign/create/CreateCampaignForm'
 import CreateSessionForm from '@/components/seller/CreateSessionForm'
 
@@ -19,7 +18,6 @@ interface Product {
 }
 
 export default function SellerProductsPage() {
-    const { data: session } = useSession()
     const [activeTab, setActiveTab] = useState<'campaign' | 'session' | 'list'>('list')
     const [products, setProducts] = useState<Product[]>([])
     const [isLoading, setIsLoading] = useState(true)
@@ -36,12 +34,10 @@ export default function SellerProductsPage() {
                 }
 
                 // Check seller status
-                if (session?.user?.id) {
-                    const sellerRes = await fetch(`/api/seller/status?userId=${session.user.id}`)
-                    if (sellerRes.ok) {
-                        const sellerData = await sellerRes.json()
-                        setIsApprovedSeller(sellerData.status === 'APPROVED')
-                    }
+                const sellerRes = await fetch('/api/seller/status')
+                if (sellerRes.ok) {
+                    const sellerData = await sellerRes.json()
+                    setIsApprovedSeller(sellerData.status === 'APPROVED')
                 }
             } catch (error) {
                 console.error('Error loading data:', error)
@@ -51,7 +47,8 @@ export default function SellerProductsPage() {
         }
 
         loadData()
-    }, [session])
+    }, [])
+
 
     if (isLoading) {
         return (

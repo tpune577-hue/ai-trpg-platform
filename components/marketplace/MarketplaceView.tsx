@@ -180,14 +180,6 @@ export default function MarketplaceView({ user }: MarketplaceViewProps) {
                         {/* Conditional Seller Registration Buttons */}
                         {isCreator && !isLoadingSeller && (
                             <div className="flex items-center gap-3">
-                                <Link
-                                    href="/campaign/my"
-                                    className="px-5 py-3 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-purple-500/50 text-purple-400 hover:text-purple-300 rounded-lg font-bold transition-all flex items-center gap-2 group"
-                                >
-                                    <span className="group-hover:scale-110 transition-transform">🛠️</span>
-                                    Creator Studio
-                                </Link>
-
                                 {!sellerProfile && (
                                     <button
                                         onClick={() => setShowTermsModal(true)}
@@ -217,6 +209,7 @@ export default function MarketplaceView({ user }: MarketplaceViewProps) {
                                         Seller Studio
                                     </Link>
                                 )}
+
 
                                 {sellerProfile?.status === 'REJECTED' && (
                                     <Link

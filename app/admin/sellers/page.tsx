@@ -84,7 +84,8 @@ export default async function SellerListPage({ searchParams }: PageProps) {
 
             {/* --- TABS --- */}
             <div className="flex border-b border-slate-800 overflow-x-auto">
-                <TabButton label="New" status="PENDING" count={getCount('PENDING')} active={status === 'PENDING'} />
+                <TabButton label="Pre-Register" status="PRE_REGISTER" count={getCount('PRE_REGISTER')} active={status === 'PRE_REGISTER'} />
+                <TabButton label="Pending Review" status="PENDING" count={getCount('PENDING')} active={status === 'PENDING'} />
                 <TabButton label="Rejected" status="REJECTED" count={getCount('REJECTED')} active={status === 'REJECTED'} />
                 <TabButton label="Approved" status="APPROVED" count={getCount('APPROVED')} active={status === 'APPROVED'} />
                 <TabButton label="Terminated" status="TERMINATED" count={getCount('TERMINATED')} active={status === 'TERMINATED'} />
@@ -123,7 +124,7 @@ export default async function SellerListPage({ searchParams }: PageProps) {
                                         </td>
                                         <td className="px-6 py-4">
                                             <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${getStatusColor(seller.status)}`}>
-                                                {seller.status === 'PENDING' ? 'NEW' : seller.status}
+                                                {seller.status === 'PENDING' ? 'PENDING REVIEW' : seller.status === 'PRE_REGISTER' ? 'PRE-REGISTER' : seller.status}
                                             </span>
                                         </td>
                                         <td className="px-6 py-4 text-xs">{new Date(seller.createdAt).toLocaleString()}</td>
@@ -323,9 +324,11 @@ function ActionButton({ label, status, id, color }: any) {
 
 function getStatusColor(status: string) {
     switch (status) {
+        case 'PRE_REGISTER': return 'bg-blue-900/30 text-blue-400 border-blue-800'
+        case 'PENDING': return 'bg-amber-900/30 text-amber-400 border-amber-800'
         case 'APPROVED': return 'bg-emerald-900/30 text-emerald-400 border-emerald-800'
         case 'REJECTED': return 'bg-red-900/30 text-red-400 border-red-800'
         case 'TERMINATED': return 'bg-slate-800 text-slate-500 border-slate-700 line-through'
-        default: return 'bg-amber-900/30 text-amber-400 border-amber-800' // NEW
+        default: return 'bg-slate-800 text-slate-400 border-slate-700'
     }
 }

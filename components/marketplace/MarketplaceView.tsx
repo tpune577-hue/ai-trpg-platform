@@ -4,7 +4,9 @@ import { useEffect, useState, useRef, useCallback } from 'react'
 import Link from 'next/link'
 import ItemCard from '@/components/marketplace/ItemCard'
 import ItemDetailModal from '@/components/marketplace/ItemDetailModal'
+import SellerTermsModal from '@/components/seller/SellerTermsModal'
 import { getSellerStatus } from '@/app/actions/seller'
+import { getSellerTerms } from '@/app/actions/site-config'
 
 // Type ของสินค้า
 interface MarketplaceItem {
@@ -49,6 +51,10 @@ export default function MarketplaceView({ user }: MarketplaceViewProps) {
 
     const [selectedItem, setSelectedItem] = useState<MarketplaceItem | null>(null)
 
+    // T&C Modal state
+    const [showTermsModal, setShowTermsModal] = useState(false)
+    const [termsContent, setTermsContent] = useState('')
+
     // Infinite scroll observer
     const observerTarget = useRef<HTMLDivElement>(null)
 
@@ -58,6 +64,10 @@ export default function MarketplaceView({ user }: MarketplaceViewProps) {
             getSellerStatus(user.id).then(profile => {
                 setSellerProfile(profile)
                 setIsLoadingSeller(false)
+            })
+            // Fetch T&C content
+            getSellerTerms().then(terms => {
+                setTermsContent(terms)
             })
         } else {
             setIsLoadingSeller(false)
@@ -179,13 +189,13 @@ export default function MarketplaceView({ user }: MarketplaceViewProps) {
                                 </Link>
 
                                 {!sellerProfile && (
-                                    <Link
-                                        href="/register-seller"
+                                    <button
+                                        onClick={() => setShowTermsModal(true)}
                                         className="px-5 py-3 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white rounded-lg font-bold transition-all flex items-center gap-2 shadow-lg hover:shadow-emerald-500/50"
                                     >
                                         <span>✨</span>
                                         Register as Seller
-                                    </Link>
+                                    </button>
                                 )}
 
                                 {sellerProfile?.status === 'PENDING' && (
@@ -198,7 +208,7 @@ export default function MarketplaceView({ user }: MarketplaceViewProps) {
                                     </button>
                                 )}
 
-                                {sellerProfile?.status === 'APPROVED' && (
+                                {(sellerProfile?.status === 'PRE_REGISTER' || sellerProfile?.status === 'APPROVED') && (
                                     <Link
                                         href="/seller/products"
                                         className="px-5 py-3 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white rounded-lg font-bold transition-all flex items-center gap-2 shadow-lg hover:shadow-blue-500/50"
@@ -310,6 +320,24 @@ export default function MarketplaceView({ user }: MarketplaceViewProps) {
                 isPurchased={selectedItem ? purchasedAssets.includes(selectedItem.id) : false}
                 onPurchaseSuccess={handlePurchaseSuccess}
             />
+
+            {/* Seller Terms & Conditions Modal */}
+            {user && (
+                <SellerTermsModal
+                    isOpen={showTermsModal}
+                    onClose={() => setShowTermsModal(false)}
+                    userId={user.id}
+                    termsContent={termsContent}
+                    onSuccess={() => {
+                        // Refresh seller status
+                        if (user?.id) {
+                            getSellerStatus(user.id).then(profile => {
+                                setSellerProfile(profile)
+                            })
+                        }
+                    }}
+                />
+            )}
         </div>
     )
 }

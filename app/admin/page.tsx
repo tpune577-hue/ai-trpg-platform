@@ -52,7 +52,7 @@ export default async function AdminDashboard() {
             </div>
 
             {/* --- 🛠️ MANAGEMENT TOOLS (เพิ่มใหม่) --- */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 {/* ปุ่มไปหน้า Payout Calculator */}
                 <Link href="/admin/payouts" className="p-6 rounded-xl border border-emerald-800 bg-emerald-900/20 hover:bg-emerald-900/40 transition-all group flex items-center justify-between cursor-pointer">
                     <div>
@@ -71,6 +71,16 @@ export default async function AdminDashboard() {
                         <div className="text-xs text-slate-400 mt-1 group-hover:text-white">View history, Approve, or Ban users</div>
                     </div>
                     <div className="text-4xl opacity-50 group-hover:scale-110 transition-transform">👔</div>
+                </Link>
+
+                {/* ปุ่มไปหน้า Settings */}
+                <Link href="/admin/settings" className="p-6 rounded-xl border border-purple-800 bg-purple-900/20 hover:bg-purple-900/40 transition-all group flex items-center justify-between cursor-pointer">
+                    <div>
+                        <div className="text-xs font-bold uppercase opacity-70 mb-1 tracking-wider text-purple-400">Configuration</div>
+                        <div className="text-2xl font-black text-white">Site Settings ⚙️</div>
+                        <div className="text-xs text-slate-400 mt-1 group-hover:text-white">Manage T&C and site config</div>
+                    </div>
+                    <div className="text-4xl opacity-50 group-hover:scale-110 transition-transform">🔧</div>
                 </Link>
             </div>
 

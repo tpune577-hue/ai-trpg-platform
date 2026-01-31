@@ -100,7 +100,7 @@ model SellerProfile {
   bookBankImage String?
   bankName      String?
   bankAccount   String?
-  status        String    @default("PENDING")
+  status        String    @default("PRE_REGISTER") // PRE_REGISTER → PENDING → APPROVED/REJECTED
   rejectReason  String?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -340,12 +340,13 @@ model Transaction {
 }
 
 model SiteConfig {
-  id           Int      @id @default(1)
-  heroTitle    String   @default("Welcome, Traveler")
-  heroSubtitle String   @default("Your adventure begins here. Choose your destiny.")
-  heroImageUrl String?
-  announcement String?
-  updatedAt    DateTime @updatedAt
+  id                    Int      @id @default(1)
+  heroTitle             String   @default("Welcome, Traveler")
+  heroSubtitle          String   @default("Your adventure begins here. Choose your destiny.")
+  heroImageUrl          String?
+  announcement          String?
+  sellerTermsConditions String?  // Admin-configurable seller T&C
+  updatedAt             DateTime @updatedAt
 }
 
 // ✅ Audio System (ของเดิมที่คุณทำไปแล้ว)

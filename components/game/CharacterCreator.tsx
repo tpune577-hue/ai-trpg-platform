@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import ImageUploader from '@/components/shared/ImageUploader'
 
 // --- CONFIG: Role & Roll Attributes ---
 const RR_ATTRIBUTES = {
@@ -189,13 +190,13 @@ export default function CharacterCreator({ playerId, initialName, campaignSystem
                             <input type="text" value={formData.name} onChange={e => handleChange('name', e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-white focus:border-emerald-500 outline-none placeholder-slate-600" placeholder="Enter Name..." />
                         </div>
                         <div>
-                            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1 block">Avatar URL</label>
-                            <div className="flex gap-3">
-                                <input type="text" value={formData.imageUrl} onChange={e => handleChange('imageUrl', e.target.value)} placeholder="https://..." className="flex-1 bg-slate-950 border border-slate-700 rounded-lg p-3 text-white focus:border-emerald-500 outline-none placeholder-slate-600 text-sm" />
-                                <div className="w-12 h-12 bg-black rounded border border-slate-700 overflow-hidden shrink-0">
-                                    {formData.imageUrl ? <img src={formData.imageUrl} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-[10px] text-slate-600">No Img</div>}
-                                </div>
-                            </div>
+                            <ImageUploader
+                                value={formData.imageUrl}
+                                onChange={(url) => handleChange('imageUrl', url)}
+                                label="Character Avatar"
+                                aspectRatio="aspect-square"
+                                placeholder="Upload character portrait"
+                            />
                         </div>
                     </div>
                     <div className="md:col-span-7">
